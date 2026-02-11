@@ -328,7 +328,7 @@
 			path = System;
 			sourceTree = "<group>";
 		};
-		"TEMP_3CB2B99C-6B46-4BB9-BF0F-EE129368E850" /* Resources */ = {
+		"TEMP_FB08A440-287B-41DC-A7A9-F999B57C451D" /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 			);
