@@ -18,8 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showAccessibilityGuide() {
         let alert = NSAlert()
-        alert.messageText = "VoKey 需要辅助功能权限"
-        alert.informativeText = "VoKey 使用全局快捷键（Option+Space）来触发语音输入，需要辅助功能权限才能正常工作。\n\n点击「打开系统设置」后，请在列表中找到 VoKey 并开启开关。"
+        alert.messageText = "VowKy 需要辅助功能权限"
+        alert.informativeText = "VowKy 使用全局快捷键（Option+Space）来触发语音输入，需要辅助功能权限才能正常工作。\n\n点击「打开系统设置」后，请在列表中找到 VowKy 并开启开关。"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "打开系统设置")
         alert.addButton(withTitle: "稍后设置")
@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showConflictAlert() {
         let alert = NSAlert()
         alert.messageText = "快捷键冲突"
-        alert.informativeText = "系统的「选择上一个输入法」快捷键也使用了 Option+Space，这会与 VoKey 的语音输入快捷键冲突。\n\n请前往「系统设置 > 键盘 > 键盘快捷键 > 输入法」中修改或关闭该快捷键。"
+        alert.informativeText = "系统的「选择上一个输入法」快捷键也使用了 Option+Space，这会与 VowKy 的语音输入快捷键冲突。\n\n请前往「系统设置 > 键盘 > 键盘快捷键 > 输入法」中修改或关闭该快捷键。"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "打开键盘设置")
         alert.addButton(withTitle: "我知道了")

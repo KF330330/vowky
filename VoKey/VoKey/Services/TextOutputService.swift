@@ -6,7 +6,7 @@ final class TextOutputService {
     /// Insert text at the current cursor position via CGEvent keyboard simulation.
     /// Does NOT touch the clipboard.
     func insertText(_ text: String) {
-        print("[VoKey][TextOutput] insertText() called with: \(text)")
+        print("[VowKy][TextOutput] insertText() called with: \(text)")
         let source = CGEventSource(stateID: .hidSystemState)
         let utf16 = Array(text.utf16)
         let chunkSize = 20 // CGEvent supports ~20 UTF-16 code units per event
@@ -22,6 +22,6 @@ final class TextOutputService {
             let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
             keyUp?.post(tap: .cghidEventTap)
         }
-        print("[VoKey][TextOutput] Text inserted (\(utf16.count) chars)")
+        print("[VowKy][TextOutput] Text inserted (\(utf16.count) chars)")
     }
 }

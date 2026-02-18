@@ -19,7 +19,7 @@ final class HistoryWindowController {
         let hostingController = NSHostingController(rootView: historyView)
 
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "VoKey 识别历史"
+        window.title = "VowKy 识别历史"
         window.styleMask = [.titled, .closable, .resizable, .miniaturizable]
         window.setContentSize(NSSize(width: 500, height: 600))
         window.minSize = NSSize(width: 400, height: 400)

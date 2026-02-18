@@ -16,7 +16,7 @@ final class PunctuationService: PunctuationServiceProtocol {
 
         guard !path.isEmpty,
               FileManager.default.fileExists(atPath: path) else {
-            print("[VoKey][Punctuation] Model not found at: \(path)")
+            print("[VowKy][Punctuation] Model not found at: \(path)")
             return
         }
 
@@ -31,17 +31,17 @@ final class PunctuationService: PunctuationServiceProtocol {
 
         if w.ptr != nil {
             wrapper = w
-            print("[VoKey][Punctuation] Model loaded successfully")
+            print("[VowKy][Punctuation] Model loaded successfully")
         } else {
             wrapper = nil
-            print("[VoKey][Punctuation] Failed to create punctuation wrapper")
+            print("[VowKy][Punctuation] Failed to create punctuation wrapper")
         }
     }
 
     func addPunctuation(to text: String) -> String {
         guard let wrapper = wrapper else { return text }
         let result = wrapper.addPunct(text: text)
-        print("[VoKey][Punctuation] '\(text)' → '\(result)'")
+        print("[VowKy][Punctuation] '\(text)' → '\(result)'")
         return result
     }
 }

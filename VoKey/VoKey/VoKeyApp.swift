@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct VoKeyApp: App {
+struct VowKyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     @StateObject private var appState = AppState(

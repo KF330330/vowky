@@ -19,7 +19,7 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("VoKey Spike — 6 集成点验证")
+            Text("VowKy Spike — 6 集成点验证")
                 .font(.title2)
                 .bold()
 
@@ -359,7 +359,7 @@ struct ContentView: View {
     // MARK: - S5: 粘贴到前台应用
 
     private func pasteToFrontApp() {
-        let textToPaste = resultText.isEmpty ? "VoKey 测试文本" : String(resultText.suffix(50))
+        let textToPaste = resultText.isEmpty ? "VowKy 测试文本" : String(resultText.suffix(50))
 
         // 保存当前剪贴板
         let pasteboard = NSPasteboard.general

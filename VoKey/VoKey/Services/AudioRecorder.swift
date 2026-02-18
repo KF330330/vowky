@@ -25,9 +25,9 @@ final class AudioRecorder: AudioRecorderProtocol {
     }()
 
     func startRecording() throws {
-        print("[VoKey][Audio] startRecording() called")
-        // Support VOKEY_TEST_AUDIO env var for testing
-        if let testAudioDir = ProcessInfo.processInfo.environment["VOKEY_TEST_AUDIO"] {
+        print("[VowKy][Audio] startRecording() called")
+        // Support VOWKY_TEST_AUDIO env var for testing
+        if let testAudioDir = ProcessInfo.processInfo.environment["VOWKY_TEST_AUDIO"] {
             try startFromTestAudio(directory: testAudioDir)
             return
         }
@@ -67,9 +67,9 @@ final class AudioRecorder: AudioRecorderProtocol {
     }
 
     func stopRecording() -> [Float] {
-        print("[VoKey][Audio] stopRecording() called")
+        print("[VowKy][Audio] stopRecording() called")
         guard let engine = self.engine else {
-            print("[VoKey][Audio] No engine — returning empty samples")
+            print("[VowKy][Audio] No engine — returning empty samples")
             return []
         }
 
@@ -84,7 +84,7 @@ final class AudioRecorder: AudioRecorderProtocol {
         lock.unlock()
 
         audioLevel = 0
-        print("[VoKey][Audio] Returning \(samples.count) samples")
+        print("[VowKy][Audio] Returning \(samples.count) samples")
         return samples
     }
 
@@ -134,7 +134,7 @@ final class AudioRecorder: AudioRecorderProtocol {
         return sqrt(sumOfSquares / Float(samples.count))
     }
 
-    /// Load test audio from a directory (for VOKEY_TEST_AUDIO env var support)
+    /// Load test audio from a directory (for VOWKY_TEST_AUDIO env var support)
     private func startFromTestAudio(directory: String) throws {
         let url = URL(fileURLWithPath: directory)
         let wavFiles = (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil))?.filter { $0.pathExtension == "wav" } ?? []

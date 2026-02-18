@@ -19,14 +19,14 @@ final class HistoryStore {
         guard db == nil else { return }
 
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("VoKey", isDirectory: true)
+            .appendingPathComponent("VowKy", isDirectory: true)
 
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let dbPath = dir.appendingPathComponent("history.db").path
 
         guard sqlite3_open(dbPath, &db) == SQLITE_OK else {
-            print("[VoKey][HistoryStore] Failed to open database at \(dbPath)")
+            print("[VowKy][HistoryStore] Failed to open database at \(dbPath)")
             return
         }
 
@@ -39,7 +39,7 @@ final class HistoryStore {
         );
         """
         sqlite3_exec(db, createTable, nil, nil, nil)
-        print("[VoKey][HistoryStore] Database opened at \(dbPath)")
+        print("[VowKy][HistoryStore] Database opened at \(dbPath)")
     }
 
     // MARK: - Insert

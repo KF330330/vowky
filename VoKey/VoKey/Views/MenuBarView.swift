@@ -92,7 +92,7 @@ struct MenuBarView: View {
             } label: {
                 HStack {
                     Image(systemName: "power")
-                    Text("Quit VoKey")
+                    Text("Quit VowKy")
                 }
             }
             .buttonStyle(.plain)

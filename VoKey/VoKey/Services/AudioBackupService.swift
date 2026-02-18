@@ -9,7 +9,7 @@ final class AudioBackupService: AudioBackupProtocol {
 
     init(backupDirectory: URL? = nil) {
         let dir = backupDirectory ?? FileManager.default.temporaryDirectory
-        backupURL = dir.appendingPathComponent("vokey_recording_backup.wav")
+        backupURL = dir.appendingPathComponent("vowky_recording_backup.wav")
     }
 
     var hasBackup: Bool {
@@ -27,7 +27,7 @@ final class AudioBackupService: AudioBackupProtocol {
         let header = createWAVHeader(dataSize: 0)
         handle.write(header)
         self.fileHandle = handle
-        print("[VoKey][Backup] Started backup at \(backupURL.path)")
+        print("[VowKy][Backup] Started backup at \(backupURL.path)")
     }
 
     func appendSamples(_ samples: [Float]) {
@@ -42,7 +42,7 @@ final class AudioBackupService: AudioBackupProtocol {
         updateWAVHeader()
         closeFile()
         deleteBackup()
-        print("[VoKey][Backup] Finalized and deleted backup")
+        print("[VowKy][Backup] Finalized and deleted backup")
     }
 
     func recoverSamples() -> [Float]? {
@@ -64,7 +64,7 @@ final class AudioBackupService: AudioBackupProtocol {
             }
         }
 
-        print("[VoKey][Backup] Recovered \(samples.count) samples")
+        print("[VowKy][Backup] Recovered \(samples.count) samples")
         return samples
     }
 

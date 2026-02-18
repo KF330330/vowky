@@ -119,7 +119,7 @@ final class HotkeyManager {
         CGEvent.tapEnable(tap: tap, enable: true)
         self.runLoopSource = source
 
-        print("[VoKey][Hotkey] Event tap created and running")
+        print("[VowKy][Hotkey] Event tap created and running")
         return true
     }
 
@@ -166,7 +166,7 @@ private func hotkeyTapCallback(
 
     // tapDisabledByTimeout auto-recovery
     if type == .tapDisabledByTimeout {
-        print("[VoKey][Hotkey] tapDisabledByTimeout — auto-recovering")
+        print("[VowKy][Hotkey] tapDisabledByTimeout — auto-recovering")
         if let port = context.tapHolder.pointee {
             CGEvent.tapEnable(tap: port, enable: true)
         }
@@ -198,7 +198,7 @@ private func hotkeyTapCallback(
 
     switch action {
     case .hotkeyDown:
-        print("[VoKey][Hotkey] Option+Space keyDown — dispatching onHotkeyPressed")
+        print("[VowKy][Hotkey] Option+Space keyDown — dispatching onHotkeyPressed")
         let manager = Unmanaged<HotkeyManager>.fromOpaque(context.manager).takeUnretainedValue()
         DispatchQueue.main.async {
             manager.onHotkeyPressed?()
@@ -224,7 +224,7 @@ private func hotkeyTapCallback(
             let manager = Unmanaged<HotkeyManager>.fromOpaque(context.manager).takeUnretainedValue()
             let shouldIntercept = manager.shouldInterceptCancel?() ?? false
             if shouldIntercept {
-                print("[VoKey][Hotkey] Escape keyDown — dispatching onCancelPressed")
+                print("[VowKy][Hotkey] Escape keyDown — dispatching onCancelPressed")
                 DispatchQueue.main.async {
                     manager.onCancelPressed?()
                 }

@@ -97,13 +97,13 @@ final class AppState: ObservableObject {
         }
         hotkeyMgr.start()
         self.hotkeyManager = hotkeyMgr
-        print("[VoKey][AppState] setup() complete")
+        print("[VowKy][AppState] setup() complete")
     }
 
     // MARK: - Hotkey Handler (Toggle Mode)
 
     func handleHotkeyToggle() {
-        print("[VoKey][AppState] handleHotkeyToggle() called, current state: \(state)")
+        print("[VowKy][AppState] handleHotkeyToggle() called, current state: \(state)")
 
         // Clear previous error
         errorMessage = nil
@@ -118,11 +118,11 @@ final class AppState: ObservableObject {
         case .loading:
             if !speechRecognizer.isReady {
                 errorMessage = "语音模型加载中..."
-                print("[VoKey][AppState] Model still loading, ignoring toggle")
+                print("[VowKy][AppState] Model still loading, ignoring toggle")
             }
 
         case .recognizing, .outputting:
-            print("[VoKey][AppState] Ignoring toggle in state: \(state)")
+            print("[VowKy][AppState] Ignoring toggle in state: \(state)")
         }
     }
 
@@ -130,7 +130,7 @@ final class AppState: ObservableObject {
         // Check accessibility permission
         guard permissionChecker.isAccessibilityGranted() else {
             errorMessage = "请在系统设置中授予辅助功能权限"
-            print("[VoKey][AppState] Accessibility not granted")
+            print("[VowKy][AppState] Accessibility not granted")
             return
         }
 
@@ -139,11 +139,11 @@ final class AppState: ObservableObject {
             try audioRecorder.startRecording()
             try? backupService?.startBackup()
             state = .recording
-            print("[VoKey][AppState] Recording started → state = .recording")
+            print("[VowKy][AppState] Recording started → state = .recording")
         } catch {
             state = .idle
             errorMessage = error.localizedDescription
-            print("[VoKey][AppState] Recording failed: \(error.localizedDescription)")
+            print("[VowKy][AppState] Recording failed: \(error.localizedDescription)")
         }
     }
 
@@ -151,36 +151,36 @@ final class AppState: ObservableObject {
 
     func cancelRecording() {
         guard state == .recording else {
-            print("[VoKey][AppState] cancelRecording() ignored, state: \(state)")
+            print("[VowKy][AppState] cancelRecording() ignored, state: \(state)")
             return
         }
         _ = audioRecorder.stopRecording()
         backupService?.deleteBackup()
         state = .idle
-        print("[VoKey][AppState] Recording cancelled → state = .idle")
+        print("[VowKy][AppState] Recording cancelled → state = .idle")
     }
 
     private func stopRecordingAndRecognize() {
         let samples = audioRecorder.stopRecording()
-        print("[VoKey][AppState] Recording stopped, samples count: \(samples.count)")
+        print("[VowKy][AppState] Recording stopped, samples count: \(samples.count)")
         state = .recognizing
 
         Task { @MainActor in
-            print("[VoKey][AppState] Starting recognition...")
+            print("[VowKy][AppState] Starting recognition...")
             let result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
-            print("[VoKey][AppState] Recognition result: \(result ?? "nil")")
+            print("[VowKy][AppState] Recognition result: \(result ?? "nil")")
 
             // If result is nil or empty, go back to idle without outputting
             guard let text = result, !text.isEmpty else {
                 backupService?.deleteBackup()
                 state = .idle
-                print("[VoKey][AppState] Empty result → state = .idle")
+                print("[VowKy][AppState] Empty result → state = .idle")
                 return
             }
 
             // Add punctuation if available
             let finalText = punctuationService?.addPunctuation(to: text) ?? text
-            print("[VoKey][AppState] Final text: \(finalText)")
+            print("[VowKy][AppState] Final text: \(finalText)")
 
             // Valid result: insert text and return to idle
             lastResult = finalText
@@ -188,7 +188,7 @@ final class AppState: ObservableObject {
             textOutputService?.insertText(finalText)
             backupService?.finalizeAndDelete()
             state = .idle
-            print("[VoKey][AppState] Text inserted → state = .idle")
+            print("[VowKy][AppState] Text inserted → state = .idle")
         }
     }
 
@@ -206,11 +206,11 @@ final class AppState: ObservableObject {
 
     private func checkForRecovery() {
         guard let backup = backupService, backup.hasBackup else { return }
-        print("[VoKey][AppState] Found backup recording, attempting recovery...")
+        print("[VowKy][AppState] Found backup recording, attempting recovery...")
 
         guard let samples = backup.recoverSamples(), !samples.isEmpty else {
             backup.deleteBackup()
-            print("[VoKey][AppState] Backup empty or corrupt, deleted")
+            print("[VowKy][AppState] Backup empty or corrupt, deleted")
             return
         }
 
@@ -221,7 +221,7 @@ final class AppState: ObservableObject {
             guard let text = result, !text.isEmpty else {
                 backup.deleteBackup()
                 state = .idle
-                print("[VoKey][AppState] Recovery: empty result, deleted backup")
+                print("[VowKy][AppState] Recovery: empty result, deleted backup")
                 return
             }
 
@@ -231,7 +231,7 @@ final class AppState: ObservableObject {
             textOutputService?.insertText(finalText)
             backup.deleteBackup()
             state = .idle
-            print("[VoKey][AppState] Recovery complete: \(finalText)")
+            print("[VowKy][AppState] Recovery complete: \(finalText)")
         }
     }
 }
