@@ -4,431 +4,480 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VowKy - macOS 语音输入工具</title>
-<meta name="description" content="VowKy - 按下快捷键，说话即输入。本地离线语音识别，保护隐私。">
+<meta name="description" content="VowKy - 按下快捷键，说话即输入。完全离线语音识别，隐私至上。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-/* ===== Reset & Base ===== */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --bg-deep: #0C0A09;
-  --bg-surface: #1C1917;
-  --bg-card: #292524;
-  --bg-card-hover: #322E2B;
-  --border: #3F3A36;
-  --text-primary: #F5F5F4;
-  --text-secondary: #A8A29E;
-  --text-muted: #78716C;
-  --accent: #F97316;
-  --accent-light: #FB923C;
-  --accent-dark: #9A3412;
-  --accent-glow: rgba(249, 115, 22, 0.15);
+  --bg-void: #09090B;
+  --bg-surface: #18181B;
+  --bg-raised: #27272A;
+  --text-primary: #FAFAFA;
+  --text-secondary: #A1A1AA;
+  --text-muted: #71717A;
+  --border: #27272A;
+  --border-subtle: #3F3F46;
+  --accent: #D97706;
+  --accent-light: #F59E0B;
+  --accent-dim: #92400E;
+  --accent-glow: rgba(217, 119, 6, 0.08);
+  --privacy: #6366F1;
+  --success: #22C55E;
   --font-display: 'Syne', -apple-system, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
 }
 
 html { scroll-behavior: smooth; }
 body {
   font-family: var(--font-body);
-  background: var(--bg-deep);
+  background: var(--bg-void);
   color: var(--text-primary);
   line-height: 1.6;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  background-image: radial-gradient(circle, var(--border-subtle) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: fixed;
 }
-
-/* ===== Noise Texture Overlay ===== */
 body::before {
   content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  pointer-events: none;
-  opacity: 0.03;
+  position: fixed; inset: 0; z-index: 9999;
+  pointer-events: none; opacity: 0.015;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* ===== Navigation ===== */
+/* ===== Nav ===== */
 nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-  padding: 1.25rem 2rem;
+  padding: 1rem 2rem;
   display: flex; align-items: center; justify-content: space-between;
-  transition: background 0.4s, backdrop-filter 0.4s;
+  transition: background 0.4s, backdrop-filter 0.4s, border-color 0.4s;
+  border-bottom: 1px solid transparent;
 }
 nav.scrolled {
-  background: rgba(12, 10, 9, 0.85);
-  backdrop-filter: blur(20px) saturate(1.2);
-  border-bottom: 1px solid var(--border);
+  background: rgba(9, 9, 11, 0.82);
+  backdrop-filter: blur(16px) saturate(1.2);
+  border-bottom-color: var(--border);
 }
-.nav-logo {
-  font-family: var(--font-display);
-  font-size: 1.5rem; font-weight: 800;
-  letter-spacing: -0.02em;
-  background: linear-gradient(135deg, var(--text-primary), var(--accent-light));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+.nav-brand {
+  font-family: var(--font-display); font-size: 1.35rem;
+  font-weight: 800; color: var(--text-primary);
+  letter-spacing: -0.02em; text-decoration: none;
 }
-.nav-right { display: flex; align-items: center; gap: 1.5rem; }
+.nav-right { display: flex; align-items: center; gap: 1rem; }
 .lang-switch {
-  display: flex; gap: 0;
-  background: var(--bg-card); border-radius: 8px;
-  padding: 3px; border: 1px solid var(--border);
+  display: flex; background: var(--bg-surface);
+  border-radius: 8px; padding: 3px; border: 1px solid var(--border);
 }
 .lang-btn {
-  padding: 0.35rem 0.75rem; border: none; border-radius: 6px;
-  background: transparent; color: var(--text-secondary);
-  font-size: 0.8rem; cursor: pointer; transition: all 0.25s;
+  padding: 0.3rem 0.7rem; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-muted);
+  font-size: 0.78rem; cursor: pointer; transition: all 0.25s;
   font-family: var(--font-body);
 }
-.lang-btn.active {
-  background: var(--accent-dark);
-  color: var(--accent-light);
+.lang-btn.active { background: var(--bg-raised); color: var(--text-primary); }
+.nav-link {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  color: var(--text-secondary); text-decoration: none;
+  font-size: 0.85rem; transition: color 0.3s;
 }
+.nav-link:hover { color: var(--text-primary); }
 .nav-cta {
-  padding: 0.55rem 1.25rem; border: none; border-radius: 10px;
-  background: var(--accent); color: #fff;
-  font-size: 0.85rem; font-weight: 600; cursor: pointer;
-  transition: all 0.3s; font-family: var(--font-body);
+  padding: 0.45rem 1.1rem; border: 1px solid var(--accent-dim);
+  border-radius: 8px; background: transparent;
+  color: var(--accent-light); font-size: 0.85rem;
+  font-weight: 500; cursor: pointer; transition: all 0.3s;
+  font-family: var(--font-body);
 }
-.nav-cta:hover { background: var(--accent-light); transform: translateY(-1px); }
+.nav-cta:hover { background: var(--accent-dim); border-color: var(--accent); }
 
 /* ===== Hero ===== */
 .hero {
-  min-height: 100vh; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  text-align: center; padding: 6rem 2rem 4rem;
-  position: relative; overflow: hidden;
+  min-height: 100vh; display: flex; align-items: center;
+  padding: 7rem 2rem 4rem;
+  max-width: 1100px; margin: 0 auto;
+  gap: 4rem;
 }
-.hero::before {
-  content: '';
-  position: absolute; top: -40%; left: 50%; transform: translateX(-50%);
-  width: 800px; height: 800px;
-  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-  pointer-events: none; animation: pulse-glow 6s ease-in-out infinite;
-}
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
-  50% { opacity: 1; transform: translateX(-50%) scale(1.15); }
-}
-
-.hero-badge {
-  display: inline-flex; align-items: center; gap: 0.5rem;
-  padding: 0.4rem 1rem; border-radius: 50px;
-  background: var(--bg-card); border: 1px solid var(--border);
-  font-size: 0.8rem; color: var(--text-secondary);
-  margin-bottom: 2rem; position: relative;
-}
-.hero-badge::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%;
-  background: #22C55E; animation: blink 2s infinite;
-}
-@keyframes blink {
-  0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
-}
-
+.hero-content { flex: 1.2; }
+.hero-visual { flex: 1; display: flex; justify-content: center; }
 .hero-title {
   font-family: var(--font-display);
-  font-size: clamp(3rem, 7vw, 5.5rem);
-  font-weight: 800; letter-spacing: -0.03em;
-  line-height: 1.1; margin-bottom: 0.5rem;
-  position: relative;
+  font-size: clamp(2.8rem, 6vw, 4.5rem);
+  font-weight: 800; letter-spacing: -0.04em;
+  line-height: 1.08; margin-bottom: 1.25rem;
 }
-.hero-title .brand {
-  background: linear-gradient(135deg, var(--accent), var(--accent-light));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+.hero-title .unlock {
+  display: inline-block;
+  animation: tighten 1s cubic-bezier(0.16, 1, 0.3, 1) 0.6s both;
 }
-.hero-subtitle {
-  font-size: clamp(1.1rem, 2.5vw, 1.5rem);
-  color: var(--text-secondary); max-width: 600px;
-  margin: 1rem auto 0; line-height: 1.7;
-  font-weight: 400;
+@keyframes tighten {
+  from { letter-spacing: 0.15em; opacity: 0.3; }
+  to { letter-spacing: -0.04em; opacity: 1; }
 }
-
-/* Waveform */
-.waveform-container {
-  display: flex; align-items: center; justify-content: center;
-  gap: 3px; height: 80px; margin: 3rem 0;
-  position: relative;
-}
-.wave-bar {
-  width: 3px; border-radius: 3px;
-  background: linear-gradient(to top, var(--accent), var(--accent-light));
-  animation: wave 1.2s ease-in-out infinite;
-  opacity: 0.7;
-}
-.wave-bar:nth-child(odd) { animation-duration: 1s; }
-.wave-bar:nth-child(3n) { animation-duration: 1.5s; }
-.wave-bar:nth-child(5n) { animation-duration: 0.8s; }
-@keyframes wave {
-  0%, 100% { height: 8px; opacity: 0.4; }
-  50% { height: var(--h, 60px); opacity: 0.9; }
+.hero-sub {
+  font-size: clamp(1rem, 1.8vw, 1.15rem);
+  color: var(--text-secondary); line-height: 1.7;
+  max-width: 480px; margin-bottom: 2rem;
 }
 
 /* Typing demo */
-.demo-box {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 12px; padding: 1.25rem 2rem;
-  max-width: 520px; margin: 0 auto 2.5rem;
-  text-align: left; position: relative;
-  overflow: hidden;
+.demo-line {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding-bottom: 0.75rem; margin-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
 }
-.demo-box::before {
-  content: '';
-  position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+.demo-wave { display: flex; align-items: center; gap: 2px; height: 18px; flex-shrink: 0; }
+.demo-wave span {
+  width: 2px; border-radius: 1px; background: var(--accent);
+  animation: mini-wave 0.8s ease-in-out infinite;
 }
+.demo-wave span:nth-child(1) { height: 6px; animation-delay: 0s; }
+.demo-wave span:nth-child(2) { height: 12px; animation-delay: 0.15s; }
+.demo-wave span:nth-child(3) { height: 8px; animation-delay: 0.3s; }
+.demo-wave span:nth-child(4) { height: 14px; animation-delay: 0.1s; }
+@keyframes mini-wave {
+  0%, 100% { transform: scaleY(0.5); opacity: 0.4; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+.demo-text { font-size: 1rem; color: var(--text-primary); min-height: 1.4em; }
 .demo-cursor {
-  display: inline-block; width: 2px; height: 1.2em;
+  display: inline-block; width: 2px; height: 1.15em;
   background: var(--accent); vertical-align: text-bottom;
-  animation: cursor-blink 0.8s step-end infinite;
-  margin-left: 1px;
+  animation: cblink 0.7s step-end infinite;
 }
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; } 50% { opacity: 0; }
-}
-.demo-text {
-  font-size: 1.05rem; color: var(--text-primary);
-  min-height: 1.5em; letter-spacing: 0.01em;
-}
+@keyframes cblink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 
-.hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+.hero-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 .btn-primary {
   display: inline-flex; align-items: center; gap: 0.5rem;
-  padding: 0.85rem 2rem; border: none; border-radius: 12px;
+  padding: 0.75rem 1.75rem; border: none; border-radius: 10px;
   background: var(--accent); color: #fff;
-  font-size: 1rem; font-weight: 600; cursor: pointer;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer;
   transition: all 0.3s; font-family: var(--font-body);
-  position: relative; overflow: hidden;
 }
-.btn-primary::after {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.1));
-}
-.btn-primary:hover { background: var(--accent-light); transform: translateY(-2px); box-shadow: 0 8px 30px var(--accent-glow); }
+.btn-primary:hover { background: var(--accent-light); transform: translateY(-1px); box-shadow: 0 6px 24px var(--accent-glow); }
 .btn-secondary {
   display: inline-flex; align-items: center; gap: 0.5rem;
-  padding: 0.85rem 2rem; border: 1px solid var(--border); border-radius: 12px;
-  background: var(--bg-card); color: var(--text-primary);
-  font-size: 1rem; font-weight: 500; cursor: pointer;
-  transition: all 0.3s; font-family: var(--font-body);
+  padding: 0.75rem 1.75rem; border: 1px solid var(--border-subtle);
+  border-radius: 10px; background: transparent;
+  color: var(--text-primary); font-size: 0.95rem;
+  font-weight: 500; cursor: pointer; transition: all 0.3s;
+  font-family: var(--font-body); text-decoration: none;
 }
-.btn-secondary:hover { border-color: var(--text-muted); background: var(--bg-card-hover); }
-
+.btn-secondary:hover { border-color: var(--text-muted); background: var(--bg-surface); }
 .hero-note {
-  margin-top: 1.5rem; font-size: 0.8rem;
+  margin-top: 1.25rem; font-size: 0.78rem;
   color: var(--text-muted); display: flex;
   align-items: center; gap: 0.4rem;
 }
 
-/* ===== Section Common ===== */
-section {
-  padding: 7rem 2rem; position: relative;
+/* macOS Mockup */
+.mac-mockup {
+  width: 320px; border-radius: 12px; overflow: hidden;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.4);
+}
+.mac-titlebar {
+  height: 32px; background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 12px; gap: 6px;
+}
+.mac-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border-subtle); }
+.mac-titlebar-text {
+  flex: 1; text-align: center; font-size: 0.7rem;
+  color: var(--text-muted); font-family: var(--font-body);
+}
+.mac-menubar {
+  height: 28px; background: #1a1a1e;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: flex-end;
+  padding: 0 12px; gap: 10px;
+}
+.mac-menubar-icon { color: var(--text-muted); display: flex; }
+.mac-menubar-icon.active svg { color: var(--accent); }
+.mac-panel {
+  padding: 20px; display: flex; flex-direction: column;
+  align-items: center; gap: 16px; min-height: 180px;
+}
+.mac-status {
+  font-size: 0.8rem; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.mac-status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #EF4444; animation: rec-pulse 1.5s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+.mac-waveform { width: 100%; height: 50px; }
+.mac-waveform svg { width: 100%; height: 100%; }
+.mac-waveform path {
+  fill: none; stroke: var(--accent); stroke-width: 1.5;
+  stroke-linecap: round; opacity: 0.7;
+}
+.mac-waveform path:last-child { stroke: var(--accent-dim); opacity: 0.3; }
+.mac-hint {
+  font-size: 0.72rem; color: var(--text-muted);
+  display: flex; align-items: center; gap: 0.35rem;
+}
+.mac-kbd {
+  padding: 0.15rem 0.4rem; border-radius: 4px;
+  background: var(--bg-raised); border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono); font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+
+/* ===== Proof Bar ===== */
+.proof-bar {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  padding: 1rem 2rem;
+}
+.proof-inner {
   max-width: 1100px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  gap: 2rem; flex-wrap: wrap;
+}
+.proof-item {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.82rem; color: var(--text-secondary);
+}
+.proof-item svg { color: var(--text-muted); flex-shrink: 0; }
+.proof-sep { color: var(--border-subtle); font-size: 0.6rem; }
+
+/* ===== Sections Common ===== */
+.section {
+  padding: 6rem 2rem; max-width: 1100px; margin: 0 auto;
 }
 .section-label {
-  font-size: 0.75rem; font-weight: 700;
+  font-size: 0.7rem; font-weight: 700;
   letter-spacing: 0.15em; text-transform: uppercase;
-  color: var(--accent); margin-bottom: 1rem;
+  color: var(--accent); margin-bottom: 0.75rem;
+  font-family: var(--font-mono);
 }
 .section-title {
-  font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 700; letter-spacing: -0.02em;
-  line-height: 1.2; margin-bottom: 1rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 3.5vw, 2.5rem);
+  font-weight: 700; letter-spacing: -0.03em;
+  line-height: 1.15; margin-bottom: 0.75rem;
 }
 .section-desc {
-  font-size: 1.1rem; color: var(--text-secondary);
-  max-width: 600px; line-height: 1.7;
+  font-size: 1rem; color: var(--text-secondary);
+  max-width: 520px; line-height: 1.7;
 }
 
 /* ===== How It Works ===== */
-.steps-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 2rem; margin-top: 4rem;
-}
-.step-card {
-  padding: 2.5rem 2rem; border-radius: 16px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  text-align: center; position: relative;
-  transition: all 0.4s;
-}
-.step-card:hover {
-  border-color: var(--accent-dark);
-  transform: translateY(-4px);
-  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
-}
-.step-num {
-  font-family: var(--font-display);
-  font-size: 4rem; font-weight: 800;
-  background: linear-gradient(135deg, var(--bg-card), var(--border));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  line-height: 1; margin-bottom: 1.5rem;
-}
-.step-icon {
-  width: 56px; height: 56px; border-radius: 14px;
-  background: var(--accent-glow); border: 1px solid var(--accent-dark);
-  display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 1.5rem; font-size: 1.5rem;
-}
-.step-title {
-  font-size: 1.15rem; font-weight: 600;
-  margin-bottom: 0.75rem;
-}
-.step-desc {
-  font-size: 0.9rem; color: var(--text-secondary);
-  line-height: 1.6;
-}
-
-/* Keyboard Key Style */
-.kbd {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 0.3rem 0.65rem; border-radius: 7px;
-  background: linear-gradient(180deg, var(--bg-card-hover), var(--bg-card));
-  border: 1px solid var(--border);
-  box-shadow: 0 2px 0 var(--border), inset 0 1px 0 rgba(255,255,255,0.05);
-  font-family: var(--font-mono); font-size: 0.8rem;
-  color: var(--text-primary); white-space: nowrap;
-  transition: all 0.15s;
-}
-.kbd-group { display: inline-flex; align-items: center; gap: 0.3rem; }
-.kbd-plus { color: var(--text-muted); font-size: 0.75rem; }
-.step-card:hover .kbd {
-  border-color: var(--accent-dark);
-  box-shadow: 0 2px 0 var(--accent-dark), inset 0 1px 0 rgba(249,115,22,0.1);
-}
-
-/* Step connector arrows */
-.steps-grid::before, .steps-grid::after {
-  content: ''; position: absolute;
-  top: 50%; width: 30px; height: 2px;
-  background: var(--border);
-}
-
-/* ===== Features ===== */
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1.5rem; margin-top: 4rem;
-}
-.feature-card {
-  padding: 2rem; border-radius: 16px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  transition: all 0.4s; position: relative;
-  overflow: hidden;
-}
-.feature-card::before {
-  content: '';
-  position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border), transparent);
-  transition: background 0.4s;
-}
-.feature-card:hover {
-  border-color: var(--accent-dark);
-  transform: translateY(-2px);
-}
-.feature-card:hover::before {
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-}
-.feature-icon {
-  width: 48px; height: 48px; border-radius: 12px;
-  background: var(--accent-glow);
-  border: 1px solid var(--accent-dark);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.3rem; margin-bottom: 1.25rem;
-}
-.feature-title {
-  font-size: 1.1rem; font-weight: 600;
-  margin-bottom: 0.6rem;
-}
-.feature-desc {
-  font-size: 0.9rem; color: var(--text-secondary);
-  line-height: 1.65;
-}
-
-/* ===== Tech Specs ===== */
-.specs-container {
-  display: flex; gap: 4rem; margin-top: 4rem;
+.steps-layout {
+  display: flex; gap: 4rem; margin-top: 3.5rem;
   align-items: flex-start;
 }
-.specs-list { flex: 1; }
-.spec-item {
-  display: flex; align-items: flex-start; gap: 1rem;
-  padding: 1.25rem 0;
-  border-bottom: 1px solid var(--border);
+.steps-timeline { flex: 1; }
+.step {
+  display: flex; gap: 1.25rem; position: relative;
+  padding-bottom: 2.5rem;
 }
-.spec-item:last-child { border-bottom: none; }
-.spec-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--accent); margin-top: 0.5rem;
-  flex-shrink: 0;
+.step:last-child { padding-bottom: 0; }
+.step-line {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0; flex-shrink: 0; width: 24px;
 }
-.spec-label {
-  font-size: 0.95rem; font-weight: 500;
-  margin-bottom: 0.2rem;
+.step-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--accent-dim); background: var(--bg-void);
+  flex-shrink: 0; z-index: 1; transition: all 0.3s;
 }
-.spec-value {
-  font-size: 0.85rem; color: var(--text-secondary);
+.step:hover .step-dot { border-color: var(--accent); background: var(--accent-dim); }
+.step-connector {
+  width: 1px; flex: 1; min-height: 40px;
+  border-left: 1px dashed var(--border-subtle);
 }
-.specs-visual {
-  flex: 1; display: flex; align-items: center; justify-content: center;
+.step-body { flex: 1; padding-top: 0; }
+.step-num {
+  font-family: var(--font-mono); font-size: 0.7rem;
+  color: var(--text-muted); margin-bottom: 0.4rem;
+  letter-spacing: 0.05em;
 }
-.specs-diagram {
-  width: 100%; max-width: 400px; aspect-ratio: 1;
-  position: relative; display: flex;
-  align-items: center; justify-content: center;
-}
-.specs-circle {
-  position: absolute; border-radius: 50%;
-  border: 1px solid var(--border);
-  animation: rotate 30s linear infinite;
-}
-.specs-circle:nth-child(1) { width: 100%; height: 100%; }
-.specs-circle:nth-child(2) { width: 75%; height: 75%; animation-direction: reverse; animation-duration: 25s; }
-.specs-circle:nth-child(3) { width: 50%; height: 50%; animation-duration: 20s; }
-@keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.specs-center {
-  font-family: var(--font-display);
-  font-size: 2.5rem; font-weight: 800;
-  color: var(--accent); z-index: 1;
-}
-.specs-center span {
-  display: block; font-family: var(--font-body);
-  font-size: 0.8rem; color: var(--text-muted);
-  font-weight: 400; margin-top: 0.3rem; text-align: center;
+.step-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; }
+.step-desc { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6; }
+.kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.2rem 0.5rem; border-radius: 5px;
+  background: var(--bg-raised); border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 0 var(--border-subtle);
+  font-family: var(--font-mono); font-size: 0.75rem;
+  color: var(--text-primary); white-space: nowrap;
 }
 
-/* ===== CTA Banner ===== */
-.cta-banner {
-  text-align: center; padding: 6rem 2rem;
-  max-width: 800px; margin: 0 auto;
+/* Steps demo window */
+.steps-demo {
+  flex: 1; position: sticky; top: 8rem;
+}
+.demo-window {
+  border-radius: 10px; overflow: hidden;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+}
+.demo-window-bar {
+  height: 32px; background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 12px; gap: 6px;
+}
+.demo-window-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border-subtle); }
+.demo-window-body {
+  padding: 24px; min-height: 220px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+}
+
+/* ===== Privacy Statement ===== */
+.privacy-section {
+  padding: 5rem 2rem; text-align: center;
+  border-top: 1px solid var(--accent-dim);
+  border-bottom: 1px solid var(--accent-dim);
   position: relative;
 }
-.cta-banner::before {
+.privacy-main {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-weight: 700; letter-spacing: -0.02em;
+  line-height: 1.4; margin-bottom: 0.5rem;
+}
+.privacy-forever {
+  display: block; font-size: clamp(2rem, 4vw, 3rem);
+  color: var(--privacy); margin-top: 0.25rem;
+  font-family: var(--font-display); font-weight: 800;
+}
+.privacy-sub {
+  margin-top: 1.5rem; font-size: 0.85rem;
+  color: var(--text-muted); letter-spacing: 0.05em;
+}
+
+/* ===== Features Bento ===== */
+.bento-grid {
+  display: grid; margin-top: 3.5rem; gap: 1rem;
+  grid-template-columns: 1.2fr 1fr;
+  grid-template-rows: auto auto;
+}
+.bento-card {
+  padding: 2rem; border-radius: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.bento-card:hover {
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  transform: translateY(-2px);
+}
+.bento-card.large { grid-row: span 2; }
+.bento-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--accent-glow); border: 1px solid var(--accent-dim);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-light); margin-bottom: 1.25rem;
+}
+.bento-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; }
+.bento-desc { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.65; }
+.bento-visual {
+  margin-top: 1.5rem; padding: 1.25rem; border-radius: 10px;
+  background: var(--bg-void); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ===== Tech Specs Terminal ===== */
+.terminal {
+  margin-top: 3.5rem; border-radius: 10px; overflow: hidden;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  max-width: 620px;
+}
+.terminal-bar {
+  height: 36px; background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 14px; gap: 7px;
+}
+.terminal-dot { width: 11px; height: 11px; border-radius: 50%; }
+.terminal-dot:nth-child(1) { background: #52525B; }
+.terminal-dot:nth-child(2) { background: #52525B; }
+.terminal-dot:nth-child(3) { background: #52525B; }
+.terminal-title {
+  flex: 1; text-align: center; font-size: 0.72rem;
+  color: var(--text-muted); font-family: var(--font-mono);
+}
+.terminal-body {
+  padding: 1.5rem; font-family: var(--font-mono);
+  font-size: 0.82rem; line-height: 1.9;
+}
+.terminal-prompt { color: var(--success); }
+.terminal-cmd { color: var(--text-primary); }
+.terminal-line { opacity: 0; transition: opacity 0.3s; }
+.terminal-line.visible { opacity: 1; }
+.terminal-key { color: var(--accent-light); display: inline-block; min-width: 100px; }
+.terminal-val { color: var(--text-secondary); }
+.terminal-cursor {
+  display: inline-block; width: 8px; height: 1em;
+  background: var(--text-muted); animation: cblink 0.7s step-end infinite;
+  vertical-align: text-bottom;
+}
+
+/* ===== FAQ ===== */
+.faq-list { margin-top: 3rem; max-width: 680px; }
+.faq-item {
+  border-bottom: 1px solid var(--border);
+}
+.faq-q {
+  width: 100%; padding: 1.25rem 0;
+  background: none; border: none; color: var(--text-primary);
+  font-size: 0.95rem; font-weight: 500; text-align: left;
+  cursor: pointer; display: flex; justify-content: space-between;
+  align-items: center; font-family: var(--font-body);
+  transition: color 0.3s;
+}
+.faq-q:hover { color: var(--accent-light); }
+.faq-arrow {
+  transition: transform 0.3s; color: var(--text-muted);
+  flex-shrink: 0;
+}
+.faq-item.open .faq-arrow { transform: rotate(90deg); }
+.faq-a {
+  max-height: 0; overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              padding 0.3s;
+  padding: 0 0 0 0;
+}
+.faq-item.open .faq-a { max-height: 200px; padding-bottom: 1.25rem; }
+.faq-a-inner {
+  font-size: 0.88rem; color: var(--text-secondary); line-height: 1.7;
+}
+
+/* ===== CTA ===== */
+.cta {
+  text-align: center; padding: 6rem 2rem;
+  max-width: 700px; margin: 0 auto; position: relative;
+}
+.cta::before {
   content: '';
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-  pointer-events: none;
+  position: absolute; top: 0; left: 10%; right: 10%; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-dim), var(--privacy), var(--accent-dim), transparent);
 }
-.cta-title {
-  font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 700; margin-bottom: 1rem;
-  letter-spacing: -0.02em; position: relative;
+.cta-tagline {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 2vw, 1.4rem);
+  font-weight: 600; letter-spacing: 0.02em;
+  color: var(--text-secondary); margin-bottom: 2rem;
 }
-.cta-desc {
-  font-size: 1.1rem; color: var(--text-secondary);
-  margin-bottom: 2.5rem; position: relative;
+.cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+.cta-note {
+  margin-top: 1.25rem; font-size: 0.78rem; color: var(--text-muted);
 }
 
 /* ===== Footer ===== */
 footer {
-  border-top: 1px solid var(--border);
-  padding: 3rem 2rem; text-align: center;
+  border-top: 1px solid var(--border); padding: 2rem;
 }
 .footer-inner {
   max-width: 1100px; margin: 0 auto;
@@ -436,345 +485,584 @@ footer {
 }
 .footer-brand {
   font-family: var(--font-display);
-  font-size: 1.1rem; font-weight: 700;
-  color: var(--text-secondary);
+  font-size: 1rem; font-weight: 700; color: var(--text-muted);
 }
-.footer-text { font-size: 0.8rem; color: var(--text-muted); }
-.footer-links { display: flex; gap: 1.5rem; }
+.footer-copy { font-size: 0.75rem; color: var(--text-muted); }
+.footer-links { display: flex; gap: 1.25rem; }
 .footer-links a {
-  font-size: 0.8rem; color: var(--text-muted);
+  font-size: 0.78rem; color: var(--text-muted);
   text-decoration: none; transition: color 0.3s;
 }
-.footer-links a:hover { color: var(--accent); }
+.footer-links a:hover { color: var(--accent-light); }
 
-/* ===== Scroll Reveal ===== */
+/* ===== Reveal ===== */
 .reveal {
-  opacity: 0; transform: translateY(30px);
-  transition: opacity 0.8s ease, transform 0.8s ease;
+  opacity: 0; transform: translateY(16px);
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .reveal.visible { opacity: 1; transform: translateY(0); }
-.reveal-delay-1 { transition-delay: 0.1s; }
-.reveal-delay-2 { transition-delay: 0.2s; }
-.reveal-delay-3 { transition-delay: 0.3s; }
-.reveal-delay-4 { transition-delay: 0.4s; }
+.rd1 { transition-delay: 0.1s; }
+.rd2 { transition-delay: 0.2s; }
+.rd3 { transition-delay: 0.3s; }
+.rd4 { transition-delay: 0.4s; }
 
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
-  nav { padding: 1rem 1.25rem; }
-  .steps-grid { grid-template-columns: 1fr; gap: 1.25rem; }
-  .features-grid { grid-template-columns: 1fr; }
-  .specs-container { flex-direction: column; gap: 3rem; }
-  .specs-visual { order: -1; }
-  .hero { padding: 5rem 1.5rem 3rem; }
-  .footer-inner { flex-direction: column; gap: 1rem; }
-  .nav-cta { display: none; }
+  nav { padding: 0.85rem 1.25rem; }
+  .nav-link { display: none; }
+  .hero { flex-direction: column; gap: 2.5rem; padding: 5.5rem 1.5rem 3rem; min-height: auto; }
+  .hero-visual { display: none; }
+  .hero-title { font-size: clamp(2.2rem, 8vw, 3rem); }
+  .steps-layout { flex-direction: column; gap: 2rem; }
+  .steps-demo { position: static; }
+  .bento-grid { grid-template-columns: 1fr; }
+  .bento-card.large { grid-row: span 1; }
+  .proof-inner { gap: 1rem; }
+  .proof-sep { display: none; }
+  .footer-inner { flex-direction: column; gap: 0.75rem; text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .demo-wave span { animation: none; }
+  .mac-status-dot { animation: none; }
+  .demo-cursor, .terminal-cursor { animation: none; opacity: 1; }
 }
 </style>
 </head>
 <body>
 
-<!-- Navigation -->
+<!-- Nav -->
 <nav id="navbar">
-  <div class="nav-logo">VowKy</div>
+  <a class="nav-brand" href="#">VowKy</a>
   <div class="nav-right">
     <div class="lang-switch">
       <button class="lang-btn active" data-lang="zh" onclick="switchLang('zh')">中文</button>
       <button class="lang-btn" data-lang="en" onclick="switchLang('en')">EN</button>
     </div>
-    <button class="nav-cta btn-primary" data-zh="下载" data-en="Download" style="padding:0.5rem 1.2rem; font-size:0.85rem;">下载</button>
+    <a class="nav-link" href="https://github.com" target="_blank">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+      GitHub
+    </a>
+    <button class="nav-cta" data-i18n="nav.download">下载</button>
   </div>
 </nav>
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-badge">
-    <span data-zh="macOS 原生应用" data-en="Native macOS App">macOS 原生应用</span>
+  <div class="hero-content">
+    <h1 class="hero-title">
+      <span data-i18n="hero.t1">你的声音，</span><br>
+      <span class="unlock" data-i18n="hero.t2">解锁文字。</span>
+    </h1>
+    <p class="hero-sub" data-i18n="hero.sub">按下 ⌥ Space，说话，文字直达光标位置。完全离线识别，隐私无忧。</p>
+
+    <div class="demo-line">
+      <div class="demo-wave"><span></span><span></span><span></span><span></span></div>
+      <div class="demo-text" id="demoText"><span class="demo-cursor"></span></div>
+    </div>
+
+    <div class="hero-actions">
+      <button class="btn-primary" data-i18n="hero.dl">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        免费下载
+      </button>
+      <a class="btn-secondary" href="https://github.com" target="_blank" data-i18n="hero.src">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        查看源码
+      </a>
+    </div>
+    <p class="hero-note">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span data-i18n="hero.note">macOS 13.0+ · 完全免费 · 开源</span>
+    </p>
   </div>
 
-  <h1 class="hero-title">
-    <span data-zh="用声音" data-en="Your Voice,">用声音</span><br>
-    <span data-zh="解放双手" data-en="Your Keyboard" class="brand">解放双手</span>
-  </h1>
-  <p class="hero-subtitle" data-zh="按下快捷键，说话，文字即刻出现在光标处。完全离线识别，无需联网，隐私无忧。" data-en="Press a hotkey, speak, and text appears at your cursor instantly. Fully offline recognition, no internet needed, complete privacy.">
-    按下快捷键，说话，文字即刻出现在光标处。完全离线识别，无需联网，隐私无忧。
-  </p>
-
-  <!-- Waveform Animation -->
-  <div class="waveform-container" id="waveform"></div>
-
-  <!-- Typing Demo -->
-  <div class="demo-box">
-    <div class="demo-text" id="demo-text"><span class="demo-cursor"></span></div>
+  <div class="hero-visual">
+    <div class="mac-mockup">
+      <div class="mac-titlebar">
+        <div class="mac-dot"></div><div class="mac-dot"></div><div class="mac-dot"></div>
+        <span class="mac-titlebar-text">VowKy</span>
+      </div>
+      <div class="mac-menubar">
+        <div class="mac-menubar-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>
+        </div>
+        <div class="mac-menubar-icon active">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+        </div>
+        <div class="mac-menubar-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+        </div>
+      </div>
+      <div class="mac-panel">
+        <div class="mac-status">
+          <div class="mac-status-dot"></div>
+          <span data-i18n="mock.status">正在录音...</span>
+        </div>
+        <div class="mac-waveform">
+          <svg viewBox="0 0 280 50" preserveAspectRatio="none">
+            <path id="wavePath1" d="M0,25 L280,25"/>
+            <path id="wavePath2" d="M0,25 L280,25"/>
+          </svg>
+        </div>
+        <div class="mac-hint">
+          <span data-i18n="mock.hint">再次按下</span>
+          <span class="mac-kbd">⌥</span><span class="mac-kbd">Space</span>
+          <span data-i18n="mock.hint2">结束录音</span>
+        </div>
+      </div>
+    </div>
   </div>
-
-  <div class="hero-actions">
-    <button class="btn-primary" data-zh="⬇ 免费下载" data-en="⬇ Free Download">⬇ 免费下载</button>
-    <button class="btn-secondary" data-zh="了解更多 ↓" data-en="Learn More ↓" onclick="document.getElementById('how').scrollIntoView()">了解更多 ↓</button>
-  </div>
-  <p class="hero-note">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-    <span data-zh="macOS 13.0+ · 完全免费 · 开源" data-en="macOS 13.0+ · Completely Free · Open Source">macOS 13.0+ · 完全免费 · 开源</span>
-  </p>
 </section>
+
+<!-- Proof Bar -->
+<div class="proof-bar">
+  <div class="proof-inner">
+    <div class="proof-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span data-i18n="proof.1">100% 离线</span>
+    </div>
+    <span class="proof-sep">|</span>
+    <div class="proof-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span data-i18n="proof.2">开源代码</span>
+    </div>
+    <span class="proof-sep">|</span>
+    <div class="proof-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      <span data-i18n="proof.3">macOS 原生</span>
+    </div>
+    <span class="proof-sep">|</span>
+    <div class="proof-item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      <span data-i18n="proof.4">&lt; 50MB</span>
+    </div>
+  </div>
+</div>
 
 <!-- How It Works -->
-<section id="how">
-  <span class="section-label reveal" data-zh="使用方式" data-en="HOW IT WORKS">使用方式</span>
-  <h2 class="section-title reveal" data-zh="三步，仅此而已" data-en="Three Steps. That's It.">三步，仅此而已</h2>
-  <p class="section-desc reveal" data-zh="没有复杂的设置，没有账号注册，没有云端依赖。安装即用。" data-en="No complex setup, no account registration, no cloud dependency. Install and go.">没有复杂的设置，没有账号注册，没有云端依赖。安装即用。</p>
+<section class="section" id="how">
+  <span class="section-label reveal" data-i18n="how.label">HOW IT WORKS</span>
+  <h2 class="section-title reveal" data-i18n="how.title">三步，仅此而已</h2>
+  <p class="section-desc reveal" data-i18n="how.desc">没有复杂的设置，没有账号注册。安装即用。</p>
 
-  <div class="steps-grid">
-    <div class="step-card reveal reveal-delay-1">
-      <div class="step-num">1</div>
-      <div class="step-icon">⌨️</div>
-      <h3 class="step-title" data-zh="按下快捷键" data-en="Press Hotkey">按下快捷键</h3>
-      <p class="step-desc">
-        <span data-zh="在任何应用中按下" data-en="Press">在任何应用中按下</span>
-        <span class="kbd-group"><span class="kbd">⌥ Option</span><span class="kbd-plus">+</span><span class="kbd">Space</span></span>
-      </p>
+  <div class="steps-layout">
+    <div class="steps-timeline">
+      <div class="step reveal rd1">
+        <div class="step-line"><div class="step-dot"></div><div class="step-connector"></div></div>
+        <div class="step-body">
+          <div class="step-num">STEP 01</div>
+          <h3 class="step-title" data-i18n="s1.title">按下快捷键</h3>
+          <p class="step-desc">
+            <span data-i18n="s1.desc">在任何应用中按下</span>
+            <span class="kbd">⌥ Option</span> + <span class="kbd">Space</span>
+          </p>
+        </div>
+      </div>
+      <div class="step reveal rd2">
+        <div class="step-line"><div class="step-dot"></div><div class="step-connector"></div></div>
+        <div class="step-body">
+          <div class="step-num">STEP 02</div>
+          <h3 class="step-title" data-i18n="s2.title">说话</h3>
+          <p class="step-desc" data-i18n="s2.desc">用自然语速说出内容，VowKy 实时聆听并识别。</p>
+        </div>
+      </div>
+      <div class="step reveal rd3">
+        <div class="step-line"><div class="step-dot"></div></div>
+        <div class="step-body">
+          <div class="step-num">STEP 03</div>
+          <h3 class="step-title" data-i18n="s3.title">文字直达光标</h3>
+          <p class="step-desc" data-i18n="s3.desc">再次按下快捷键，识别完成的文字直接输入到光标位置。不经剪贴板。</p>
+        </div>
+      </div>
     </div>
-    <div class="step-card reveal reveal-delay-2">
-      <div class="step-num">2</div>
-      <div class="step-icon">🎙️</div>
-      <h3 class="step-title" data-zh="说话" data-en="Speak">说话</h3>
-      <p class="step-desc" data-zh="用自然的语速说出你想输入的内容，VowKy 会实时聆听。" data-en="Speak naturally at your own pace. VowKy listens in real time.">用自然的语速说出你想输入的内容，VowKy 会实时聆听。</p>
-    </div>
-    <div class="step-card reveal reveal-delay-3">
-      <div class="step-num">3</div>
-      <div class="step-icon">✨</div>
-      <h3 class="step-title" data-zh="文字自动输入" data-en="Text Auto-Inserted">文字自动输入</h3>
-      <p class="step-desc" data-zh="再次按下快捷键，识别完成的文字直接输入到光标位置。无需粘贴。" data-en="Press the hotkey again, and recognized text is inserted right at your cursor. No pasting needed.">再次按下快捷键，识别完成的文字直接输入到光标位置。无需粘贴。</p>
+
+    <div class="steps-demo reveal rd2">
+      <div class="demo-window">
+        <div class="demo-window-bar">
+          <div class="demo-window-dot"></div>
+          <div class="demo-window-dot"></div>
+          <div class="demo-window-dot"></div>
+        </div>
+        <div class="demo-window-body">
+          <svg id="demoWave" width="200" height="60" viewBox="0 0 200 60">
+            <path fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round" opacity="0.6" id="demoWavePath"/>
+          </svg>
+          <div style="font-size:0.8rem; color:var(--text-muted); text-align:center;" data-i18n="demo.hint">声波可视化演示</div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- Features -->
-<section id="features">
-  <span class="section-label reveal" data-zh="核心特性" data-en="FEATURES">核心特性</span>
-  <h2 class="section-title reveal" data-zh="为隐私而生" data-en="Built for Privacy">为隐私而生</h2>
-  <p class="section-desc reveal" data-zh="所有语音处理都在你的 Mac 上完成，没有任何数据离开你的电脑。" data-en="All voice processing happens on your Mac. No data ever leaves your computer.">所有语音处理都在你的 Mac 上完成，没有任何数据离开你的电脑。</p>
+<!-- Privacy Statement -->
+<div class="privacy-section">
+  <p class="privacy-main reveal">
+    <span data-i18n="priv.main">你的声音永远不会离开你的 Mac。</span>
+    <span class="privacy-forever reveal rd1" data-i18n="priv.forever">永远。</span>
+  </p>
+  <p class="privacy-sub reveal rd2" data-i18n="priv.sub">零网络请求 · 零云端处理 · 零数据上传</p>
+</div>
 
-  <div class="features-grid">
-    <div class="feature-card reveal reveal-delay-1">
-      <div class="feature-icon">🔒</div>
-      <h3 class="feature-title" data-zh="完全离线" data-en="Fully Offline">完全离线</h3>
-      <p class="feature-desc" data-zh="基于 Sherpa-ONNX 引擎，语音识别完全在本地运行。断网也能用，飞行模式也能用。" data-en="Powered by Sherpa-ONNX engine, speech recognition runs entirely locally. Works offline, even in airplane mode.">基于 Sherpa-ONNX 引擎，语音识别完全在本地运行。断网也能用，飞行模式也能用。</p>
+<!-- Features -->
+<section class="section" id="features">
+  <span class="section-label reveal" data-i18n="feat.label">FEATURES</span>
+  <h2 class="section-title reveal" data-i18n="feat.title">为隐私而生</h2>
+  <p class="section-desc reveal" data-i18n="feat.desc">所有语音处理都在你的 Mac 上完成。</p>
+
+  <div class="bento-grid">
+    <div class="bento-card large reveal rd1">
+      <div class="bento-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+      </div>
+      <h3 class="bento-title" data-i18n="f1.title">完全离线</h3>
+      <p class="bento-desc" data-i18n="f1.desc">基于 Sherpa-ONNX 引擎，语音识别完全在本地运行。断网能用，飞行模式也能用。你的声音数据从不离开这台电脑。</p>
+      <div class="bento-visual">
+        <div style="display:flex; align-items:center; gap:1.5rem; color:var(--text-muted); font-size:0.8rem; font-family:var(--font-mono);">
+          <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+            <span data-i18n="f1.v1">语音</span>
+          </div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dim)" stroke-width="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+            <span data-i18n="f1.v2">本地 AI</span>
+          </div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-dim)" stroke-width="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+            <span data-i18n="f1.v3">文字</span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="feature-card reveal reveal-delay-2">
-      <div class="feature-icon">🌍</div>
-      <h3 class="feature-title" data-zh="全局输入" data-en="Global Input">全局输入</h3>
-      <p class="feature-desc" data-zh="在任何应用的任何输入框中使用。浏览器、编辑器、聊天软件、笔记本——无处不在。" data-en="Use it in any text field across any application. Browsers, editors, chat apps, notes — everywhere.">在任何应用的任何输入框中使用。浏览器、编辑器、聊天软件、笔记本——无处不在。</p>
+
+    <div class="bento-card reveal rd2">
+      <div class="bento-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </div>
+      <h3 class="bento-title" data-i18n="f2.title">全局输入</h3>
+      <p class="bento-desc" data-i18n="f2.desc">在任何应用的任何输入框中使用。浏览器、编辑器、聊天软件——无处不在。</p>
     </div>
-    <div class="feature-card reveal reveal-delay-3">
-      <div class="feature-icon">⚡</div>
-      <h3 class="feature-title" data-zh="即时响应" data-en="Instant Response">即时响应</h3>
-      <p class="feature-desc" data-zh="本地推理，毫秒级响应。不依赖网络延迟，说完即得。自动标点符号，省去手动编辑。" data-en="Local inference with millisecond response. No network latency. Automatic punctuation saves manual editing.">本地推理，毫秒级响应。不依赖网络延迟，说完即得。自动标点符号，省去手动编辑。</p>
+
+    <div class="bento-card reveal rd3">
+      <div class="bento-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      </div>
+      <h3 class="bento-title" data-i18n="f3.title">即时响应</h3>
+      <p class="bento-desc" data-i18n="f3.desc">本地推理，毫秒级响应。自动补全标点符号。</p>
     </div>
-    <div class="feature-card reveal reveal-delay-4">
-      <div class="feature-icon">🎯</div>
-      <h3 class="feature-title" data-zh="极简设计" data-en="Minimal Design">极简设计</h3>
-      <p class="feature-desc" data-zh="菜单栏常驻，不占 Dock 栏。自定义快捷键，按 Escape 随时取消。历史记录可查。" data-en="Lives in the menu bar, no Dock icon. Customizable hotkey, press Escape to cancel anytime. Full history search.">菜单栏常驻，不占 Dock 栏。自定义快捷键，按 Escape 随时取消。历史记录可查。</p>
+
+    <div class="bento-card reveal rd1">
+      <div class="bento-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+      </div>
+      <h3 class="bento-title" data-i18n="f4.title">极简设计</h3>
+      <p class="bento-desc" data-i18n="f4.desc">菜单栏常驻，不占 Dock。自定义快捷键，Escape 随时取消。历史记录可查。</p>
     </div>
   </div>
 </section>
 
 <!-- Tech Specs -->
-<section id="specs">
-  <span class="section-label reveal" data-zh="技术细节" data-en="TECH SPECS">技术细节</span>
-  <h2 class="section-title reveal" data-zh="引擎盖之下" data-en="Under the Hood">引擎盖之下</h2>
+<section class="section" id="specs">
+  <span class="section-label reveal" data-i18n="spec.label">UNDER THE HOOD</span>
+  <h2 class="section-title reveal" data-i18n="spec.title">引擎盖之下</h2>
 
-  <div class="specs-container">
-    <div class="specs-list">
-      <div class="spec-item reveal reveal-delay-1">
-        <div class="spec-dot"></div>
-        <div>
-          <div class="spec-label" data-zh="语音引擎" data-en="Speech Engine">语音引擎</div>
-          <div class="spec-value">Sherpa-ONNX Paraformer</div>
-        </div>
-      </div>
-      <div class="spec-item reveal reveal-delay-2">
-        <div class="spec-dot"></div>
-        <div>
-          <div class="spec-label" data-zh="标点恢复" data-en="Punctuation">标点恢复</div>
-          <div class="spec-value">CT-Transformer</div>
-        </div>
-      </div>
-      <div class="spec-item reveal reveal-delay-1">
-        <div class="spec-dot"></div>
-        <div>
-          <div class="spec-label" data-zh="音频采集" data-en="Audio Capture">音频采集</div>
-          <div class="spec-value">AVAudioEngine · 16kHz mono Float32</div>
-        </div>
-      </div>
-      <div class="spec-item reveal reveal-delay-2">
-        <div class="spec-dot"></div>
-        <div>
-          <div class="spec-label" data-zh="文字输出" data-en="Text Output">文字输出</div>
-          <div class="spec-value" data-zh="CGEvent 键盘模拟（非剪贴板）" data-en="CGEvent keyboard simulation (no clipboard)">CGEvent 键盘模拟（非剪贴板）</div>
-        </div>
-      </div>
-      <div class="spec-item reveal reveal-delay-3">
-        <div class="spec-dot"></div>
-        <div>
-          <div class="spec-label" data-zh="历史存储" data-en="History Storage">历史存储</div>
-          <div class="spec-value">SQLite3</div>
-        </div>
-      </div>
-      <div class="spec-item reveal reveal-delay-4">
-        <div class="spec-dot"></div>
-        <div>
-          <div class="spec-label" data-zh="系统要求" data-en="System Requirements">系统要求</div>
-          <div class="spec-value">macOS 13.0 Ventura+</div>
-        </div>
-      </div>
+  <div class="terminal reveal rd1" id="terminal">
+    <div class="terminal-bar">
+      <div class="terminal-dot"></div>
+      <div class="terminal-dot"></div>
+      <div class="terminal-dot"></div>
+      <span class="terminal-title">vowky --info</span>
     </div>
-    <div class="specs-visual reveal">
-      <div class="specs-diagram">
-        <div class="specs-circle"></div>
-        <div class="specs-circle"></div>
-        <div class="specs-circle"></div>
-        <div class="specs-center" data-zh="100%<span>本地处理</span>" data-en="100%<span>Local</span>">100%<span>本地处理</span></div>
-      </div>
+    <div class="terminal-body">
+      <div><span class="terminal-prompt">$</span> <span class="terminal-cmd">vowky --info</span></div>
+      <br>
+      <div class="terminal-line" data-idx="0"><span class="terminal-key">engine</span> <span class="terminal-val">Sherpa-ONNX Paraformer</span></div>
+      <div class="terminal-line" data-idx="1"><span class="terminal-key">punct</span> <span class="terminal-val">CT-Transformer</span></div>
+      <div class="terminal-line" data-idx="2"><span class="terminal-key">audio</span> <span class="terminal-val">AVAudioEngine · 16kHz mono Float32</span></div>
+      <div class="terminal-line" data-idx="3"><span class="terminal-key" data-i18n="spec.output">output</span> <span class="terminal-val" data-i18n="spec.output.v">CGEvent 键盘模拟（非剪贴板）</span></div>
+      <div class="terminal-line" data-idx="4"><span class="terminal-key">storage</span> <span class="terminal-val">SQLite3</span></div>
+      <div class="terminal-line" data-idx="5"><span class="terminal-key">requires</span> <span class="terminal-val">macOS 13.0 Ventura+</span></div>
+      <div class="terminal-line" data-idx="6"><span class="terminal-key" data-i18n="spec.privacy">privacy</span> <span class="terminal-val" data-i18n="spec.privacy.v">100% 本地处理</span></div>
+      <br>
+      <div class="terminal-line" data-idx="7"><span class="terminal-cursor"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" id="faq">
+  <span class="section-label reveal" data-i18n="faq.label">FAQ</span>
+  <h2 class="section-title reveal" data-i18n="faq.title">常见问题</h2>
+
+  <div class="faq-list">
+    <div class="faq-item reveal rd1">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        <span data-i18n="q1.q">VowKy 支持哪些语言？</span>
+        <svg class="faq-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="faq-a"><p class="faq-a-inner" data-i18n="q1.a">目前支持中文普通话识别，基于 Paraformer 模型。未来将支持更多语言。</p></div>
+    </div>
+    <div class="faq-item reveal rd2">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        <span data-i18n="q2.q">需要联网吗？</span>
+        <svg class="faq-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="faq-a"><p class="faq-a-inner" data-i18n="q2.a">完全不需要。所有语音识别在本地完成，即使在飞行模式下也能正常使用。</p></div>
+    </div>
+    <div class="faq-item reveal rd3">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        <span data-i18n="q3.q">和 macOS 自带听写有什么区别？</span>
+        <svg class="faq-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="faq-a"><p class="faq-a-inner" data-i18n="q3.a">macOS 自带听写需要联网（增强版除外），且使用剪贴板粘贴文字。VowKy 完全离线，通过键盘模拟直接输入，不占用剪贴板。</p></div>
+    </div>
+    <div class="faq-item reveal rd4">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        <span data-i18n="q4.q">支持 Apple Silicon 吗？</span>
+        <svg class="faq-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="faq-a"><p class="faq-a-inner" data-i18n="q4.a">完全支持。VowKy 原生适配 Apple Silicon (M1/M2/M3/M4) 和 Intel Mac。</p></div>
+    </div>
+    <div class="faq-item reveal rd1">
+      <button class="faq-q" onclick="toggleFaq(this)">
+        <span data-i18n="q5.q">快捷键可以自定义吗？</span>
+        <svg class="faq-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="faq-a"><p class="faq-a-inner" data-i18n="q5.a">可以。在菜单栏设置中自定义触发快捷键，支持各种修饰键组合。</p></div>
     </div>
   </div>
 </section>
 
 <!-- CTA -->
-<section class="cta-banner">
-  <h2 class="cta-title reveal" data-zh="准备好解放双手了吗？" data-en="Ready to Free Your Hands?">准备好解放双手了吗？</h2>
-  <p class="cta-desc reveal" data-zh="下载 VowKy，体验最纯粹的语音输入。" data-en="Download VowKy and experience the purest voice input.">下载 VowKy，体验最纯粹的语音输入。</p>
-  <div class="reveal reveal-delay-1">
-    <button class="btn-primary" style="font-size:1.1rem; padding:1rem 2.5rem;" data-zh="⬇ 免费下载 VowKy" data-en="⬇ Download VowKy Free">⬇ 免费下载 VowKy</button>
+<section class="cta">
+  <p class="cta-tagline reveal">Your Voice. Your Mac. Your Data.</p>
+  <div class="cta-actions reveal rd1">
+    <button class="btn-primary" data-i18n="cta.dl" style="padding:0.85rem 2.25rem; font-size:1rem;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      免费下载 VowKy
+    </button>
+    <a class="btn-secondary" href="https://github.com" target="_blank" data-i18n="cta.src" style="padding:0.85rem 2.25rem; font-size:1rem;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+      查看源码
+    </a>
   </div>
+  <p class="cta-note" data-i18n="cta.note">macOS 13.0+ · 完全免费 · 开源</p>
 </section>
 
 <!-- Footer -->
 <footer>
   <div class="footer-inner">
-    <div class="footer-brand">VowKy</div>
-    <div class="footer-text">© 2025 VowKy. <span data-zh="用声音，释放生产力。" data-en="Voice-powered productivity.">用声音，释放生产力。</span></div>
+    <span class="footer-brand">VowKy</span>
+    <span class="footer-copy">© 2025 VowKy</span>
     <div class="footer-links">
-      <a href="https://github.com" data-zh="GitHub" data-en="GitHub">GitHub</a>
-      <a href="#" data-zh="隐私政策" data-en="Privacy">隐私政策</a>
+      <a href="https://github.com" target="_blank">GitHub</a>
+      <a href="#" data-i18n="footer.privacy">隐私政策</a>
     </div>
   </div>
 </footer>
 
 <script>
-// ===== Generate Waveform Bars =====
-(function() {
-  const container = document.getElementById('waveform');
-  const barCount = 48;
-  for (let i = 0; i < barCount; i++) {
-    const bar = document.createElement('div');
-    bar.className = 'wave-bar';
-    const distance = Math.abs(i - barCount / 2) / (barCount / 2);
-    const maxH = 60 - distance * 45;
-    bar.style.setProperty('--h', maxH + 'px');
-    bar.style.animationDelay = (i * 0.06) + 's';
-    container.appendChild(bar);
+// ===== i18n =====
+const i18n = {
+  zh: {
+    'nav.download': '下载',
+    'hero.t1': '你的声音，', 'hero.t2': '解锁文字。',
+    'hero.sub': '按下 ⌥ Space，说话，文字直达光标位置。完全离线识别，隐私无忧。',
+    'hero.dl': '免费下载', 'hero.src': '查看源码',
+    'hero.note': 'macOS 13.0+ · 完全免费 · 开源',
+    'mock.status': '正在录音...', 'mock.hint': '再次按下', 'mock.hint2': '结束录音',
+    'proof.1': '100% 离线', 'proof.2': '开源代码', 'proof.3': 'macOS 原生', 'proof.4': '< 50MB',
+    'how.label': '使用方式', 'how.title': '三步，仅此而已',
+    'how.desc': '没有复杂的设置，没有账号注册。安装即用。',
+    's1.title': '按下快捷键', 's1.desc': '在任何应用中按下',
+    's2.title': '说话', 's2.desc': '用自然语速说出内容，VowKy 实时聆听并识别。',
+    's3.title': '文字直达光标', 's3.desc': '再次按下快捷键，识别完成的文字直接输入到光标位置。不经剪贴板。',
+    'demo.hint': '声波可视化演示',
+    'priv.main': '你的声音永远不会离开你的 Mac。', 'priv.forever': '永远。',
+    'priv.sub': '零网络请求 · 零云端处理 · 零数据上传',
+    'feat.label': '核心特性', 'feat.title': '为隐私而生',
+    'feat.desc': '所有语音处理都在你的 Mac 上完成。',
+    'f1.title': '完全离线', 'f1.desc': '基于 Sherpa-ONNX 引擎，语音识别完全在本地运行。断网能用，飞行模式也能用。你的声音数据从不离开这台电脑。',
+    'f1.v1': '语音', 'f1.v2': '本地 AI', 'f1.v3': '文字',
+    'f2.title': '全局输入', 'f2.desc': '在任何应用的任何输入框中使用。浏览器、编辑器、聊天软件——无处不在。',
+    'f3.title': '即时响应', 'f3.desc': '本地推理，毫秒级响应。自动补全标点符号。',
+    'f4.title': '极简设计', 'f4.desc': '菜单栏常驻，不占 Dock。自定义快捷键，Escape 随时取消。历史记录可查。',
+    'spec.label': '技术细节', 'spec.title': '引擎盖之下',
+    'spec.output': 'output', 'spec.output.v': 'CGEvent 键盘模拟（非剪贴板）',
+    'spec.privacy': 'privacy', 'spec.privacy.v': '100% 本地处理',
+    'faq.label': '常见问题', 'faq.title': '常见问题',
+    'q1.q': 'VowKy 支持哪些语言？', 'q1.a': '目前支持中文普通话识别，基于 Paraformer 模型。未来将支持更多语言。',
+    'q2.q': '需要联网吗？', 'q2.a': '完全不需要。所有语音识别在本地完成，即使在飞行模式下也能正常使用。',
+    'q3.q': '和 macOS 自带听写有什么区别？', 'q3.a': 'macOS 自带听写需要联网（增强版除外），且使用剪贴板粘贴文字。VowKy 完全离线，通过键盘模拟直接输入，不占用剪贴板。',
+    'q4.q': '支持 Apple Silicon 吗？', 'q4.a': '完全支持。VowKy 原生适配 Apple Silicon (M1/M2/M3/M4) 和 Intel Mac。',
+    'q5.q': '快捷键可以自定义吗？', 'q5.a': '可以。在菜单栏设置中自定义触发快捷键，支持各种修饰键组合。',
+    'cta.dl': '免费下载 VowKy', 'cta.src': '查看源码', 'cta.note': 'macOS 13.0+ · 完全免费 · 开源',
+    'footer.privacy': '隐私政策',
+  },
+  en: {
+    'nav.download': 'Download',
+    'hero.t1': 'Your voice,', 'hero.t2': 'unlocked.',
+    'hero.sub': 'Press ⌥ Space, speak, and text lands at your cursor. Fully offline. Complete privacy.',
+    'hero.dl': 'Free Download', 'hero.src': 'View Source',
+    'hero.note': 'macOS 13.0+ · Free · Open Source',
+    'mock.status': 'Recording...', 'mock.hint': 'Press', 'mock.hint2': 'again to stop',
+    'proof.1': '100% Offline', 'proof.2': 'Open Source', 'proof.3': 'Native macOS', 'proof.4': '< 50MB',
+    'how.label': 'HOW IT WORKS', 'how.title': 'Three steps. That\'s it.',
+    'how.desc': 'No setup, no account, no cloud. Install and go.',
+    's1.title': 'Press Hotkey', 's1.desc': 'Press',
+    's2.title': 'Speak', 's2.desc': 'Speak naturally. VowKy listens and recognizes in real time.',
+    's3.title': 'Text at Cursor', 's3.desc': 'Press the hotkey again. Recognized text goes right to your cursor. No clipboard.',
+    'demo.hint': 'Waveform visualization',
+    'priv.main': 'Your voice never leaves your Mac.', 'priv.forever': 'Ever.',
+    'priv.sub': 'Zero network requests · Zero cloud processing · Zero data uploads',
+    'feat.label': 'FEATURES', 'feat.title': 'Built for Privacy',
+    'feat.desc': 'All voice processing happens on your Mac.',
+    'f1.title': 'Fully Offline', 'f1.desc': 'Powered by Sherpa-ONNX engine. Works without internet, even in airplane mode. Your voice data never leaves this machine.',
+    'f1.v1': 'Voice', 'f1.v2': 'Local AI', 'f1.v3': 'Text',
+    'f2.title': 'Global Input', 'f2.desc': 'Works in any text field across any app. Browsers, editors, chat — everywhere.',
+    'f3.title': 'Instant', 'f3.desc': 'Local inference, millisecond response. Auto punctuation.',
+    'f4.title': 'Minimal', 'f4.desc': 'Menu bar only, no Dock icon. Custom hotkey. Escape to cancel. Full history.',
+    'spec.label': 'UNDER THE HOOD', 'spec.title': 'Under the Hood',
+    'spec.output': 'output', 'spec.output.v': 'CGEvent keyboard sim (no clipboard)',
+    'spec.privacy': 'privacy', 'spec.privacy.v': '100% local processing',
+    'faq.label': 'FAQ', 'faq.title': 'Frequently Asked',
+    'q1.q': 'What languages are supported?', 'q1.a': 'Currently supports Mandarin Chinese via the Paraformer model. More languages coming soon.',
+    'q2.q': 'Does it need internet?', 'q2.a': 'Not at all. All recognition is local. Works even in airplane mode.',
+    'q3.q': 'How is it different from macOS Dictation?', 'q3.a': 'macOS Dictation requires internet (except Enhanced mode) and uses clipboard. VowKy is fully offline and inserts via keyboard simulation — no clipboard involved.',
+    'q4.q': 'Apple Silicon support?', 'q4.a': 'Fully native on Apple Silicon (M1/M2/M3/M4) and Intel Macs.',
+    'q5.q': 'Can I customize the hotkey?', 'q5.a': 'Yes. Set your preferred hotkey in the menu bar settings. Any modifier key combo works.',
+    'cta.dl': 'Download VowKy Free', 'cta.src': 'View Source', 'cta.note': 'macOS 13.0+ · Free · Open Source',
+    'footer.privacy': 'Privacy',
   }
+};
+
+let currentLang = 'zh';
+
+function switchLang(lang) {
+  currentLang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === lang));
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (i18n[lang][key]) el.textContent = i18n[lang][key];
+  });
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  if (window._updateTypingLang) window._updateTypingLang(lang);
+  localStorage.setItem('vowky-lang', lang);
+}
+
+// Auto-detect language
+(function() {
+  const saved = localStorage.getItem('vowky-lang');
+  const browser = navigator.language.startsWith('zh') ? 'zh' : 'en';
+  const lang = saved || browser;
+  if (lang !== 'zh') switchLang(lang);
 })();
 
 // ===== Typing Demo =====
 (function() {
   const phrases = {
-    zh: [
-      '你好，今天天气真不错。',
-      '明天下午三点开会，记得准备材料。',
-      '帮我订一张周五去上海的机票。',
-      '这个方案需要重新评估一下风险。',
-      '麻烦把会议纪要发到群里，谢谢。'
-    ],
-    en: [
-      'Hello, the weather is great today.',
-      'Meeting at 3 PM tomorrow, prepare materials.',
-      'Book me a flight to Shanghai on Friday.',
-      'This proposal needs a risk reassessment.',
-      'Please share the meeting notes in the group.'
-    ]
+    zh: ['你好，今天天气真不错。','明天下午三点开会，记得准备材料。','帮我订一张周五去上海的机票。','这个方案需要重新评估一下风险。','麻烦把会议纪要发到群里。'],
+    en: ['Hello, the weather is great today.','Meeting at 3 PM tomorrow, prepare materials.','Book me a flight to Shanghai on Friday.','This plan needs a risk reassessment.','Please share the meeting notes.']
   };
-
-  const el = document.getElementById('demo-text');
-  let phraseIdx = 0, charIdx = 0, deleting = false, lang = 'zh';
-  let timeout;
+  const el = document.getElementById('demoText');
+  let pi = 0, ci = 0, del = false, lang = currentLang, timeout;
 
   function type() {
-    const currentPhrases = phrases[lang];
-    const phrase = currentPhrases[phraseIdx % currentPhrases.length];
-
-    if (!deleting) {
-      charIdx++;
-      el.innerHTML = phrase.slice(0, charIdx) + '<span class="demo-cursor"></span>';
-      if (charIdx >= phrase.length) {
-        timeout = setTimeout(() => { deleting = true; type(); }, 2200);
-        return;
-      }
-      timeout = setTimeout(type, 60 + Math.random() * 80);
+    const p = phrases[lang][pi % phrases[lang].length];
+    if (!del) {
+      ci++;
+      el.innerHTML = p.slice(0, ci) + '<span class="demo-cursor"></span>';
+      if (ci >= p.length) { timeout = setTimeout(() => { del = true; type(); }, 2400); return; }
+      timeout = setTimeout(type, 80 + Math.random() * 60);
     } else {
-      charIdx--;
-      el.innerHTML = phrase.slice(0, charIdx) + '<span class="demo-cursor"></span>';
-      if (charIdx <= 0) {
-        deleting = false;
-        phraseIdx++;
-        timeout = setTimeout(type, 400);
-        return;
-      }
-      timeout = setTimeout(type, 25);
+      ci--;
+      el.innerHTML = p.slice(0, ci) + '<span class="demo-cursor"></span>';
+      if (ci <= 0) { del = false; pi++; timeout = setTimeout(type, 500); return; }
+      timeout = setTimeout(type, 20);
     }
   }
-
   type();
 
-  window.updateTypingLang = function(newLang) {
-    lang = newLang;
-    clearTimeout(timeout);
-    charIdx = 0; deleting = false;
+  window._updateTypingLang = function(l) {
+    lang = l; clearTimeout(timeout);
+    ci = 0; del = false;
     el.innerHTML = '<span class="demo-cursor"></span>';
     setTimeout(type, 300);
   };
 })();
 
+// ===== SVG Waveform =====
+(function() {
+  const paths = [document.getElementById('wavePath1'), document.getElementById('wavePath2')];
+  const demoPath = document.getElementById('demoWavePath');
+  let t = 0;
+
+  function wave(w, h, time, offset) {
+    const pts = []; const seg = 48;
+    for (let i = 0; i <= seg; i++) {
+      const x = (i / seg) * w;
+      const nx = i / seg;
+      const env = Math.exp(-Math.pow((nx - 0.5) * 3, 2));
+      const v = Math.sin(nx * 8 + time * 2 + offset) * 0.5
+              + Math.sin(nx * 14 + time * 3.1 + offset) * 0.3
+              + Math.sin(nx * 22 + time * 1.7 + offset) * 0.2;
+      pts.push(`${x.toFixed(1)},${(h / 2 + v * env * h * 0.35).toFixed(1)}`);
+    }
+    return 'M ' + pts.join(' L ');
+  }
+
+  function animate() {
+    t += 0.016;
+    if (paths[0]) paths[0].setAttribute('d', wave(280, 50, t, 0));
+    if (paths[1]) paths[1].setAttribute('d', wave(280, 50, t, 1.5));
+    if (demoPath) demoPath.setAttribute('d', wave(200, 60, t, 0.8));
+    requestAnimationFrame(animate);
+  }
+  animate();
+})();
+
 // ===== Scroll Reveal =====
 (function() {
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-      }
-    });
-  }, { threshold: 0.15 });
-
-  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
 })();
 
-// ===== Nav Scroll Effect =====
+// ===== Nav Scroll =====
 (function() {
   const nav = document.getElementById('navbar');
-  window.addEventListener('scroll', () => {
-    nav.classList.toggle('scrolled', window.scrollY > 40);
-  });
+  window.addEventListener('scroll', () => nav.classList.toggle('scrolled', window.scrollY > 30), { passive: true });
 })();
 
-// ===== Language Switch =====
-function switchLang(lang) {
-  document.querySelectorAll('.lang-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.lang === lang);
-  });
+// ===== Terminal Line Print =====
+(function() {
+  const terminal = document.getElementById('terminal');
+  if (!terminal) return;
+  const lines = terminal.querySelectorAll('.terminal-line');
+  let printed = false;
 
-  document.querySelectorAll('[data-' + lang + ']').forEach(el => {
-    const val = el.getAttribute('data-' + lang);
-    if (val) {
-      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-        el.placeholder = val;
-      } else {
-        el.innerHTML = val;
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting && !printed) {
+        printed = true;
+        lines.forEach((line, i) => {
+          setTimeout(() => line.classList.add('visible'), i * 150);
+        });
       }
-    }
-  });
+    });
+  }, { threshold: 0.3 });
+  obs.observe(terminal);
+})();
 
-  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-  if (window.updateTypingLang) window.updateTypingLang(lang);
+// ===== FAQ Toggle =====
+function toggleFaq(btn) {
+  const item = btn.closest('.faq-item');
+  item.classList.toggle('open');
 }
 </script>
 
