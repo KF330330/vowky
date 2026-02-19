@@ -44,7 +44,7 @@ Deploy 私密配置在 `deploy/config.local.sh`（已 gitignore），模板见 `
 
 ## TODO
 
-- [ ] **Prod 部署公证**：Apple timestamp 服务暂时不可用（2026-02-19），导致 `codesign --timestamp` 失败，prod 构建无法完成公证。Dev 部署已正常工作。等 Apple 服务恢复后运行 `make deploy-prod` 完成生产环境首次部署。
+- [x] **Prod 部署公证**：已完成（2026-02-20）。App 和 DMG 均已通过 Apple 公证（Accepted + Stapled）。
 - [ ] **安装 Sparkle 工具**：`brew install sparkle`，安装后 `sign_update` 可自动从 Keychain 读取 EdDSA 私钥签名 DMG，使 Sparkle 自动更新的签名验证完整工作。
 
 ## Key Naming Convention
