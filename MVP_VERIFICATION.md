@@ -1,4 +1,4 @@
-# VoKey MVP 验证方案
+# VowKy MVP 验证方案
 
 > 创建时间：2026-02-06
 > 文档版本：V4.1（自动化改进）
@@ -191,7 +191,7 @@ Paraformer 模型包自带测试 WAV：
 ### 2.2 测试 Target 结构
 
 ```
-VoKeyTests/
+VowKyTests/
 ├── Unit/
 │   ├── SpeechRecognizerTests.swift      # T1: 语音识别核心
 │   ├── AudioFormatTests.swift           # T1: 音频格式转换
@@ -401,12 +401,12 @@ AppState 管理一个核心状态机：`idle → recording → recognizing → o
 
 运行方式：
 ```bash
-# 首次运行前：在系统设置中授予 VoKeyTests 辅助功能权限和麦克风权限
+# 首次运行前：在系统设置中授予 VowKyTests 辅助功能权限和麦克风权限
 xcodebuild test \
-  -project VoKey.xcodeproj \
-  -scheme VoKey \
+  -project VowKy.xcodeproj \
+  -scheme VowKy \
   -destination 'platform=macOS' \
-  -only-testing:VoKeyTests/System \
+  -only-testing:VowKyTests/System \
   2>&1 | grep -E "(Test Case|passed|failed)"
 ```
 
@@ -419,28 +419,28 @@ xcodebuild test \
 # verify_app.sh
 
 set -e
-echo "=== VoKey App 验证 ==="
+echo "=== VowKy App 验证 ==="
 
 # 1. 编译
 echo "[T5-1] 编译项目..."
-xcodebuild build -project VoKey.xcodeproj -scheme VoKey \
+xcodebuild build -project VowKy.xcodeproj -scheme VowKy \
   -destination 'platform=macOS' -configuration Debug 2>&1 | tail -3
 
 # 2. 运行 T1-T3 自动测试
 echo "[T5-2] 运行自动化测试..."
-xcodebuild test -project VoKey.xcodeproj -scheme VoKey \
+xcodebuild test -project VowKy.xcodeproj -scheme VowKy \
   -destination 'platform=macOS' \
-  -skip-testing:VoKeyTests/System \
+  -skip-testing:VowKyTests/System \
   2>&1 | grep -E "(Test Suite|passed|failed)" | tail -10
 
 # 3. 启动 App
 echo "[T5-3] 启动 App..."
-APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "VoKey.app" -path "*/Debug/*" | head -1)
+APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "VowKy.app" -path "*/Debug/*" | head -1)
 open "$APP_PATH"
 sleep 5  # 给模型加载留够时间
 
 # 4. 验证进程存活
-if pgrep -x "VoKey" > /dev/null; then
+if pgrep -x "VowKy" > /dev/null; then
   echo "PASS: App 启动成功"
 else
   echo "FAIL: App 崩溃"; exit 1
@@ -451,8 +451,8 @@ DOCK_CHECK=$(osascript -e '
   tell application "System Events"
     return name of every process whose visible is true
   end tell' 2>/dev/null)
-if echo "$DOCK_CHECK" | grep -q "VoKey"; then
-  echo "FAIL: VoKey 出现在 Dock 中（LSUIElement 配置错误）"
+if echo "$DOCK_CHECK" | grep -q "VowKy"; then
+  echo "FAIL: VowKy 出现在 Dock 中（LSUIElement 配置错误）"
 else
   echo "PASS: 无 Dock 图标"
 fi
@@ -460,7 +460,7 @@ fi
 # 6. 验证菜单栏图标
 MENU_CHECK=$(osascript -e '
   tell application "System Events"
-    tell process "VoKey"
+    tell process "VowKy"
       return exists menu bar item 1 of menu bar 2
     end tell
   end tell' 2>/dev/null || echo "false")
@@ -471,7 +471,7 @@ else
 fi
 
 # 清理
-pkill -x "VoKey" 2>/dev/null || true
+pkill -x "VowKy" 2>/dev/null || true
 echo "=== 冒烟测试完成 ==="
 ```
 
@@ -491,17 +491,17 @@ echo "=== 冒烟测试完成 ==="
 
 > **为什么需要验收**：CGEvent post 到第三方 App 的行为取决于 WindowServer 事件路由和目标 App 的响应链实现，这在 macOS 上无法在测试进程内模拟。以下清单确保真实用户体验正确。
 >
-> **自动化改进**：#70-75 可通过测试音频注入（`VOKEY_TEST_AUDIO` 环境变量）+ AppleScript 读取目标 App 内容实现脚本化验证。识别管道、CGEvent 粘贴、跨进程路由全部真实，仅音频源从麦克风替换为测试文件。#76/#77 已移至 T4 通过 CGEvent 模拟全自动化。#78 可脚本化为 nightly 长运行测试。
+> **自动化改进**：#70-75 可通过测试音频注入（`VOWKY_TEST_AUDIO` 环境变量）+ AppleScript 读取目标 App 内容实现脚本化验证。识别管道、CGEvent 粘贴、跨进程路由全部真实，仅音频源从麦克风替换为测试文件。#76/#77 已移至 T4 通过 CGEvent 模拟全自动化。#78 可脚本化为 nightly 长运行测试。
 
 #### 验收清单（交付给用户时附带）
 
 ```
-VoKey MVP 验收清单
+VowKy MVP 验收清单
 ==================
 
 前置条件：
-□ 在系统设置 > 隐私与安全性 > 辅助功能 中授权 VoKey
-□ 在系统设置 > 隐私与安全性 > 麦克风 中授权 VoKey
+□ 在系统设置 > 隐私与安全性 > 辅助功能 中授权 VowKy
+□ 在系统设置 > 隐私与安全性 > 麦克风 中授权 VowKy
 
 基本功能：
 □ 1. 打开 TextEdit，新建文档
@@ -520,7 +520,7 @@ VoKey MVP 验收清单
 异常情况：
 □ 11. 按住后不说话直接松开 → 无文字输出，App 不卡死
 □ 12. 连续快速按 3 次 → 每次都正常工作
-□ 13. 识别中关闭目标 App → VoKey 不崩溃
+□ 13. 识别中关闭目标 App → VowKy 不崩溃
 
 稳定性：
 □ 14. 语音输入 10 次以上 → 快捷键持续响应（tapDisabledByTimeout 恢复正常）
@@ -539,7 +539,7 @@ VoKey MVP 验收清单
 
 > **#76（静默松开）和 #77（连续快按）已移至 T4**，通过 CGEvent 模拟全自动化，见 3.4 节。
 
-**T6 小计：7 个验证点。其中 5 个可脚本化（需预留 `VOKEY_TEST_AUDIO` 环境变量），1 个 nightly 自动，1 个纯手动（#71 视觉确认）。**
+**T6 小计：7 个验证点。其中 5 个可脚本化（需预留 `VOWKY_TEST_AUDIO` 环境变量），1 个 nightly 自动，1 个纯手动（#71 视觉确认）。**
 
 ---
 
@@ -605,7 +605,7 @@ VoKey MVP 验收清单
 6. **tapDisabledByTimeout 主动恢复** — HotkeyManager 监听 `.tapDisabledByTimeout` 事件类型，自动 `CGEvent.tapEnable()`
 7. **模型路径配置化** — 支持缺失时 `isReady=false` 而非崩溃
 8. **PermissionChecker 协议** — 将 `AXIsProcessTrusted` 抽象为可注入协议，T2 测试用 mock（#91）
-9. **AudioRecorder 测试音频注入** — 通过 `VOKEY_TEST_AUDIO` 环境变量支持从文件读取音频，用于 T6 脚本化验证
+9. **AudioRecorder 测试音频注入** — 通过 `VOWKY_TEST_AUDIO` 环境变量支持从文件读取音频，用于 T6 脚本化验证
 
 ---
 
@@ -621,7 +621,7 @@ VoKey MVP 验收清单
 
 交付前：
   → 运行 T5 冒烟脚本（含 sandbox-exec 离线验证）
-  → 运行 T6 脚本化验证（VOKEY_TEST_AUDIO + AppleScript，6 点）
+  → 运行 T6 脚本化验证（VOWKY_TEST_AUDIO + AppleScript，6 点）
   → 手动确认 #71 浮窗视觉表现（~1 分钟，唯一手动项）
 
 Nightly（可选）：

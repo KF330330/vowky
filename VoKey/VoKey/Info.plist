@@ -15,7 +15,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>VoKey 需要麦克风权限用于语音输入</string>
+	<string>VowKy 需要麦克风权限用于语音输入</string>
 	<key>LSUIElement</key>
 	<true/>
 </dict>

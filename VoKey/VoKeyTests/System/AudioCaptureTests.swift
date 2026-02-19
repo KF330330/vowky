@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoKey
+@testable import VowKy
 
 // MARK: - T4: Audio Capture Tests (#57-60)
 // Requires: Microphone permission

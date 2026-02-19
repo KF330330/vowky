@@ -1,6 +1,6 @@
-# VoKey 核心层代码审阅报告
+# VowKy 核心层代码审阅报告
 
-> 审阅范围：AppState.swift、VoKeyApp.swift、AppDelegate.swift、Services/Protocols.swift、ContentView.swift
+> 审阅范围：AppState.swift、VowKyApp.swift、AppDelegate.swift、Services/Protocols.swift、ContentView.swift
 > 审阅日期：2026-02-17
 
 ---
@@ -55,7 +55,7 @@
 
 ---
 
-## 2. VoKeyApp.swift
+## 2. VowKyApp.swift
 
 ### 文件职责
 SwiftUI 应用入口，负责依赖组装、菜单栏 UI 承载，以及真实权限检查器的实现。
@@ -95,7 +95,7 @@ SwiftUI 应用入口，负责依赖组装、菜单栏 UI 承载，以及真实�
 - 应用启动完成后自动检查辅助功能权限
 - 权限未授予时弹出引导对话框，提供两个选项：「打开系统设置」和「稍后设置」
 - 用户选择「打开系统设置」时，通过 AXIsProcessTrustedWithOptions 触发系统权限弹窗
-- 检测系统「选择上一个输入法」快捷键是否与 VoKey 的 Option+Space 冲突
+- 检测系统「选择上一个输入法」快捷键是否与 VowKy 的 Option+Space 冲突
 - 冲突检测读取 com.apple.symbolichotkeys 中 key "61"（上一个输入法）的配置
 - 解析快捷键参数：键码（keyCode=49 为空格）、修饰键（Option=0x80000）
 - 仅在纯 Option+Space（不含 Command、Control 修饰键）时判定为冲突
@@ -114,7 +114,7 @@ SwiftUI 应用入口，负责依赖组装、菜单栏 UI 承载，以及真实�
 - 仅检测输入法切换快捷键（key "61"），不检测其他可能的系统快捷键冲突
 
 ### 与其他模块的依赖关系
-- 通过 @NSApplicationDelegateAdaptor 被 VoKeyApp 桥接
+- 通过 @NSApplicationDelegateAdaptor 被 VowKyApp 桥接
 - 无对其他应用模块的依赖
 - 仅依赖 macOS 系统框架（AppKit、ApplicationServices）
 
@@ -145,7 +145,7 @@ SwiftUI 应用入口，负责依赖组装、菜单栏 UI 承载，以及真实�
 ### 与其他模块的依赖关系
 - 被 AppState 通过构造函数注入引用
 - 生产实现分布在各 Services 子目录中
-- 测试 Mock 实现在 VoKeyTests/Mocks/TestMocks.swift 中
+- 测试 Mock 实现在 VowKyTests/Mocks/TestMocks.swift 中
 
 ---
 
@@ -189,12 +189,12 @@ SwiftUI 应用入口，负责依赖组装、菜单栏 UI 承载，以及真实�
 ## 模块间依赖关系总览
 
 ```
-VoKeyApp (入口)
+VowKyApp (入口)
   |-- AppDelegate (启动检查)
   |-- AppState (核心状态机)
   |     |-- SpeechRecognizerProtocol -> LocalSpeechRecognizer
   |     |-- AudioRecorderProtocol -> AudioRecorder
-  |     |-- PermissionCheckerProtocol -> RealPermissionChecker (定义在 VoKeyApp.swift)
+  |     |-- PermissionCheckerProtocol -> RealPermissionChecker (定义在 VowKyApp.swift)
   |     |-- PunctuationServiceProtocol -> PunctuationService
   |     |-- AudioBackupProtocol -> AudioBackupService
   |     |-- HotkeyManager (直接创建)

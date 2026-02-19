@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import VoKey
+@testable import VowKy
 
 // MARK: - T4: Panel Focus Tests (#61-64)
 

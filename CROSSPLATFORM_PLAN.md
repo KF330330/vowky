@@ -1,8 +1,8 @@
-# VoKey 跨平台迁移方案：Rust + Tauri（macOS + Windows）
+# VowKy 跨平台迁移方案：Rust + Tauri（macOS + Windows）
 
 ## Context
 
-VoKey 当前是一款纯 macOS 菜单栏语音输入工具（Swift + SwiftUI + AppKit），深度绑定 macOS API（CGEvent、AVAudioEngine、NSPanel、MenuBarExtra 等）。用户决定采用 **Rust + Tauri** 技术路线重构为跨平台版本，同时支持 macOS 和 Windows，**Windows 版功能对齐后再上线**。
+VowKy 当前是一款纯 macOS 菜单栏语音输入工具（Swift + SwiftUI + AppKit），深度绑定 macOS API（CGEvent、AVAudioEngine、NSPanel、MenuBarExtra 等）。用户决定采用 **Rust + Tauri** 技术路线重构为跨平台版本，同时支持 macOS 和 Windows，**Windows 版功能对齐后再上线**。
 
 核心目标：将 12 项已实现功能全部迁移到 Tauri，保持相同的用户体验，同时获得跨平台能力。
 
@@ -28,7 +28,7 @@ VoKey 当前是一款纯 macOS 菜单栏语音输入工具（Swift + SwiftUI + A
 ## 二、项目结构
 
 ```
-vokey-tauri/
+vowky-tauri/
 ├── src-tauri/                        # Rust 后端
 │   ├── Cargo.toml
 │   ├── build.rs                      # sherpa-onnx 链接配置（cfg target_os 切换）
@@ -185,10 +185,10 @@ vokey-tauri/
 
 | 文件 | 用途 |
 |------|------|
-| `VoKey/VoKey/AppState.swift` | 状态机逻辑，迁移到 state.rs |
-| `VoKey/VoKey/Services/Protocols.swift` | 5 个协议 → 5 个 Rust trait |
-| `VoKey/VoKey/SherpaOnnx/SherpaOnnx.swift` | 1892 行 FFI 封装，Rust 绑定字段顺序参考 |
-| `VoKey/VoKey/Services/TextOutputService.swift` | CGEvent UTF-16 分块逻辑，Rust 版精确复刻 |
-| `VoKey/VoKey/Services/AudioBackupService.swift` | WAV 格式处理，Rust 版直接翻译 |
+| `VowKy/VowKy/AppState.swift` | 状态机逻辑，迁移到 state.rs |
+| `VowKy/VowKy/Services/Protocols.swift` | 5 个协议 → 5 个 Rust trait |
+| `VowKy/VowKy/SherpaOnnx/SherpaOnnx.swift` | 1892 行 FFI 封装，Rust 绑定字段顺序参考 |
+| `VowKy/VowKy/Services/TextOutputService.swift` | CGEvent UTF-16 分块逻辑，Rust 版精确复刻 |
+| `VowKy/VowKy/Services/AudioBackupService.swift` | WAV 格式处理，Rust 版直接翻译 |
 | `Libraries/sherpa-onnx.xcframework/.../c-api.h` | C API 头文件，Rust #[repr(C)] 字段顺序权威来源 |
-| `PRD_VoKey_V1.1.md` | 12 项已实现功能清单，验收标准 |
+| `PRD_VowKy_V1.1.md` | 12 项已实现功能清单，验收标准 |

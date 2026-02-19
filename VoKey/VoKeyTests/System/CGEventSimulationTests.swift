@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoKey
+@testable import VowKy
 
 // MARK: - T4: CGEvent Simulation Tests (#76-77)
 

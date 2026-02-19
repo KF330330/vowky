@@ -1,5 +1,5 @@
 import Foundation
-@testable import VoKey
+@testable import VowKy
 
 // MARK: - Shared Mock Implementations for T2/T3/T4 Tests
 

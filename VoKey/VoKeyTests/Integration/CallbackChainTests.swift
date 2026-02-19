@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoKey
+@testable import VowKy
 
 // MARK: - T3: Callback Chain Tests (#38-43)
 

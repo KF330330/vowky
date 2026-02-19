@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoKey
+@testable import VowKy
 
 /// Tests #8-10: Model failure scenarios.
 /// These tests verify graceful handling when model files are missing or invalid.

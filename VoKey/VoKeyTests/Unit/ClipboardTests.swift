@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import VoKey
+@testable import VowKy
 
 /// Tests #21-25: TextOutputService tests.
 /// Verifies insertText does not touch clipboard and handles various text types.

@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-@testable import VoKey
+@testable import VowKy
 
 /// Tests #81, #85, #87, #88, #90: Supplementary edge-case and performance tests.
 final class SupplementaryTests: XCTestCase {

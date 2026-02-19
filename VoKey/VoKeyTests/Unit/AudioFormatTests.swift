@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-@testable import VoKey
+@testable import VowKy
 
 /// Tests #11-14: Audio format and WAV file handling.
 /// These tests verify WAV loading, sample range, format conversion, and sample count.

@@ -1,11 +1,11 @@
-# VoKey MVP 实现方案 - 语音转文字 macOS 菜单栏应用
+# VowKy MVP 实现方案 - 语音转文字 macOS 菜单栏应用
 
 > 创建时间：2026-02-06
 > 文档版本：V1.1（验证方案 V4.1）
 
 ## Context
 
-VoKey 是一款 macOS 智能输入法产品，完整产品包含中英日三语键盘输入、语音转文字、输入历史记录和剪贴板管理。本方案聚焦 **最小可行产品 (MVP)**，核心功能为 **语音转文字输入**。
+VowKy 是一款 macOS 智能输入法产品，完整产品包含中英日三语键盘输入、语音转文字、输入历史记录和剪贴板管理。本方案聚焦 **最小可行产品 (MVP)**，核心功能为 **语音转文字输入**。
 
 用户按住快捷键说话，松开后识别结果自动粘贴到光标位置。完全本地运行，无需网络。
 
@@ -115,14 +115,14 @@ VoKey 是一款 macOS 智能输入法产品，完整产品包含中英日三语�
 ### 3.2 项目结构
 
 ```
-VoKey/
-├── VoKey.xcodeproj
-├── VoKey/
-│   ├── VoKeyApp.swift                # @main App 入口，MenuBarExtra
+VowKy/
+├── VowKy.xcodeproj
+├── VowKy/
+│   ├── VowKyApp.swift                # @main App 入口，MenuBarExtra
 │   ├── AppDelegate.swift             # NSApplicationDelegate，权限检查
 │   ├── AppState.swift                # 全局状态管理 (ObservableObject)
 │   ├── Info.plist                    # LSUIElement=YES, 麦克风权限描述
-│   ├── VoKey.entitlements
+│   ├── VowKy.entitlements
 │   ├── Views/
 │   │   ├── MenuBarView.swift         # 菜单栏下拉菜单内容
 │   │   ├── RecordingPanel.swift      # 录音浮窗 (NSPanel + SwiftUI)
@@ -207,8 +207,8 @@ tar xvf sherpa-onnx-paraformer-zh-2024-03-09.tar.bz2
 ### Phase 1：Xcode 项目搭建
 
 #### 1.1 创建项目
-- macOS > App，Product name: VoKey，Interface: SwiftUI，Language: Swift
-- 保存到项目 `VoKey/` 目录
+- macOS > App，Product name: VowKy，Interface: SwiftUI，Language: Swift
+- 保存到项目 `VowKy/` 目录
 
 #### 1.2 配置为菜单栏 App
 - Info.plist 添加 `LSUIElement = YES`
@@ -225,7 +225,7 @@ tar xvf sherpa-onnx-paraformer-zh-2024-03-09.tar.bz2
 - 添加 `model.int8.onnx` 和 `tokens.txt` 到 Copy Bundle Resources
 
 #### 1.5 权限配置
-- Info.plist: `NSMicrophoneUsageDescription` = "VoKey 需要麦克风权限用于语音输入"
+- Info.plist: `NSMicrophoneUsageDescription` = "VowKy 需要麦克风权限用于语音输入"
 - Entitlements: `com.apple.security.device.audio-input = YES`
 - 开发阶段**关闭 App Sandbox**（CGEvent tap 需要辅助功能权限，与沙箱冲突）
 
@@ -305,7 +305,7 @@ class CloudSpeechRecognizer: SpeechRecognizerProtocol { ... }   // 未来: 云�
 
 ### Phase 3：UI 实现
 
-#### 3.1 VoKeyApp.swift - App 入口
+#### 3.1 VowKyApp.swift - App 入口
 - 使用 `MenuBarExtra`（macOS 13+）创建菜单栏图标
 - 图标根据状态切换（待机=mic / 录音中=mic.fill 红色）
 - 集成 Settings scene
@@ -448,7 +448,7 @@ docker run -p 10095:10095 -it \
 2. **模型路径不硬编码**，从配置读取，为首次下载模式预留
 3. **网络层预留**，在 Services 目录预留 `APIClient.swift` 空文件
 4. **App 签名**，从开始就配置 Developer ID 签名，避免后期迁移
-5. **Info.plist 中设置合理的 Bundle Identifier**（如 `com.vokey.app`）
+5. **Info.plist 中设置合理的 Bundle Identifier**（如 `com.vowky.app`）
 
 ---
 

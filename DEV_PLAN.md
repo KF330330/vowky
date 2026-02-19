@@ -1,4 +1,4 @@
-# VoKey 开发方案
+# VowKy 开发方案
 
 ## 项目概述
 
@@ -9,11 +9,11 @@
 ## 工程结构
 
 ```
-VoKey/
-├── VoKey.xcodeproj
-├── VoKeyApp/                    # 主 App（管理面板）
+VowKy/
+├── VowKy.xcodeproj
+├── VowKyApp/                    # 主 App（管理面板）
 │   ├── App/
-│   │   └── VoKeyApp.swift       # App 入口
+│   │   └── VowKyApp.swift       # App 入口
 │   ├── Views/
 │   │   ├── MainWindow.swift     # 主窗口（侧边栏导航）
 │   │   ├── InputHistoryView.swift    # 输入历史页
@@ -29,9 +29,9 @@ VoKey/
 │   └── Resources/
 │       └── Assets.xcassets
 │
-├── VoKeyInputMethod/            # 输入法插件（Input Method bundle）
+├── VowKyInputMethod/            # 输入法插件（Input Method bundle）
 │   ├── Info.plist               # 输入法配置（IMKit 注册）
-│   ├── VoKeyInputController.swift   # IMKInputController 子类，核心
+│   ├── VowKyInputController.swift   # IMKInputController 子类，核心
 │   ├── CandidateWindow.swift        # 候选栏窗口
 │   └── LanguageEngine/
 │       ├── ChineseEngine.swift      # 拼音引擎
@@ -94,14 +94,14 @@ VoKey/
 
 **任务**：
 1. 配置 Input Method bundle（Info.plist，IMKit 注册）
-2. 实现 `VoKeyInputController`（继承 `IMKInputController`）
+2. 实现 `VowKyInputController`（继承 `IMKInputController`）
 3. 实现 `ChineseEngine`：拼音→汉字候选（基于开源词库，如 librime 或自建拼音表）
 4. 实现 `EnglishEngine`：直接输入 + 拼写建议
 5. 实现 `JapaneseEngine`：罗马字→假名→汉字（基于开源词库）
 6. 实现 `LanguageRouter`：Ctrl+Space 切换，候选栏显示语言标识
 7. 实现 `CandidateWindow`：候选栏 UI，跟随光标
 
-**交付物**：在系统偏好设置中添加 VoKey 输入法，可在任意 App 中打字
+**交付物**：在系统偏好设置中添加 VowKy 输入法，可在任意 App 中打字
 
 ---
 
@@ -110,7 +110,7 @@ VoKey/
 **目标**：所有输入可记录、可搜索、可回溯
 
 **任务**：
-1. 输入法 hook：在 `VoKeyInputController` 的 commitComposition 中写入 `InputHistoryStore`
+1. 输入法 hook：在 `VowKyInputController` 的 commitComposition 中写入 `InputHistoryStore`
 2. 语音输入完成时写入 `InputHistoryStore`
 3. 实现 `Deduplicator`（10秒去重）+ `MergeEngine`（<5秒合并）
 4. 实现 `ClipboardMonitor`（NSPasteboard 轮询，0.5秒间隔）
@@ -138,7 +138,7 @@ VoKey/
 7. 埋点数据收集（本地统计，可选上报）
 8. 基础自动化测试
 
-**交付物**：可分发的 VoKey V1.0
+**交付物**：可分发的 VowKy V1.0
 
 ---
 
@@ -156,6 +156,6 @@ VoKey/
 ## 验证方式
 
 - **M1**：在 App 内按 Option+Space 说中英日三语，验证识别准确率
-- **M2**：在系统设置中激活 VoKey，在 TextEdit/Safari 等 App 中打字验证三语输入
+- **M2**：在系统设置中激活 VowKy，在 TextEdit/Safari 等 App 中打字验证三语输入
 - **M3**：打字后在管理面板中搜索历史记录，验证记录完整性和去重/合并逻辑
 - **M4**：在另一台 Mac 上安装 DMG，完成全流程验证

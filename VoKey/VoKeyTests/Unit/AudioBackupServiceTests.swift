@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoKey
+@testable import VowKy
 
 final class AudioBackupServiceTests: XCTestCase {
 
@@ -9,7 +9,7 @@ final class AudioBackupServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         testDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("vokey_test_\(UUID().uuidString)")
+            .appendingPathComponent("vowky_test_\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: testDir, withIntermediateDirectories: true)
         service = AudioBackupService(backupDirectory: testDir)
     }

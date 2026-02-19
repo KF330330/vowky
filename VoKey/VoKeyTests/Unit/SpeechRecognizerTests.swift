@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-@testable import VoKey
+@testable import VowKy
 
 /// Tests #1-7: SpeechRecognizer unit tests.
 /// These tests require real model files (model.int8.onnx, tokens.txt) and test audio (0.wav)

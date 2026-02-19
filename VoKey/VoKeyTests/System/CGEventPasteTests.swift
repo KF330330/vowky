@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import VoKey
+@testable import VowKy
 
 // MARK: - T4: CGEvent Text Insert Tests (#55-56)
 // Requires: Accessibility permission

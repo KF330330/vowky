@@ -1,6 +1,6 @@
-name: VoKey
+name: VowKy
 options:
-  bundleIdPrefix: com.vokey
+  bundleIdPrefix: com.vowky
   deploymentTarget:
     macOS: "13.0"
   xcodeVersion: "16.0"
@@ -10,20 +10,20 @@ settings:
     SWIFT_VERSION: "5.9"
 
 targets:
-  VoKey:
+  VowKy:
     type: application
     platform: macOS
     sources:
-      - path: VoKey
+      - path: VowKy
         excludes:
           - "Resources/**"
-      - path: VoKey/Resources
+      - path: VowKy/Resources
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.vokey.app
-        INFOPLIST_FILE: VoKey/Info.plist
-        SWIFT_OBJC_BRIDGING_HEADER: VoKey/SherpaOnnx/SherpaOnnx-Bridging-Header.h
+        PRODUCT_BUNDLE_IDENTIFIER: com.vowky.app
+        INFOPLIST_FILE: VowKy/Info.plist
+        SWIFT_OBJC_BRIDGING_HEADER: VowKy/SherpaOnnx/SherpaOnnx-Bridging-Header.h
         OTHER_LDFLAGS:
           - "-lc++"
           - "-L$(PROJECT_DIR)/Libraries"
@@ -42,15 +42,15 @@ targets:
       - sdk: AVFoundation.framework
       - sdk: libsqlite3.tbd
 
-  VoKeyTests:
+  VowKyTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: VoKeyTests
+      - path: VowKyTests
     dependencies:
-      - target: VoKey
+      - target: VowKy
     settings:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/VoKey.app/Contents/MacOS/VoKey"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/VowKy.app/Contents/MacOS/VowKy"
         GENERATE_INFOPLIST_FILE: YES

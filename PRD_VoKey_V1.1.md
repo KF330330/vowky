@@ -1,4 +1,4 @@
-# VoKey - macOS 语音输入工具 PRD V1.1
+# VowKy - macOS 语音输入工具 PRD V1.1
 
 | 项目 | 内容 |
 |------|------|
@@ -90,7 +90,7 @@
 
 | 阶段 | 用户动作 | 系统反馈 | 关键目标 |
 |------|----------|----------|----------|
-| 安装 | 下载安装 VoKey | 首次启动引导开启辅助功能权限；检测快捷键冲突并提示 | 完成权限授权 |
+| 安装 | 下载安装 VowKy | 首次启动引导开启辅助功能权限；检测快捷键冲突并提示 | 完成权限授权 |
 | 首次使用 | 在任意应用中按下 Option+Space | 屏幕上方出现录音浮窗，显示"正在聆听..."和音量条 | 开始录音 |
 | 语音输入 | 说话，再次按下 Option+Space | 浮窗切换为"识别中..."，识别完成后文字自动插入光标位置，浮窗消失 | 完成语音输入 |
 | 取消录音 | 录音过程中按 Escape | 录音取消，浮窗消失，备份删除 | 安全取消 |
@@ -215,7 +215,7 @@ HistoryRecord {
 ### 7.3 存储方案
 
 - 本地 SQLite 数据库（系统自带 sqlite3 C API，无第三方依赖）【已实现】
-- 数据库路径：`~/Library/Application Support/VoKey/history.db`【已实现】
+- 数据库路径：`~/Library/Application Support/VowKy/history.db`【已实现】
 - 自动创建数据库目录和表结构【已实现】
 - 默认查询上限：500 条，按时间倒序排列【已实现】
 - 数据库加密（SQLCipher）【未实现】
@@ -224,7 +224,7 @@ HistoryRecord {
 ### 7.4 音频备份存储
 
 - 备份格式：标准 WAV 文件（RIFF/WAVE，IEEE Float32，16kHz，单声道）【已实现】
-- 备份路径：系统临时目录 / vokey_recording_backup.wav【已实现】
+- 备份路径：系统临时目录 / vowky_recording_backup.wav【已实现】
 - 生命周期：录音开始时创建，识别完成或取消后删除；崩溃时保留供恢复【已实现】
 
 ### 7.5 权限要求
@@ -252,7 +252,7 @@ HistoryRecord {
 - **识别历史**（有记录时显示）：标题"识别历史" + 最近 3 条识别结果（每条显示文字 + 复制按钮）+ "查看全部历史"链接
 - **错误信息**（有错误时显示）：红色文字显示错误内容
 - **Settings 按钮**：打开设置窗口
-- **Quit VoKey 按钮**：退出应用
+- **Quit VowKy 按钮**：退出应用
 
 ### 8.3 录音浮窗【已实现】
 
@@ -267,7 +267,7 @@ HistoryRecord {
 
 ### 8.4 设置窗口【已实现】
 
-独立 NSWindow，标题 "VoKey Settings"，尺寸 380 x 380pt，分组表单布局：
+独立 NSWindow，标题 "VowKy Settings"，尺寸 380 x 380pt，分组表单布局：
 
 - **快捷键区域**：显示当前快捷键名称（如 ⌥Space），支持点击"修改"进入录制模式，按下新组合键完成设置，Escape 取消
 - **语音模型区域**（只读显示）：模型名 Paraformer-zh (int8)，引擎 sherpa-onnx (本地)
@@ -276,7 +276,7 @@ HistoryRecord {
 
 ### 8.5 识别历史窗口【已实现】
 
-独立 NSWindow，标题 "VoKey 识别历史"，初始尺寸 500 x 600pt，最小 400 x 400pt，可调整大小：
+独立 NSWindow，标题 "VowKy 识别历史"，初始尺寸 500 x 600pt，最小 400 x 400pt，可调整大小：
 
 - **搜索栏**：顶部搜索框，实时模糊搜索，带清除按钮
 - **记录列表**：按时间倒序展示，每条记录显示内容（最多 3 行）和时间（今天/昨天/日期格式）
@@ -373,7 +373,7 @@ V1.0 规划的核心功能，需要监听 NSPasteboard 变化并记录历史，�
 - 使用 NSLock 保护采样数据数组的线程安全
 - 实时计算 RMS 音量等级供 UI 显示
 - 录音过程中通过备份服务实时写入 WAV 文件
-- 支持测试模式：通过环境变量 VOKEY_TEST_AUDIO 加载测试音频文件
+- 支持测试模式：通过环境变量 VOWKY_TEST_AUDIO 加载测试音频文件
 
 ### 10.3 隐私与安全策略
 
@@ -478,7 +478,7 @@ V1.0 规划的核心功能，需要监听 NSPasteboard 变化并记录历史，�
 | 本地数据库 | SQLite3 C API（系统自带） | 【已实现】 |
 | 开机自启 | SMAppService | 【已实现】 |
 | 部署目标 | macOS 13.0+ | 【已实现】 |
-| Bundle ID | com.vokey.app | 【已实现】 |
+| Bundle ID | com.vowky.app | 【已实现】 |
 | 输入法框架 | macOS Input Method Kit (IMKit) | 【未实现】 |
 | 数据库加密 | SQLCipher | 【未实现】 |
 | 在线语音 | OpenAI Whisper API 或同级 | 【未实现】（APIClient 占位） |
@@ -486,7 +486,7 @@ V1.0 规划的核心功能，需要监听 NSPasteboard 变化并记录历史，�
 ### B. 架构概览
 
 ```
-VoKeyApp (入口, @main)
+VowKyApp (入口, @main)
   ├── AppDelegate (启动检查：辅助功能权限 + 快捷键冲突)
   ├── AppState (核心状态机, @MainActor, 单一事实来源)
   │     ├── SpeechRecognizerProtocol → LocalSpeechRecognizer
@@ -504,7 +504,7 @@ VoKeyApp (入口, @main)
 ```
 
 **设计模式**：
-- 协议驱动的依赖注入：核心服务均通过协议定义接口，生产实现在 VoKeyApp 入口注入
+- 协议驱动的依赖注入：核心服务均通过协议定义接口，生产实现在 VowKyApp 入口注入
 - @MainActor 状态机：所有状态变更在主线程执行
 - 后台模型加载：语音模型和标点模型通过 Task.detached 在后台线程加载，避免阻塞 UI
 
@@ -542,4 +542,4 @@ SherpaOnnx.swift 作为 C API 的 Swift 封装层，提供了远超当前使用�
 - System/ — CGEvent tap、模拟、音频捕获（需辅助功能权限）
 - Integration/ — 完整流程、回调链、线程安全
 
-Mock 实现位于 VoKeyTests/Mocks/TestMocks.swift。
+Mock 实现位于 VowKyTests/Mocks/TestMocks.swift。

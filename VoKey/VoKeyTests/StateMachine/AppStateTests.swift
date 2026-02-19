@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoKey
+@testable import VowKy
 
 // Mock classes are in Mocks/TestMocks.swift
 

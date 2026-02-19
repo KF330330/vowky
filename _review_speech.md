@@ -45,7 +45,7 @@
 - 实时音频重采样：通过 AVAudioConverter 将麦克风原始格式转为目标格式
 - 实时计算 RMS 音量等级（audioLevel 属性）
 - 实时将采样数据追加写入备份服务（内容保护）
-- 支持测试模式：通过环境变量 VOKEY_TEST_AUDIO 从指定目录加载 WAV 文件替代麦克风输入
+- 支持测试模式：通过环境变量 VOWKY_TEST_AUDIO 从指定目录加载 WAV 文件替代麦克风输入
 
 ### 技术规格
 - 目标采样率：16000 Hz
@@ -118,7 +118,7 @@
 - 块对齐：4 字节
 - WAV 头大小：44 字节
 - 默认备份目录：系统临时目录
-- 备份文件名：vokey_recording_backup.wav
+- 备份文件名：vowky_recording_backup.wav
 
 ### 回退/容错机制
 - WAV 头实时更新：在 finalizeAndDelete 时回写 RIFF chunk 大小和 data chunk 大小，保证中途崩溃后文件仍可被大部分播放器识别

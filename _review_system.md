@@ -1,4 +1,4 @@
-# VoKey 系统服务层代码审阅报告
+# VowKy 系统服务层代码审阅报告
 
 ## 1. HotkeyManager.swift
 
@@ -113,7 +113,7 @@
 - 采用单例模式（shared）全局共享实例
 
 ### 技术规格
-- 数据库路径：~/Library/Application Support/VoKey/history.db
+- 数据库路径：~/Library/Application Support/VowKy/history.db
 - 表结构：input_history 表，字段为 id（自增主键）、content（文本，非空）、source_type（文本，默认 voice）、created_at（实数，Unix 时间戳）
 - 数据模型：HistoryRecord 结构体，遵循 Identifiable 协议，包含 id / content / sourceType / createdAt
 - 默认来源类型：voice
@@ -127,7 +127,7 @@
 - 所有数据库操作（insert/fetch/delete/count）在 db 为 nil 时直接返回默认值
 - SQL prepare 失败时直接返回，不会崩溃
 - 使用 defer 确保 sqlite3_finalize 总是被调用，防止内存泄漏
-- 自动创建 Application Support/VoKey 目录
+- 自动创建 Application Support/VowKy 目录
 
 ### 依赖关系
 - 使用 SQLite3 C API（系统自带，无第三方依赖）

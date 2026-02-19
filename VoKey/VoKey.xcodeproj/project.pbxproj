@@ -17,7 +17,7 @@
 		13B99E3224F5F0ACD2F19F7F /* PanelFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB023F141BFA0A3A62532687 /* PanelFocusTests.swift */; };
 		158E5AAC4B5DDCB95DD9C799 /* SpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B79125DB3A16F9A187F8871 /* SpeechRecognizer.swift */; };
 		1CCB949D18208B438C462100 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BF31080E922CE6F219595E /* APIClient.swift */; };
-		1E2C9BDDE8D675B433EF91B0 /* VoKeyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303813A368ED178ADD1D3753 /* VoKeyApp.swift */; };
+		1E2C9BDDE8D675B433EF91B0 /* VowKyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303813A368ED178ADD1D3753 /* VowKyApp.swift */; };
 		1F583195751A33FB14A249DA /* tokens.txt in Resources */ = {isa = PBXBuildFile; fileRef = E7438F1392D95EBE93D08307 /* tokens.txt */; };
 		2477F1E9E4FE0B4A301E5F8B /* AppStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84C66B145F8296994EF5333B /* AppStateTests.swift */; };
 		36CA8B51411A17CB4FDB6766 /* ModelFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD2E5BF84123A2C83EC61AE4 /* ModelFailureTests.swift */; };
@@ -72,11 +72,11 @@
 		03FCBBA39F19029F4C9EC47E /* TestMocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestMocks.swift; sourceTree = "<group>"; };
 		0FA0AF3C6DF4488130C35C18 /* Protocols.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocols.swift; sourceTree = "<group>"; };
 		2F70DB866C5A15891537B610 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
-		303813A368ED178ADD1D3753 /* VoKeyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoKeyApp.swift; sourceTree = "<group>"; };
+		303813A368ED178ADD1D3753 /* VowKyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VowKyApp.swift; sourceTree = "<group>"; };
 		3380B7DED10F68F908B1399B /* CGEventSimulationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGEventSimulationTests.swift; sourceTree = "<group>"; };
 		3B79125DB3A16F9A187F8871 /* SpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognizer.swift; sourceTree = "<group>"; };
 		3BFEB353D93A3576FFF9BE21 /* SupplementaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupplementaryTests.swift; sourceTree = "<group>"; };
-		4663D644C0FCA0EBB1B8D34B /* VoKeyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoKeyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4663D644C0FCA0EBB1B8D34B /* VowKyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VowKyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		47E459F9B6C97C580BF03AAA /* ThreadSafetyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadSafetyTests.swift; sourceTree = "<group>"; };
 		52B88EDA4B0D7EDA481B23A2 /* PunctuationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PunctuationServiceTests.swift; sourceTree = "<group>"; };
 		567543407231F6E107C4BD9E /* CallbackChainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallbackChainTests.swift; sourceTree = "<group>"; };
@@ -153,7 +153,7 @@
 			children = (
 				61F1E5F82353FBF4AC20136C /* Resources */,
 				15B5E7AD9F0BFDBB73E5CE18 /* VoKey */,
-				94E1BEE730F81582413CA8AD /* VoKeyTests */,
+				94E1BEE730F81582413CA8AD /* VowKyTests */,
 				66716A92D53F0B00165DA75E /* Frameworks */,
 				D4E3CCEA604A00061A9E21BB /* Products */,
 			);
@@ -166,7 +166,7 @@
 				733F0C7F8EE64162A9131567 /* AppState.swift */,
 				ED4ACA9260ED3D75E6F02D75 /* ContentView.swift */,
 				7582F21B095A07835DECC852 /* Info.plist */,
-				303813A368ED178ADD1D3753 /* VoKeyApp.swift */,
+				303813A368ED178ADD1D3753 /* VowKyApp.swift */,
 				6F3BCC5DDD566F87ACAC6102 /* Services */,
 				BB2D6393BD0FF30B94FA4FC2 /* SherpaOnnx */,
 				BA8458388D78A9A2A6DCA2A6 /* Views */,
@@ -264,7 +264,7 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
-		94E1BEE730F81582413CA8AD /* VoKeyTests */ = {
+		94E1BEE730F81582413CA8AD /* VowKyTests */ = {
 			isa = PBXGroup;
 			children = (
 				60DE253EB74485DEFCD9B70C /* HotkeyLogic */,
@@ -274,7 +274,7 @@
 				DE1419F3B4993E266E065B8A /* System */,
 				1D5AC8ED1DCC03B29A70C257 /* Unit */,
 			);
-			path = VoKeyTests;
+			path = VowKyTests;
 			sourceTree = "<group>";
 		};
 		958854EDC5C3327BA7F9AE7D /* Models */ = {
@@ -311,7 +311,7 @@
 			isa = PBXGroup;
 			children = (
 				F9E596CE9270974BAFF458F4 /* VoKey.app */,
-				4663D644C0FCA0EBB1B8D34B /* VoKeyTests.xctest */,
+				4663D644C0FCA0EBB1B8D34B /* VowKyTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -357,9 +357,9 @@
 			productReference = F9E596CE9270974BAFF458F4 /* VoKey.app */;
 			productType = "com.apple.product-type.application";
 		};
-		BFF1BEFB9578D356F0828313 /* VoKeyTests */ = {
+		BFF1BEFB9578D356F0828313 /* VowKyTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D8C585424B804FEFA4C4F0AC /* Build configuration list for PBXNativeTarget "VoKeyTests" */;
+			buildConfigurationList = D8C585424B804FEFA4C4F0AC /* Build configuration list for PBXNativeTarget "VowKyTests" */;
 			buildPhases = (
 				6984906B69783AC2233C6267 /* Sources */,
 			);
@@ -368,11 +368,11 @@
 			dependencies = (
 				A0BFC62A555953296530E5E0 /* PBXTargetDependency */,
 			);
-			name = VoKeyTests;
+			name = VowKyTests;
 			packageProductDependencies = (
 			);
-			productName = VoKeyTests;
-			productReference = 4663D644C0FCA0EBB1B8D34B /* VoKeyTests.xctest */;
+			productName = VowKyTests;
+			productReference = 4663D644C0FCA0EBB1B8D34B /* VowKyTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -404,7 +404,7 @@
 			projectRoot = "";
 			targets = (
 				6253D7DF434E25319BE6B23B /* VoKey */,
-				BFF1BEFB9578D356F0828313 /* VoKeyTests */,
+				BFF1BEFB9578D356F0828313 /* VowKyTests */,
 			);
 		};
 /* End PBXProject section */
@@ -474,7 +474,7 @@
 				575A580C849D4EAB8818189B /* SherpaOnnx.swift in Sources */,
 				158E5AAC4B5DDCB95DD9C799 /* SpeechRecognizer.swift in Sources */,
 				DF34551EA8C9F200F0C17244 /* TextOutputService.swift in Sources */,
-				1E2C9BDDE8D675B433EF91B0 /* VoKeyApp.swift in Sources */,
+				1E2C9BDDE8D675B433EF91B0 /* VowKyApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -500,7 +500,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.vokey.VoKeyTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vokey.VowKyTests;
 				SDKROOT = macosx;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoKey.app/Contents/MacOS/VoKey";
 			};
@@ -573,7 +573,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.vokey.VoKeyTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vokey.VowKyTests;
 				SDKROOT = macosx;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoKey.app/Contents/MacOS/VoKey";
 			};
@@ -718,7 +718,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		D8C585424B804FEFA4C4F0AC /* Build configuration list for PBXNativeTarget "VoKeyTests" */ = {
+		D8C585424B804FEFA4C4F0AC /* Build configuration list for PBXNativeTarget "VowKyTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				13078B34FDD5034A209A52FF /* Debug */,

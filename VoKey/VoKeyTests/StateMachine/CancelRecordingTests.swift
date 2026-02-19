@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoKey
+@testable import VowKy
 
 @MainActor
 final class CancelRecordingTests: XCTestCase {

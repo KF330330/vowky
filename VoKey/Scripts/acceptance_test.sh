@@ -1,7 +1,7 @@
 #!/bin/bash
-# VoKey T6 真实场景验收测试
+# VowKy T6 真实场景验收测试
 # 验证点: #70-75, #78
-# 使用 VOKEY_TEST_AUDIO 环境变量 + AppleScript 验证跨 App 粘贴
+# 使用 VOWKY_TEST_AUDIO 环境变量 + AppleScript 验证跨 App 粘贴
 #
 # 用法:
 #   bash acceptance_test.sh           # 运行全部可脚本化测试
@@ -21,41 +21,41 @@ fail() { echo "  ❌ FAIL: $1"; ((FAIL_COUNT++)); }
 skip() { echo "  ⏭️  SKIP: $1"; ((SKIP_COUNT++)); }
 manual() { echo "  👁️  MANUAL: $1"; ((MANUAL_COUNT++)); }
 
-# Find the VoKey app
-APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "VoKey.app" -path "*/Debug/*" -maxdepth 5 2>/dev/null | head -1)
+# Find the VowKy app
+APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "VowKy.app" -path "*/Debug/*" -maxdepth 5 2>/dev/null | head -1)
 if [ -z "$APP_PATH" ]; then
-  echo "ERROR: 找不到 VoKey.app，请先编译项目"
+  echo "ERROR: 找不到 VowKy.app，请先编译项目"
   exit 1
 fi
 
 # Find test audio directory
-TEST_AUDIO_DIR="$PROJECT_DIR/VoKey/Resources/TestAudio"
+TEST_AUDIO_DIR="$PROJECT_DIR/VowKy/Resources/TestAudio"
 if [ ! -d "$TEST_AUDIO_DIR" ]; then
   # Try the model test wavs as fallback
-  TEST_AUDIO_DIR="$PROJECT_DIR/VoKey/Resources/Models"
+  TEST_AUDIO_DIR="$PROJECT_DIR/VowKy/Resources/Models"
 fi
 
 echo "============================================"
-echo "  VoKey T6 真实场景验收测试"
+echo "  VowKy T6 真实场景验收测试"
 echo "============================================"
 echo "  App: $APP_PATH"
 echo "  Test Audio: $TEST_AUDIO_DIR"
 echo ""
 
-# Ensure VoKey is running with test audio
-pkill -x "VoKey" 2>/dev/null || true
+# Ensure VowKy is running with test audio
+pkill -x "VowKy" 2>/dev/null || true
 sleep 1
 
-# Start VoKey with test audio environment variable
-export VOKEY_TEST_AUDIO="$TEST_AUDIO_DIR"
+# Start VowKy with test audio environment variable
+export VOWKY_TEST_AUDIO="$TEST_AUDIO_DIR"
 open "$APP_PATH"
 sleep 5
 
-if ! pgrep -x "VoKey" > /dev/null; then
-  echo "ERROR: VoKey 未能启动"
+if ! pgrep -x "VowKy" > /dev/null; then
+  echo "ERROR: VowKy 未能启动"
   exit 1
 fi
-echo "VoKey 已启动 (PID: $(pgrep -x VoKey))"
+echo "VowKy 已启动 (PID: $(pgrep -x VowKy))"
 echo ""
 
 # Helper: simulate Option+Space keyDown via CGEvent (using osascript)
@@ -95,7 +95,7 @@ TEXTEDIT_CONTENT=$(osascript -e '
 if [ -n "$TEXTEDIT_CONTENT" ] && [ "$TEXTEDIT_CONTENT" != "" ]; then
   pass "TextEdit 粘贴成功: \"${TEXTEDIT_CONTENT:0:30}...\""
 else
-  skip "TextEdit 粘贴未检测到内容（可能 VOKEY_TEST_AUDIO 未生效或需要手动测试）"
+  skip "TextEdit 粘贴未检测到内容（可能 VOWKY_TEST_AUDIO 未生效或需要手动测试）"
 fi
 
 # Close TextEdit
@@ -122,7 +122,7 @@ osascript -e '
 ' 2>/dev/null
 sleep 1
 
-# Trigger VoKey (toggle start + toggle stop)
+# Trigger VowKy (toggle start + toggle stop)
 simulate_hotkey
 sleep 1
 simulate_hotkey
@@ -248,11 +248,11 @@ if [ "$1" = "--long" ]; then
     simulate_hotkey
     sleep 2
 
-    if pgrep -x "VoKey" > /dev/null; then
+    if pgrep -x "VowKy" > /dev/null; then
       ((LONG_PASS++))
     else
       ((LONG_FAIL++))
-      echo "  ⚠️ Round $i: VoKey 进程消失"
+      echo "  ⚠️ Round $i: VowKy 进程消失"
     fi
     sleep 27  # Total ~30s per round
   done
@@ -268,7 +268,7 @@ fi
 echo ""
 
 # --- Cleanup ---
-pkill -x "VoKey" 2>/dev/null || true
+pkill -x "VowKy" 2>/dev/null || true
 
 # --- Summary ---
 echo "============================================"
@@ -281,7 +281,7 @@ echo "  手动: $MANUAL_COUNT"
 echo "  总计: $TOTAL"
 echo "============================================"
 echo ""
-echo "注意: 部分测试依赖 VOKEY_TEST_AUDIO 环境变量和系统权限。"
+echo "注意: 部分测试依赖 VOWKY_TEST_AUDIO 环境变量和系统权限。"
 echo "跳过的测试可通过手动操作验证。"
 
 if [ "$FAIL_COUNT" -gt 0 ]; then

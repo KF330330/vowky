@@ -1,5 +1,5 @@
 import XCTest
-@testable import VoKey
+@testable import VowKy
 
 // MARK: - T3: Thread Safety Tests (#44-46)
 

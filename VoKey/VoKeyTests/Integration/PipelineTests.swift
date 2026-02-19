@@ -1,6 +1,6 @@
 import XCTest
 import AVFoundation
-@testable import VoKey
+@testable import VowKy
 
 // MARK: - T3: Pipeline Tests (#47-49, #79)
 
