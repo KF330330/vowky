@@ -1,0 +1,15 @@
+#!/bin/bash
+# deploy/config.local.sh — 本地私有配置
+# 复制此文件为 config.local.sh 并填入你的真实配置
+# ⚠️ config.local.sh 已被 .gitignore 排除，不会提交到仓库
+
+# 服务器（SSH 连接地址）
+SERVER="user@your-server-ip"
+
+# Apple Developer 签名身份
+PROD_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+TEAM_ID="YOUR_TEAM_ID"
+NOTARY_PROFILE="Your-Notary-Profile"
+
+# Dev 环境 basic auth 密码（用于 verify.sh 验证 dev 部署）
+DEV_AUTH_PASS="your-dev-password"

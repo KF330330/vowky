@@ -44,12 +44,14 @@ log_ok "Xcode 项目已生成"
 # 2. xcodebuild archive
 # ============================================================
 log_info "构建 Archive (Release)..."
+# Archive 始终用 Apple Development（避免 Developer ID 的 timestamp 问题）
+# prod 环境在后续 step 4 重签为 Developer ID
 xcodebuild archive \
     -project "${VOWKY_DIR}/VowKy.xcodeproj" \
     -scheme VowKy \
     -configuration Release \
     -archivePath "${ARCHIVE_PATH}" \
-    CODE_SIGN_IDENTITY="${SIGN_IDENTITY}" \
+    CODE_SIGN_IDENTITY="${DEV_IDENTITY}" \
     DEVELOPMENT_TEAM="${TEAM_ID}" \
     OTHER_CODE_SIGN_FLAGS="--options=runtime" \
     | tail -5
@@ -65,11 +67,32 @@ log_ok "App 导出到 ${APP_PATH}"
 # ============================================================
 # 4. 代码签名 (hardened runtime)
 # ============================================================
-log_info "代码签名 (hardened runtime)..."
-codesign --force --deep --sign "${SIGN_IDENTITY}" \
-    --options runtime \
-    --timestamp \
-    "${APP_PATH}"
+log_info "代码签名 (${SIGN_IDENTITY})..."
+codesign_with_retry() {
+    local max_retries=3
+    for i in $(seq 1 $max_retries); do
+        if codesign "$@" 2>&1; then
+            return 0
+        fi
+        if [ "$i" -lt "$max_retries" ]; then
+            log_warn "签名失败，${i}/${max_retries} 重试中 (等待 5 秒)..."
+            sleep 5
+        fi
+    done
+    log_error "签名失败，已重试 ${max_retries} 次"
+    return 1
+}
+
+if [ "$NOTARIZE" = true ]; then
+    # prod: 先签内嵌 frameworks，再签主 app（分步避免 --deep timestamp 问题）
+    for fw in "${APP_PATH}/Contents/Frameworks/"*.framework; do
+        [ -d "$fw" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "$fw"
+    done
+    codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "${APP_PATH}"
+else
+    # dev: 简单签名（不需要 timestamp）
+    codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime "${APP_PATH}"
+fi
 log_ok "代码签名完成"
 
 # 验证签名
@@ -119,9 +142,11 @@ log_ok "DMG 创建完成: ${DMG_PATH}"
 # 7. 签名 DMG
 # ============================================================
 log_info "签名 DMG..."
-codesign --force --sign "${SIGN_IDENTITY}" \
-    --timestamp \
-    "${DMG_PATH}"
+if [ "$NOTARIZE" = true ]; then
+    codesign_with_retry --force --sign "${SIGN_IDENTITY}" --timestamp "${DMG_PATH}"
+else
+    codesign --force --sign "${SIGN_IDENTITY}" "${DMG_PATH}"
+fi
 log_ok "DMG 签名完成"
 
 # ============================================================

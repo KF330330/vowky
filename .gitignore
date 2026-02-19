@@ -12,3 +12,8 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# Deploy secrets (local only)
+deploy/config.local.sh
+deploy/deploy.log
+deploy/server/setup.sh

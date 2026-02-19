@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================
+# VowKy Server Setup Script
+# Initializes Nginx + SSL for vowky.com and dev.vowky.com
+# Run as root on your server
+# ============================================================
+
+DOMAIN="vowky.com"
+DEV_DOMAIN="dev.vowky.com"
+EMAIL="your-email@example.com"
+DEV_USER="vowky"
+DEV_PASS="your-dev-password"
+
+PROD_ROOT="/var/www/vowky/prod/site"
+PROD_DOWNLOADS="/var/www/vowky/prod/downloads"
+PROD_APPCAST="/var/www/vowky/prod"
+DEV_ROOT="/var/www/vowky/dev/site"
+DEV_DOWNLOADS="/var/www/vowky/dev/downloads"
+
+echo "=== VowKy Server Setup ==="
+
+# ----------------------------------------------------------
+# 1. Create directories
+# ----------------------------------------------------------
+echo "[1/7] Creating directories..."
+mkdir -p "$PROD_ROOT" "$PROD_DOWNLOADS"
+mkdir -p "$DEV_ROOT" "$DEV_DOWNLOADS"
+chown -R www-data:www-data /var/www/vowky
+
+# ----------------------------------------------------------
+# 2. Install dependencies
+# ----------------------------------------------------------
+echo "[2/7] Installing dependencies..."
+apt-get update -qq
+apt-get install -y -qq certbot python3-certbot-nginx apache2-utils > /dev/null
+
+# ----------------------------------------------------------
+# 3. Create htpasswd for dev
+# ----------------------------------------------------------
+echo "[3/7] Creating htpasswd for dev environment..."
+htpasswd -bc /etc/nginx/.htpasswd-vowky-dev "$DEV_USER" "$DEV_PASS"
+
+# ----------------------------------------------------------
+# 4. Write temporary HTTP-only Nginx configs (for certbot)
+# ----------------------------------------------------------
+echo "[4/7] Writing temporary Nginx configs for SSL certificate..."
+
+cat > /etc/nginx/sites-available/vowky <<'NGINX_PROD_TMP'
+server {
+    listen 80;
+    server_name vowky.com www.vowky.com;
+    root /var/www/vowky/prod/site;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/vowky/prod/site;
+    }
+
+    location / {
+        return 200 "VowKy setup in progress";
+        add_header Content-Type text/plain;
+    }
+}
+NGINX_PROD_TMP
+
+cat > /etc/nginx/sites-available/vowky-dev <<'NGINX_DEV_TMP'
+server {
+    listen 80;
+    server_name dev.vowky.com;
+    root /var/www/vowky/dev/site;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/vowky/dev/site;
+    }
+
+    location / {
+        return 200 "VowKy dev setup in progress";
+        add_header Content-Type text/plain;
+    }
+}
+NGINX_DEV_TMP
+
+# Enable sites (idempotent)
+ln -sf /etc/nginx/sites-available/vowky /etc/nginx/sites-enabled/vowky
+ln -sf /etc/nginx/sites-available/vowky-dev /etc/nginx/sites-enabled/vowky-dev
+
+nginx -t && systemctl reload nginx
+
+# ----------------------------------------------------------
+# 5. Obtain SSL certificates
+# ----------------------------------------------------------
+echo "[5/7] Obtaining SSL certificates..."
+
+certbot certonly --nginx \
+    -d "$DOMAIN" -d "www.$DOMAIN" \
+    --email "$EMAIL" --agree-tos --no-eff-email \
+    --non-interactive || echo "WARNING: certbot for prod failed, check DNS"
+
+certbot certonly --nginx \
+    -d "$DEV_DOMAIN" \
+    --email "$EMAIL" --agree-tos --no-eff-email \
+    --non-interactive || echo "WARNING: certbot for dev failed, check DNS"
+
+# ----------------------------------------------------------
+# 6. Write final Nginx configs with SSL
+# ----------------------------------------------------------
+echo "[6/7] Writing final Nginx configs with SSL..."
+
+cat > /etc/nginx/sites-available/vowky <<'NGINX_PROD'
+# --- VowKy Production ---
+
+# HTTP -> HTTPS redirect
+server {
+    listen 80;
+    server_name vowky.com www.vowky.com;
+    return 301 https://vowky.com$request_uri;
+}
+
+# www -> bare domain redirect (HTTPS)
+server {
+    listen 443 ssl http2;
+    server_name www.vowky.com;
+
+    ssl_certificate     /etc/letsencrypt/live/vowky.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/vowky.com/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    return 301 https://vowky.com$request_uri;
+}
+
+# Main production server
+server {
+    listen 443 ssl http2;
+    server_name vowky.com;
+
+    ssl_certificate     /etc/letsencrypt/live/vowky.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/vowky.com/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /var/www/vowky/prod/site;
+    index index.html;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Static assets cache
+    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Downloads with hotlink protection
+    location /downloads/ {
+        alias /var/www/vowky/prod/downloads/;
+
+        # Hotlink protection - allow direct access and from vowky.com
+        valid_referers none blocked vowky.com *.vowky.com;
+        if ($invalid_referer) {
+            return 403;
+        }
+
+        sendfile on;
+        directio 10m;
+        output_buffers 1 512k;
+        gzip off;
+        send_timeout 600s;
+    }
+
+    # Appcast for Sparkle auto-update
+    location = /appcast.xml {
+        alias /var/www/vowky/prod/appcast.xml;
+        expires 5m;
+        add_header Cache-Control "public";
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+NGINX_PROD
+
+cat > /etc/nginx/sites-available/vowky-dev <<'NGINX_DEV'
+# --- VowKy Dev Environment ---
+
+# HTTP -> HTTPS redirect
+server {
+    listen 80;
+    server_name dev.vowky.com;
+    return 301 https://dev.vowky.com$request_uri;
+}
+
+# Main dev server
+server {
+    listen 443 ssl http2;
+    server_name dev.vowky.com;
+
+    ssl_certificate     /etc/letsencrypt/live/dev.vowky.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/dev.vowky.com/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /var/www/vowky/dev/site;
+    index index.html;
+
+    # Basic auth
+    auth_basic "VowKy Dev";
+    auth_basic_user_file /etc/nginx/.htpasswd-vowky-dev;
+
+    # Prevent indexing
+    add_header X-Robots-Tag "noindex, nofollow" always;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Static assets cache
+    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        auth_basic "VowKy Dev";
+        auth_basic_user_file /etc/nginx/.htpasswd-vowky-dev;
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+        add_header X-Robots-Tag "noindex, nofollow" always;
+    }
+
+    # Downloads
+    location /downloads/ {
+        alias /var/www/vowky/dev/downloads/;
+        auth_basic "VowKy Dev";
+        auth_basic_user_file /etc/nginx/.htpasswd-vowky-dev;
+
+        sendfile on;
+        directio 10m;
+        output_buffers 1 512k;
+        gzip off;
+        send_timeout 600s;
+    }
+
+    # Appcast for Sparkle auto-update (shorter cache for dev)
+    location = /appcast.xml {
+        alias /var/www/vowky/dev/appcast.xml;
+        auth_basic "VowKy Dev";
+        auth_basic_user_file /etc/nginx/.htpasswd-vowky-dev;
+        expires 1m;
+        add_header Cache-Control "public";
+        add_header X-Robots-Tag "noindex, nofollow" always;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+NGINX_DEV
+
+# ----------------------------------------------------------
+# 7. Reload Nginx with final config
+# ----------------------------------------------------------
+echo "[7/7] Testing and reloading Nginx..."
+nginx -t && systemctl reload nginx
+
+echo ""
+echo "=== VowKy Server Setup Complete ==="
+echo "  Production: https://vowky.com"
+echo "  Dev:        https://dev.vowky.com (user: $DEV_USER)"
+echo "  Downloads:  https://vowky.com/downloads/"
+echo ""

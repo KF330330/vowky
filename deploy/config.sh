@@ -5,6 +5,17 @@
 set -euo pipefail
 
 # ============================================================
+# 加载本地私有配置
+# ============================================================
+_CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ ! -f "${_CONFIG_DIR}/config.local.sh" ]]; then
+    echo "✗ 缺少 deploy/config.local.sh" >&2
+    echo "  请复制 config.local.sh.example 为 config.local.sh 并填入你的配置" >&2
+    exit 1
+fi
+source "${_CONFIG_DIR}/config.local.sh"
+
+# ============================================================
 # 路径
 # ============================================================
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,14 +28,12 @@ BUILD_DIR="${REPO_ROOT}/deploy/build"
 # 签名 & 公证
 # ============================================================
 DEV_IDENTITY="Apple Development"
-PROD_IDENTITY="Developer ID Application: REDACTED_NAME (REDACTED_TEAM_ID)"
-TEAM_ID="REDACTED_TEAM_ID"
-NOTARY_PROFILE="VowKy-Notary"
+# PROD_IDENTITY, TEAM_ID, NOTARY_PROFILE 从 config.local.sh 加载
 
 # ============================================================
 # 服务器
 # ============================================================
-SERVER="root@REDACTED_SERVER_IP"
+# SERVER 从 config.local.sh 加载
 PROD_DOMAIN="vowky.com"
 DEV_DOMAIN="dev.vowky.com"
 PROD_WEB_ROOT="/var/www/vowky/prod"
