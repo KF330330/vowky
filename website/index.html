@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VowKy - macOS 语音输入工具</title>
+<meta name="description" content="VowKy - 按下快捷键，说话即输入。本地离线语音识别，保护隐私。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+/* ===== Reset & Base ===== */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-deep: #0C0A09;
+  --bg-surface: #1C1917;
+  --bg-card: #292524;
+  --bg-card-hover: #322E2B;
+  --border: #3F3A36;
+  --text-primary: #F5F5F4;
+  --text-secondary: #A8A29E;
+  --text-muted: #78716C;
+  --accent: #F97316;
+  --accent-light: #FB923C;
+  --accent-dark: #9A3412;
+  --accent-glow: rgba(249, 115, 22, 0.15);
+  --font-display: 'Syne', -apple-system, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Noise Texture Overlay ===== */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ===== Navigation ===== */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  padding: 1.25rem 2rem;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: background 0.4s, backdrop-filter 0.4s;
+}
+nav.scrolled {
+  background: rgba(12, 10, 9, 0.85);
+  backdrop-filter: blur(20px) saturate(1.2);
+  border-bottom: 1px solid var(--border);
+}
+.nav-logo {
+  font-family: var(--font-display);
+  font-size: 1.5rem; font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--text-primary), var(--accent-light));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.nav-right { display: flex; align-items: center; gap: 1.5rem; }
+.lang-switch {
+  display: flex; gap: 0;
+  background: var(--bg-card); border-radius: 8px;
+  padding: 3px; border: 1px solid var(--border);
+}
+.lang-btn {
+  padding: 0.35rem 0.75rem; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 0.8rem; cursor: pointer; transition: all 0.25s;
+  font-family: var(--font-body);
+}
+.lang-btn.active {
+  background: var(--accent-dark);
+  color: var(--accent-light);
+}
+.nav-cta {
+  padding: 0.55rem 1.25rem; border: none; border-radius: 10px;
+  background: var(--accent); color: #fff;
+  font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  transition: all 0.3s; font-family: var(--font-body);
+}
+.nav-cta:hover { background: var(--accent-light); transform: translateY(-1px); }
+
+/* ===== Hero ===== */
+.hero {
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; padding: 6rem 2rem 4rem;
+  position: relative; overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute; top: -40%; left: 50%; transform: translateX(-50%);
+  width: 800px; height: 800px;
+  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+  pointer-events: none; animation: pulse-glow 6s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.15); }
+}
+
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 1rem; border-radius: 50px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 0.8rem; color: var(--text-secondary);
+  margin-bottom: 2rem; position: relative;
+}
+.hero-badge::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: #22C55E; animation: blink 2s infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+}
+
+.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 7vw, 5.5rem);
+  font-weight: 800; letter-spacing: -0.03em;
+  line-height: 1.1; margin-bottom: 0.5rem;
+  position: relative;
+}
+.hero-title .brand {
+  background: linear-gradient(135deg, var(--accent), var(--accent-light));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero-subtitle {
+  font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+  color: var(--text-secondary); max-width: 600px;
+  margin: 1rem auto 0; line-height: 1.7;
+  font-weight: 400;
+}
+
+/* Waveform */
+.waveform-container {
+  display: flex; align-items: center; justify-content: center;
+  gap: 3px; height: 80px; margin: 3rem 0;
+  position: relative;
+}
+.wave-bar {
+  width: 3px; border-radius: 3px;
+  background: linear-gradient(to top, var(--accent), var(--accent-light));
+  animation: wave 1.2s ease-in-out infinite;
+  opacity: 0.7;
+}
+.wave-bar:nth-child(odd) { animation-duration: 1s; }
+.wave-bar:nth-child(3n) { animation-duration: 1.5s; }
+.wave-bar:nth-child(5n) { animation-duration: 0.8s; }
+@keyframes wave {
+  0%, 100% { height: 8px; opacity: 0.4; }
+  50% { height: var(--h, 60px); opacity: 0.9; }
+}
+
+/* Typing demo */
+.demo-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px; padding: 1.25rem 2rem;
+  max-width: 520px; margin: 0 auto 2.5rem;
+  text-align: left; position: relative;
+  overflow: hidden;
+}
+.demo-box::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+.demo-cursor {
+  display: inline-block; width: 2px; height: 1.2em;
+  background: var(--accent); vertical-align: text-bottom;
+  animation: cursor-blink 0.8s step-end infinite;
+  margin-left: 1px;
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; } 50% { opacity: 0; }
+}
+.demo-text {
+  font-size: 1.05rem; color: var(--text-primary);
+  min-height: 1.5em; letter-spacing: 0.01em;
+}
+
+.hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.85rem 2rem; border: none; border-radius: 12px;
+  background: var(--accent); color: #fff;
+  font-size: 1rem; font-weight: 600; cursor: pointer;
+  transition: all 0.3s; font-family: var(--font-body);
+  position: relative; overflow: hidden;
+}
+.btn-primary::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.1));
+}
+.btn-primary:hover { background: var(--accent-light); transform: translateY(-2px); box-shadow: 0 8px 30px var(--accent-glow); }
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.85rem 2rem; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg-card); color: var(--text-primary);
+  font-size: 1rem; font-weight: 500; cursor: pointer;
+  transition: all 0.3s; font-family: var(--font-body);
+}
+.btn-secondary:hover { border-color: var(--text-muted); background: var(--bg-card-hover); }
+
+.hero-note {
+  margin-top: 1.5rem; font-size: 0.8rem;
+  color: var(--text-muted); display: flex;
+  align-items: center; gap: 0.4rem;
+}
+
+/* ===== Section Common ===== */
+section {
+  padding: 7rem 2rem; position: relative;
+  max-width: 1100px; margin: 0 auto;
+}
+.section-label {
+  font-size: 0.75rem; font-weight: 700;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 1rem;
+}
+.section-title {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700; letter-spacing: -0.02em;
+  line-height: 1.2; margin-bottom: 1rem;
+}
+.section-desc {
+  font-size: 1.1rem; color: var(--text-secondary);
+  max-width: 600px; line-height: 1.7;
+}
+
+/* ===== How It Works ===== */
+.steps-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 2rem; margin-top: 4rem;
+}
+.step-card {
+  padding: 2.5rem 2rem; border-radius: 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  text-align: center; position: relative;
+  transition: all 0.4s;
+}
+.step-card:hover {
+  border-color: var(--accent-dark);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+.step-num {
+  font-family: var(--font-display);
+  font-size: 4rem; font-weight: 800;
+  background: linear-gradient(135deg, var(--bg-card), var(--border));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  line-height: 1; margin-bottom: 1.5rem;
+}
+.step-icon {
+  width: 56px; height: 56px; border-radius: 14px;
+  background: var(--accent-glow); border: 1px solid var(--accent-dark);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 1.5rem; font-size: 1.5rem;
+}
+.step-title {
+  font-size: 1.15rem; font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+.step-desc {
+  font-size: 0.9rem; color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* Keyboard Key Style */
+.kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0.3rem 0.65rem; border-radius: 7px;
+  background: linear-gradient(180deg, var(--bg-card-hover), var(--bg-card));
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 0 var(--border), inset 0 1px 0 rgba(255,255,255,0.05);
+  font-family: var(--font-mono); font-size: 0.8rem;
+  color: var(--text-primary); white-space: nowrap;
+  transition: all 0.15s;
+}
+.kbd-group { display: inline-flex; align-items: center; gap: 0.3rem; }
+.kbd-plus { color: var(--text-muted); font-size: 0.75rem; }
+.step-card:hover .kbd {
+  border-color: var(--accent-dark);
+  box-shadow: 0 2px 0 var(--accent-dark), inset 0 1px 0 rgba(249,115,22,0.1);
+}
+
+/* Step connector arrows */
+.steps-grid::before, .steps-grid::after {
+  content: ''; position: absolute;
+  top: 50%; width: 30px; height: 2px;
+  background: var(--border);
+}
+
+/* ===== Features ===== */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem; margin-top: 4rem;
+}
+.feature-card {
+  padding: 2rem; border-radius: 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  transition: all 0.4s; position: relative;
+  overflow: hidden;
+}
+.feature-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  transition: background 0.4s;
+}
+.feature-card:hover {
+  border-color: var(--accent-dark);
+  transform: translateY(-2px);
+}
+.feature-card:hover::before {
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+.feature-icon {
+  width: 48px; height: 48px; border-radius: 12px;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent-dark);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem; margin-bottom: 1.25rem;
+}
+.feature-title {
+  font-size: 1.1rem; font-weight: 600;
+  margin-bottom: 0.6rem;
+}
+.feature-desc {
+  font-size: 0.9rem; color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+/* ===== Tech Specs ===== */
+.specs-container {
+  display: flex; gap: 4rem; margin-top: 4rem;
+  align-items: flex-start;
+}
+.specs-list { flex: 1; }
+.spec-item {
+  display: flex; align-items: flex-start; gap: 1rem;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.spec-item:last-child { border-bottom: none; }
+.spec-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); margin-top: 0.5rem;
+  flex-shrink: 0;
+}
+.spec-label {
+  font-size: 0.95rem; font-weight: 500;
+  margin-bottom: 0.2rem;
+}
+.spec-value {
+  font-size: 0.85rem; color: var(--text-secondary);
+}
+.specs-visual {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+}
+.specs-diagram {
+  width: 100%; max-width: 400px; aspect-ratio: 1;
+  position: relative; display: flex;
+  align-items: center; justify-content: center;
+}
+.specs-circle {
+  position: absolute; border-radius: 50%;
+  border: 1px solid var(--border);
+  animation: rotate 30s linear infinite;
+}
+.specs-circle:nth-child(1) { width: 100%; height: 100%; }
+.specs-circle:nth-child(2) { width: 75%; height: 75%; animation-direction: reverse; animation-duration: 25s; }
+.specs-circle:nth-child(3) { width: 50%; height: 50%; animation-duration: 20s; }
+@keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.specs-center {
+  font-family: var(--font-display);
+  font-size: 2.5rem; font-weight: 800;
+  color: var(--accent); z-index: 1;
+}
+.specs-center span {
+  display: block; font-family: var(--font-body);
+  font-size: 0.8rem; color: var(--text-muted);
+  font-weight: 400; margin-top: 0.3rem; text-align: center;
+}
+
+/* ===== CTA Banner ===== */
+.cta-banner {
+  text-align: center; padding: 6rem 2rem;
+  max-width: 800px; margin: 0 auto;
+  position: relative;
+}
+.cta-banner::before {
+  content: '';
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+  pointer-events: none;
+}
+.cta-title {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700; margin-bottom: 1rem;
+  letter-spacing: -0.02em; position: relative;
+}
+.cta-desc {
+  font-size: 1.1rem; color: var(--text-secondary);
+  margin-bottom: 2.5rem; position: relative;
+}
+
+/* ===== Footer ===== */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 3rem 2rem; text-align: center;
+}
+.footer-inner {
+  max-width: 1100px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.footer-brand {
+  font-family: var(--font-display);
+  font-size: 1.1rem; font-weight: 700;
+  color: var(--text-secondary);
+}
+.footer-text { font-size: 0.8rem; color: var(--text-muted); }
+.footer-links { display: flex; gap: 1.5rem; }
+.footer-links a {
+  font-size: 0.8rem; color: var(--text-muted);
+  text-decoration: none; transition: color 0.3s;
+}
+.footer-links a:hover { color: var(--accent); }
+
+/* ===== Scroll Reveal ===== */
+.reveal {
+  opacity: 0; transform: translateY(30px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }
+.reveal-delay-4 { transition-delay: 0.4s; }
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  nav { padding: 1rem 1.25rem; }
+  .steps-grid { grid-template-columns: 1fr; gap: 1.25rem; }
+  .features-grid { grid-template-columns: 1fr; }
+  .specs-container { flex-direction: column; gap: 3rem; }
+  .specs-visual { order: -1; }
+  .hero { padding: 5rem 1.5rem 3rem; }
+  .footer-inner { flex-direction: column; gap: 1rem; }
+  .nav-cta { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav id="navbar">
+  <div class="nav-logo">VowKy</div>
+  <div class="nav-right">
+    <div class="lang-switch">
+      <button class="lang-btn active" data-lang="zh" onclick="switchLang('zh')">中文</button>
+      <button class="lang-btn" data-lang="en" onclick="switchLang('en')">EN</button>
+    </div>
+    <button class="nav-cta btn-primary" data-zh="下载" data-en="Download" style="padding:0.5rem 1.2rem; font-size:0.85rem;">下载</button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-badge">
+    <span data-zh="macOS 原生应用" data-en="Native macOS App">macOS 原生应用</span>
+  </div>
+
+  <h1 class="hero-title">
+    <span data-zh="用声音" data-en="Your Voice,">用声音</span><br>
+    <span data-zh="解放双手" data-en="Your Keyboard" class="brand">解放双手</span>
+  </h1>
+  <p class="hero-subtitle" data-zh="按下快捷键，说话，文字即刻出现在光标处。完全离线识别，无需联网，隐私无忧。" data-en="Press a hotkey, speak, and text appears at your cursor instantly. Fully offline recognition, no internet needed, complete privacy.">
+    按下快捷键，说话，文字即刻出现在光标处。完全离线识别，无需联网，隐私无忧。
+  </p>
+
+  <!-- Waveform Animation -->
+  <div class="waveform-container" id="waveform"></div>
+
+  <!-- Typing Demo -->
+  <div class="demo-box">
+    <div class="demo-text" id="demo-text"><span class="demo-cursor"></span></div>
+  </div>
+
+  <div class="hero-actions">
+    <button class="btn-primary" data-zh="⬇ 免费下载" data-en="⬇ Free Download">⬇ 免费下载</button>
+    <button class="btn-secondary" data-zh="了解更多 ↓" data-en="Learn More ↓" onclick="document.getElementById('how').scrollIntoView()">了解更多 ↓</button>
+  </div>
+  <p class="hero-note">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    <span data-zh="macOS 13.0+ · 完全免费 · 开源" data-en="macOS 13.0+ · Completely Free · Open Source">macOS 13.0+ · 完全免费 · 开源</span>
+  </p>
+</section>
+
+<!-- How It Works -->
+<section id="how">
+  <span class="section-label reveal" data-zh="使用方式" data-en="HOW IT WORKS">使用方式</span>
+  <h2 class="section-title reveal" data-zh="三步，仅此而已" data-en="Three Steps. That's It.">三步，仅此而已</h2>
+  <p class="section-desc reveal" data-zh="没有复杂的设置，没有账号注册，没有云端依赖。安装即用。" data-en="No complex setup, no account registration, no cloud dependency. Install and go.">没有复杂的设置，没有账号注册，没有云端依赖。安装即用。</p>
+
+  <div class="steps-grid">
+    <div class="step-card reveal reveal-delay-1">
+      <div class="step-num">1</div>
+      <div class="step-icon">⌨️</div>
+      <h3 class="step-title" data-zh="按下快捷键" data-en="Press Hotkey">按下快捷键</h3>
+      <p class="step-desc">
+        <span data-zh="在任何应用中按下" data-en="Press">在任何应用中按下</span>
+        <span class="kbd-group"><span class="kbd">⌥ Option</span><span class="kbd-plus">+</span><span class="kbd">Space</span></span>
+      </p>
+    </div>
+    <div class="step-card reveal reveal-delay-2">
+      <div class="step-num">2</div>
+      <div class="step-icon">🎙️</div>
+      <h3 class="step-title" data-zh="说话" data-en="Speak">说话</h3>
+      <p class="step-desc" data-zh="用自然的语速说出你想输入的内容，VowKy 会实时聆听。" data-en="Speak naturally at your own pace. VowKy listens in real time.">用自然的语速说出你想输入的内容，VowKy 会实时聆听。</p>
+    </div>
+    <div class="step-card reveal reveal-delay-3">
+      <div class="step-num">3</div>
+      <div class="step-icon">✨</div>
+      <h3 class="step-title" data-zh="文字自动输入" data-en="Text Auto-Inserted">文字自动输入</h3>
+      <p class="step-desc" data-zh="再次按下快捷键，识别完成的文字直接输入到光标位置。无需粘贴。" data-en="Press the hotkey again, and recognized text is inserted right at your cursor. No pasting needed.">再次按下快捷键，识别完成的文字直接输入到光标位置。无需粘贴。</p>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features">
+  <span class="section-label reveal" data-zh="核心特性" data-en="FEATURES">核心特性</span>
+  <h2 class="section-title reveal" data-zh="为隐私而生" data-en="Built for Privacy">为隐私而生</h2>
+  <p class="section-desc reveal" data-zh="所有语音处理都在你的 Mac 上完成，没有任何数据离开你的电脑。" data-en="All voice processing happens on your Mac. No data ever leaves your computer.">所有语音处理都在你的 Mac 上完成，没有任何数据离开你的电脑。</p>
+
+  <div class="features-grid">
+    <div class="feature-card reveal reveal-delay-1">
+      <div class="feature-icon">🔒</div>
+      <h3 class="feature-title" data-zh="完全离线" data-en="Fully Offline">完全离线</h3>
+      <p class="feature-desc" data-zh="基于 Sherpa-ONNX 引擎，语音识别完全在本地运行。断网也能用，飞行模式也能用。" data-en="Powered by Sherpa-ONNX engine, speech recognition runs entirely locally. Works offline, even in airplane mode.">基于 Sherpa-ONNX 引擎，语音识别完全在本地运行。断网也能用，飞行模式也能用。</p>
+    </div>
+    <div class="feature-card reveal reveal-delay-2">
+      <div class="feature-icon">🌍</div>
+      <h3 class="feature-title" data-zh="全局输入" data-en="Global Input">全局输入</h3>
+      <p class="feature-desc" data-zh="在任何应用的任何输入框中使用。浏览器、编辑器、聊天软件、笔记本——无处不在。" data-en="Use it in any text field across any application. Browsers, editors, chat apps, notes — everywhere.">在任何应用的任何输入框中使用。浏览器、编辑器、聊天软件、笔记本——无处不在。</p>
+    </div>
+    <div class="feature-card reveal reveal-delay-3">
+      <div class="feature-icon">⚡</div>
+      <h3 class="feature-title" data-zh="即时响应" data-en="Instant Response">即时响应</h3>
+      <p class="feature-desc" data-zh="本地推理，毫秒级响应。不依赖网络延迟，说完即得。自动标点符号，省去手动编辑。" data-en="Local inference with millisecond response. No network latency. Automatic punctuation saves manual editing.">本地推理，毫秒级响应。不依赖网络延迟，说完即得。自动标点符号，省去手动编辑。</p>
+    </div>
+    <div class="feature-card reveal reveal-delay-4">
+      <div class="feature-icon">🎯</div>
+      <h3 class="feature-title" data-zh="极简设计" data-en="Minimal Design">极简设计</h3>
+      <p class="feature-desc" data-zh="菜单栏常驻，不占 Dock 栏。自定义快捷键，按 Escape 随时取消。历史记录可查。" data-en="Lives in the menu bar, no Dock icon. Customizable hotkey, press Escape to cancel anytime. Full history search.">菜单栏常驻，不占 Dock 栏。自定义快捷键，按 Escape 随时取消。历史记录可查。</p>
+    </div>
+  </div>
+</section>
+
+<!-- Tech Specs -->
+<section id="specs">
+  <span class="section-label reveal" data-zh="技术细节" data-en="TECH SPECS">技术细节</span>
+  <h2 class="section-title reveal" data-zh="引擎盖之下" data-en="Under the Hood">引擎盖之下</h2>
+
+  <div class="specs-container">
+    <div class="specs-list">
+      <div class="spec-item reveal reveal-delay-1">
+        <div class="spec-dot"></div>
+        <div>
+          <div class="spec-label" data-zh="语音引擎" data-en="Speech Engine">语音引擎</div>
+          <div class="spec-value">Sherpa-ONNX Paraformer</div>
+        </div>
+      </div>
+      <div class="spec-item reveal reveal-delay-2">
+        <div class="spec-dot"></div>
+        <div>
+          <div class="spec-label" data-zh="标点恢复" data-en="Punctuation">标点恢复</div>
+          <div class="spec-value">CT-Transformer</div>
+        </div>
+      </div>
+      <div class="spec-item reveal reveal-delay-1">
+        <div class="spec-dot"></div>
+        <div>
+          <div class="spec-label" data-zh="音频采集" data-en="Audio Capture">音频采集</div>
+          <div class="spec-value">AVAudioEngine · 16kHz mono Float32</div>
+        </div>
+      </div>
+      <div class="spec-item reveal reveal-delay-2">
+        <div class="spec-dot"></div>
+        <div>
+          <div class="spec-label" data-zh="文字输出" data-en="Text Output">文字输出</div>
+          <div class="spec-value" data-zh="CGEvent 键盘模拟（非剪贴板）" data-en="CGEvent keyboard simulation (no clipboard)">CGEvent 键盘模拟（非剪贴板）</div>
+        </div>
+      </div>
+      <div class="spec-item reveal reveal-delay-3">
+        <div class="spec-dot"></div>
+        <div>
+          <div class="spec-label" data-zh="历史存储" data-en="History Storage">历史存储</div>
+          <div class="spec-value">SQLite3</div>
+        </div>
+      </div>
+      <div class="spec-item reveal reveal-delay-4">
+        <div class="spec-dot"></div>
+        <div>
+          <div class="spec-label" data-zh="系统要求" data-en="System Requirements">系统要求</div>
+          <div class="spec-value">macOS 13.0 Ventura+</div>
+        </div>
+      </div>
+    </div>
+    <div class="specs-visual reveal">
+      <div class="specs-diagram">
+        <div class="specs-circle"></div>
+        <div class="specs-circle"></div>
+        <div class="specs-circle"></div>
+        <div class="specs-center" data-zh="100%<span>本地处理</span>" data-en="100%<span>Local</span>">100%<span>本地处理</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-banner">
+  <h2 class="cta-title reveal" data-zh="准备好解放双手了吗？" data-en="Ready to Free Your Hands?">准备好解放双手了吗？</h2>
+  <p class="cta-desc reveal" data-zh="下载 VowKy，体验最纯粹的语音输入。" data-en="Download VowKy and experience the purest voice input.">下载 VowKy，体验最纯粹的语音输入。</p>
+  <div class="reveal reveal-delay-1">
+    <button class="btn-primary" style="font-size:1.1rem; padding:1rem 2.5rem;" data-zh="⬇ 免费下载 VowKy" data-en="⬇ Download VowKy Free">⬇ 免费下载 VowKy</button>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">VowKy</div>
+    <div class="footer-text">© 2025 VowKy. <span data-zh="用声音，释放生产力。" data-en="Voice-powered productivity.">用声音，释放生产力。</span></div>
+    <div class="footer-links">
+      <a href="https://github.com" data-zh="GitHub" data-en="GitHub">GitHub</a>
+      <a href="#" data-zh="隐私政策" data-en="Privacy">隐私政策</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ===== Generate Waveform Bars =====
+(function() {
+  const container = document.getElementById('waveform');
+  const barCount = 48;
+  for (let i = 0; i < barCount; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'wave-bar';
+    const distance = Math.abs(i - barCount / 2) / (barCount / 2);
+    const maxH = 60 - distance * 45;
+    bar.style.setProperty('--h', maxH + 'px');
+    bar.style.animationDelay = (i * 0.06) + 's';
+    container.appendChild(bar);
+  }
+})();
+
+// ===== Typing Demo =====
+(function() {
+  const phrases = {
+    zh: [
+      '你好，今天天气真不错。',
+      '明天下午三点开会，记得准备材料。',
+      '帮我订一张周五去上海的机票。',
+      '这个方案需要重新评估一下风险。',
+      '麻烦把会议纪要发到群里，谢谢。'
+    ],
+    en: [
+      'Hello, the weather is great today.',
+      'Meeting at 3 PM tomorrow, prepare materials.',
+      'Book me a flight to Shanghai on Friday.',
+      'This proposal needs a risk reassessment.',
+      'Please share the meeting notes in the group.'
+    ]
+  };
+
+  const el = document.getElementById('demo-text');
+  let phraseIdx = 0, charIdx = 0, deleting = false, lang = 'zh';
+  let timeout;
+
+  function type() {
+    const currentPhrases = phrases[lang];
+    const phrase = currentPhrases[phraseIdx % currentPhrases.length];
+
+    if (!deleting) {
+      charIdx++;
+      el.innerHTML = phrase.slice(0, charIdx) + '<span class="demo-cursor"></span>';
+      if (charIdx >= phrase.length) {
+        timeout = setTimeout(() => { deleting = true; type(); }, 2200);
+        return;
+      }
+      timeout = setTimeout(type, 60 + Math.random() * 80);
+    } else {
+      charIdx--;
+      el.innerHTML = phrase.slice(0, charIdx) + '<span class="demo-cursor"></span>';
+      if (charIdx <= 0) {
+        deleting = false;
+        phraseIdx++;
+        timeout = setTimeout(type, 400);
+        return;
+      }
+      timeout = setTimeout(type, 25);
+    }
+  }
+
+  type();
+
+  window.updateTypingLang = function(newLang) {
+    lang = newLang;
+    clearTimeout(timeout);
+    charIdx = 0; deleting = false;
+    el.innerHTML = '<span class="demo-cursor"></span>';
+    setTimeout(type, 300);
+  };
+})();
+
+// ===== Scroll Reveal =====
+(function() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.15 });
+
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+})();
+
+// ===== Nav Scroll Effect =====
+(function() {
+  const nav = document.getElementById('navbar');
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 40);
+  });
+})();
+
+// ===== Language Switch =====
+function switchLang(lang) {
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === lang);
+  });
+
+  document.querySelectorAll('[data-' + lang + ']').forEach(el => {
+    const val = el.getAttribute('data-' + lang);
+    if (val) {
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+        el.placeholder = val;
+      } else {
+        el.innerHTML = val;
+      }
+    }
+  });
+
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  if (window.updateTypingLang) window.updateTypingLang(lang);
+}
+</script>
+
+</body>
+</html>
