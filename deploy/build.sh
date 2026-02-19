@@ -90,10 +90,16 @@ codesign_with_retry() {
 }
 
 if [ "$NOTARIZE" = true ]; then
-    # prod: 先签内嵌 frameworks，再签主 app（分步避免 --deep timestamp 问题）
+    # prod: 从内到外递归签名所有二进制（公证要求每个二进制都有 Developer ID + timestamp）
+    # 1. 签名 Sparkle 内嵌的 XPC 服务和辅助 app
+    find "${APP_PATH}/Contents/Frameworks" -name "*.xpc" -o -name "*.app" -o -name "Autoupdate" | sort -r | while read -r item; do
+        [ -e "$item" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "$item"
+    done
+    # 2. 签名 framework 顶层
     for fw in "${APP_PATH}/Contents/Frameworks/"*.framework; do
         [ -d "$fw" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "$fw"
     done
+    # 3. 签名主 app
     codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "${APP_PATH}"
 else
     # 不公证：显式禁用 timestamp（Developer ID 会自动尝试）
