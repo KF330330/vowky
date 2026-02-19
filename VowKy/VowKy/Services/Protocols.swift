@@ -28,3 +28,14 @@ protocol AudioBackupProtocol {
     func recoverSamples() -> [Float]?
     func deleteBackup()
 }
+
+protocol UsageTrackerProtocol {
+    func trackVoiceStart()
+    func trackVoiceComplete(durationMs: Int, charCount: Int)
+    func trackVoiceCancel()
+    func trackVoiceFailure()
+    func trackRecovery()
+    func trackHotkeyChange()
+    func trackHistorySearch()
+    func trackHistoryCopy()
+}
