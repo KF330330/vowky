@@ -28,6 +28,25 @@ open website/index.html              # Preview in browser
 
 Press Option+Space → speak → press again → text appears at cursor position in any app. Fully offline (Sherpa-ONNX), no clipboard, no internet, privacy-first.
 
+## Deploy Commands
+
+```bash
+make preflight       # 部署前环境预检
+make deploy-dev      # 构建 + 部署到 dev.vowky.com
+make verify-dev      # 验证 dev 环境
+make deploy-prod     # 构建 + 签名 + 公证 + 部署到 vowky.com
+make verify-prod     # 验证生产环境
+make bump-patch      # 版本号 patch +1
+make bump-minor      # 版本号 minor +1
+```
+
+Deploy 私密配置在 `deploy/config.local.sh`（已 gitignore），模板见 `deploy/config.local.sh.example`。
+
+## TODO
+
+- [ ] **Prod 部署公证**：Apple timestamp 服务暂时不可用（2026-02-19），导致 `codesign --timestamp` 失败，prod 构建无法完成公证。Dev 部署已正常工作。等 Apple 服务恢复后运行 `make deploy-prod` 完成生产环境首次部署。
+- [ ] **安装 Sparkle 工具**：`brew install sparkle`，安装后 `sign_update` 可自动从 Keychain 读取 EdDSA 私钥签名 DMG，使 Sparkle 自动更新的签名验证完整工作。
+
 ## Key Naming Convention
 
 The product was renamed from **VoKey → VowKy**. All code, configs, and docs now use "VowKy" / "vowky". If you find any remaining "VoKey" references, they are stale and should be updated.
