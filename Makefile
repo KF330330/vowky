@@ -15,6 +15,9 @@ deploy-dev: ## 构建并部署到 dev.vowky.com
 deploy-prod: ## 构建并部署到 vowky.com（生产）
 	./deploy/deploy.sh prod
 
+deploy-prod-skip-notarize: ## 部署到生产（跳过公证，Apple timestamp 不可用时使用）
+	SKIP_NOTARIZE=1 ./deploy/deploy.sh prod
+
 bump-patch: ## 版本号 patch +1（如 1.0.0 → 1.0.1）
 	./deploy/bump-version.sh patch
 

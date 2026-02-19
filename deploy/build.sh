@@ -13,6 +13,12 @@ source "${SCRIPT_DIR}/config.sh"
 # ============================================================
 set_env "${1:-dev}"
 
+# 支持 SKIP_NOTARIZE=1 跳过公证（Apple timestamp 不可用时使用）
+if [ "${SKIP_NOTARIZE:-}" = "1" ]; then
+    NOTARIZE=false
+    export NOTARIZE
+fi
+
 VERSION="$(get_version)"
 BUILD="$(get_build)"
 DMG_NAME="VowKy-${VERSION}-${BUILD}.dmg"
@@ -90,8 +96,8 @@ if [ "$NOTARIZE" = true ]; then
     done
     codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "${APP_PATH}"
 else
-    # dev: 简单签名（不需要 timestamp）
-    codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime "${APP_PATH}"
+    # 不公证：显式禁用 timestamp（Developer ID 会自动尝试）
+    codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none "${APP_PATH}"
 fi
 log_ok "代码签名完成"
 
@@ -145,7 +151,7 @@ log_info "签名 DMG..."
 if [ "$NOTARIZE" = true ]; then
     codesign_with_retry --force --sign "${SIGN_IDENTITY}" --timestamp "${DMG_PATH}"
 else
-    codesign --force --sign "${SIGN_IDENTITY}" "${DMG_PATH}"
+    codesign --force --sign "${SIGN_IDENTITY}" --timestamp=none "${DMG_PATH}"
 fi
 log_ok "DMG 签名完成"
 

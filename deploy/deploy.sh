@@ -154,6 +154,8 @@ log_info "上传 appcast.xml..."
 rsync -avz \
     "${APPCAST_PATH}" \
     "${SERVER}:${WEB_ROOT}/site/appcast.xml"
+# Nginx 期望 appcast.xml 在 WEB_ROOT 根目录，创建软链接
+ssh "${SERVER}" "ln -sf ${WEB_ROOT}/site/appcast.xml ${WEB_ROOT}/appcast.xml"
 log_ok "appcast.xml 上传完成"
 
 # ============================================================
