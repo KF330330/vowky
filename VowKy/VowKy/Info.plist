@@ -21,6 +21,6 @@
 	<key>SUFeedURL</key>
 	<string>https://vowky.com/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_EDDSA_PUBLIC_KEY</string>
+	<string>5HFLdxafbqIdUo3q8aIPwizdPDp89GSFJGmXP+LB6xk=</string>
 </dict>
 </plist>
