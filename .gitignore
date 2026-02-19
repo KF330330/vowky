@@ -1,0 +1,14 @@
+# Build artifacts
+deploy/build/
+*.dmg
+*.xcarchive
+
+# Xcode
+VowKy/VowKy.xcodeproj/
+VowKy/build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+
+# macOS
+.DS_Store

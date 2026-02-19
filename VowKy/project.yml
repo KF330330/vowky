@@ -5,6 +5,11 @@ options:
     macOS: "13.0"
   xcodeVersion: "16.0"
 
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.8.0"
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -33,7 +38,11 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         DEVELOPMENT_TEAM: "REDACTED_TEAM_ID"
         ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: VowKy/VowKy.entitlements
         MACOSX_DEPLOYMENT_TARGET: "13.0"
+    entitlements:
+      path: VowKy/VowKy.entitlements
     dependencies:
       - framework: Libraries/sherpa-onnx.xcframework
         embed: false
@@ -41,6 +50,7 @@ targets:
       - sdk: Foundation.framework
       - sdk: AVFoundation.framework
       - sdk: libsqlite3.tbd
+      - package: Sparkle
 
   VowKyTests:
     type: bundle.unit-test

@@ -1,8 +1,17 @@
 import SwiftUI
 import AppKit
+import Sparkle
 
 struct MenuBarView: View {
     @ObservedObject var appState: AppState
+    private let updater: SPUUpdater
+    @ObservedObject private var updateViewModel: CheckForUpdatesViewModel
+
+    init(appState: AppState, updater: SPUUpdater) {
+        self.appState = appState
+        self.updater = updater
+        self.updateViewModel = CheckForUpdatesViewModel(updater: updater)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -72,6 +81,20 @@ struct MenuBarView: View {
             }
 
             Divider()
+
+            // Check for Updates
+            Button {
+                updater.checkForUpdates()
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("Check for Updates")
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .disabled(!updateViewModel.canCheckForUpdates)
 
             // Settings
             Button {
