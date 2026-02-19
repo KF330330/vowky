@@ -1,6 +1,6 @@
 #!/bin/bash
 # deploy/deploy.sh — VowKy 主部署入口
-# 用法: ./deploy/deploy.sh [dev|prod]
+# 用法: ./deploy/deploy.sh
 # 步骤: 构建 → 上传网站 → 上传 DMG → 生成 appcast.xml
 
 set -euo pipefail
@@ -8,18 +8,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 
-# ============================================================
-# 参数解析
-# ============================================================
-set_env "${1:-dev}"
-
-log_info "部署 VowKy — 环境: ${ENV} → ${DOMAIN}"
+log_info "部署 VowKy → ${DOMAIN}"
 
 # ============================================================
 # 1. 构建
 # ============================================================
 log_info "开始构建..."
-"${SCRIPT_DIR}/build.sh" "${ENV}"
+"${SCRIPT_DIR}/build.sh"
 
 VERSION="$(get_version)"
 BUILD="$(get_build)"

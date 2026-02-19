@@ -34,35 +34,16 @@ DEV_IDENTITY="Apple Development"
 # 服务器
 # ============================================================
 # SERVER 从 config.local.sh 加载
-PROD_DOMAIN="vowky.com"
-DEV_DOMAIN="dev.vowky.com"
-PROD_WEB_ROOT="/var/www/vowky/prod"
-DEV_WEB_ROOT="/var/www/vowky/dev"
+DOMAIN="vowky.com"
+WEB_ROOT="/var/www/vowky/prod"
 
 # ============================================================
-# set_env — 根据环境 (dev/prod) 设置变量
-# 用法: set_env dev  或  set_env prod
+# 环境变量（固定 prod）
 # ============================================================
-set_env() {
-    local env="${1:-dev}"
-    case "$env" in
-        prod|production)
-            ENV="prod"
-            SIGN_IDENTITY="$PROD_IDENTITY"
-            DOMAIN="$PROD_DOMAIN"
-            WEB_ROOT="$PROD_WEB_ROOT"
-            NOTARIZE=true
-            ;;
-        dev|development|*)
-            ENV="dev"
-            SIGN_IDENTITY="$DEV_IDENTITY"
-            DOMAIN="$DEV_DOMAIN"
-            WEB_ROOT="$DEV_WEB_ROOT"
-            NOTARIZE=false
-            ;;
-    esac
-    export ENV SIGN_IDENTITY DOMAIN WEB_ROOT NOTARIZE
-}
+ENV="prod"
+SIGN_IDENTITY="$PROD_IDENTITY"
+NOTARIZE=true
+export ENV SIGN_IDENTITY DOMAIN WEB_ROOT NOTARIZE
 
 # ============================================================
 # 辅助函数

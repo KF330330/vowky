@@ -1,6 +1,6 @@
 #!/bin/bash
 # deploy/build.sh — VowKy 构建流程
-# 用法: ./deploy/build.sh [dev|prod]
+# 用法: ./deploy/build.sh
 # 输出: deploy/build/dmg/VowKy-{version}-{build}.dmg
 
 set -euo pipefail
@@ -9,9 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 
 # ============================================================
-# 参数解析
+# 环境（固定 prod，config.sh 已设置）
 # ============================================================
-set_env "${1:-dev}"
 
 # 支持 SKIP_NOTARIZE=1 跳过公证（Apple timestamp 不可用时使用）
 if [ "${SKIP_NOTARIZE:-}" = "1" ]; then

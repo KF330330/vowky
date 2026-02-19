@@ -1,22 +1,16 @@
-.PHONY: build-dev build-prod deploy-dev deploy-prod bump-patch bump-minor bump-major preflight verify-dev verify-prod help
+.PHONY: build deploy deploy-skip-notarize bump-patch bump-minor bump-major preflight verify help
 
 help: ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-build-dev: ## 构建 Dev 版本 DMG
-	./deploy/build.sh dev
+build: ## 构建 DMG（Developer ID 签名 + 公证）
+	./deploy/build.sh
 
-build-prod: ## 构建 Prod 版本 DMG（含公证）
-	./deploy/build.sh prod
+deploy: ## 构建并部署到 vowky.com
+	./deploy/deploy.sh
 
-deploy-dev: ## 构建并部署到 dev.vowky.com
-	./deploy/deploy.sh dev
-
-deploy-prod: ## 构建并部署到 vowky.com（生产）
-	./deploy/deploy.sh prod
-
-deploy-prod-skip-notarize: ## 部署到生产（跳过公证，Apple timestamp 不可用时使用）
-	SKIP_NOTARIZE=1 ./deploy/deploy.sh prod
+deploy-skip-notarize: ## 部署（跳过公证，Apple timestamp 不可用时使用）
+	SKIP_NOTARIZE=1 ./deploy/deploy.sh
 
 bump-patch: ## 版本号 patch +1（如 1.0.0 → 1.0.1）
 	./deploy/bump-version.sh patch
@@ -30,8 +24,5 @@ bump-major: ## 版本号 major +1（如 1.0.0 → 2.0.0）
 preflight: ## 部署前环境预检
 	./deploy/preflight.sh
 
-verify-dev: ## 验证 dev 环境部署结果
-	./deploy/verify.sh dev
-
-verify-prod: ## 验证 prod 环境部署结果
-	./deploy/verify.sh prod
+verify: ## 验证部署结果
+	./deploy/verify.sh

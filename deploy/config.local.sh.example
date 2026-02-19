@@ -10,6 +10,3 @@ SERVER="user@your-server-ip"
 PROD_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 TEAM_ID="YOUR_TEAM_ID"
 NOTARY_PROFILE="Your-Notary-Profile"
-
-# Dev 环境 basic auth 密码（用于 verify.sh 验证 dev 部署）
-DEV_AUTH_PASS="your-dev-password"

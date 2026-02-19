@@ -1,20 +1,13 @@
 #!/bin/bash
 # deploy/verify.sh — 部署后验证
-# 用法: ./deploy/verify.sh [dev|prod]
+# 用法: ./deploy/verify.sh
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
-set_env "${1:-dev}"
 
 VERSION="$(get_version)"
 BUILD="$(get_build)"
 BASE_URL="https://${DOMAIN}"
-
-# dev 环境 basic auth（从 config.local.sh 读取 DEV_AUTH_PASS）
-CURL_OPTS=""
-if [ "$ENV" = "dev" ] && [ -n "${DEV_AUTH_PASS:-}" ]; then
-    CURL_OPTS="--user vowky:${DEV_AUTH_PASS}"
-fi
 
 PASS=0
 FAIL=0
@@ -22,13 +15,13 @@ FAIL=0
 check_pass() { ((PASS++)); echo "  ✓ $1"; }
 check_fail() { ((FAIL++)); echo "  ✗ $1"; }
 
-echo "VowKy 部署验证 — ${ENV} (${DOMAIN})"
+echo "VowKy 部署验证 — ${DOMAIN}"
 echo "============================================"
 
 # 1. 网站可访问
 echo ""
 echo "[1/4] 检查网站..."
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${CURL_OPTS} "${BASE_URL}/" 2>/dev/null || echo "000")
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/" 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
     check_pass "网站返回 HTTP 200"
 else
@@ -38,7 +31,7 @@ fi
 # 2. 下载链接
 echo ""
 echo "[2/4] 检查下载链接..."
-DL_CODE=$(curl -s -o /dev/null -w "%{http_code}" -I ${CURL_OPTS} "${BASE_URL}/downloads/VowKy-latest.dmg" 2>/dev/null || echo "000")
+DL_CODE=$(curl -s -o /dev/null -w "%{http_code}" -I "${BASE_URL}/downloads/VowKy-latest.dmg" 2>/dev/null || echo "000")
 if [ "$DL_CODE" = "200" ] || [ "$DL_CODE" = "302" ]; then
     check_pass "DMG 下载链接有效 (HTTP ${DL_CODE})"
 else
@@ -58,7 +51,7 @@ fi
 # 4. appcast.xml
 echo ""
 echo "[4/4] 检查 appcast.xml..."
-APPCAST_CONTENT=$(curl -s ${CURL_OPTS} "${BASE_URL}/appcast.xml" 2>/dev/null || echo "")
+APPCAST_CONTENT=$(curl -s "${BASE_URL}/appcast.xml" 2>/dev/null || echo "")
 if echo "$APPCAST_CONTENT" | grep -q "<sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>"; then
     check_pass "appcast.xml 包含当前版本 v${VERSION}"
 elif echo "$APPCAST_CONTENT" | grep -q "sparkle:shortVersionString"; then

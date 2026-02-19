@@ -32,10 +32,8 @@ Press Option+Space → speak → press again → text appears at cursor position
 
 ```bash
 make preflight       # 部署前环境预检
-make deploy-dev      # 构建 + 部署到 dev.vowky.com
-make verify-dev      # 验证 dev 环境
-make deploy-prod     # 构建 + 签名 + 公证 + 部署到 vowky.com
-make verify-prod     # 验证生产环境
+make deploy          # 构建 + 签名 + 公证 + 部署到 vowky.com
+make verify          # 验证部署结果
 make bump-patch      # 版本号 patch +1
 make bump-minor      # 版本号 minor +1
 ```
