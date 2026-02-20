@@ -98,11 +98,11 @@ if [ "$NOTARIZE" = true ]; then
     for fw in "${APP_PATH}/Contents/Frameworks/"*.framework; do
         [ -d "$fw" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "$fw"
     done
-    # 3. 签名主 app
-    codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "${APP_PATH}"
+    # 3. 签名主 app（必须传 --entitlements，否则重签会丢失 entitlements）
+    codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
 else
     # 不公证：显式禁用 timestamp（Developer ID 会自动尝试）
-    codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none "${APP_PATH}"
+    codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
 fi
 log_ok "代码签名完成"
 

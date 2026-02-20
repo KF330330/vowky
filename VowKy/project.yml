@@ -43,6 +43,8 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: "13.0"
     entitlements:
       path: VowKy/VowKy.entitlements
+      properties:
+        com.apple.security.cs.allow-unsigned-executable-memory: true
     dependencies:
       - framework: Libraries/sherpa-onnx.xcframework
         embed: false
