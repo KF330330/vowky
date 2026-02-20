@@ -16,6 +16,8 @@
 	<string>1</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VowKy 需要麦克风权限用于语音输入</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>SUFeedURL</key>

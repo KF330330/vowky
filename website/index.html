@@ -13,37 +13,31 @@
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  /* 背景色系 — 带淡绿色调 */
-  --bg: #FAFCF4;
-  --bg-secondary: #F5F8EC;
+  --bg: #F7FAF0;
+  --bg-secondary: #F0F5E4;
   --bg-card: #FFFFFF;
-  --bg-elevated: #F0F5E4;
-  /* 文字色系 — 橄榄绿调 */
-  --text-primary: #1A1E12;
-  --text-secondary: #5A6348;
-  --text-muted: #96A07E;
-  /* 强调色系 — 基于 icon 黄绿渐变 */
+  --bg-elevated: #E8EED8;
+  --text-primary: #1A2210;
+  --text-secondary: #4E5C3A;
+  --text-muted: #8A9872;
   --accent-bright: #D4E87C;
   --accent-main: #B8D458;
   --accent-deep: #8AAE3A;
   --accent-dark: #5A6B2A;
   --accent-darkest: #4A5A22;
   --accent-glow: rgba(212, 232, 124, 0.25);
-  /* 边框 — 带绿调 */
-  --border: #DDE5C8;
-  --border-light: #EBF0DA;
-  /* 渐变 */
-  --gradient-hero: linear-gradient(160deg, #EFF5DC 0%, #FAFCF4 30%, #F5F8EC 60%, #E8F0D0 100%);
+  --border: #DCE6C8;
+  --border-light: #E8EED8;
+  --gradient-hero: linear-gradient(160deg, #EBF2D8 0%, #F7FAF0 30%, #F0F5E4 60%, #E4ECC8 100%);
   --gradient-accent: linear-gradient(135deg, #D4E87C, #B8D458);
   --gradient-accent-hover: linear-gradient(135deg, #C8E06A, #A0C44A);
   --gradient-soft: linear-gradient(180deg, rgba(212,232,124,0.1), transparent);
-  /* 通用 */
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif;
   --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
   --shadow-sm: 0 1px 3px rgba(74, 90, 34, 0.06);
   --shadow-md: 0 4px 16px rgba(74, 90, 34, 0.08);
   --shadow-lg: 0 12px 40px rgba(74, 90, 34, 0.12);
-  --radius: 16px;
+  --radius: 14px;
   --radius-sm: 10px;
 }
 
@@ -65,7 +59,7 @@ nav {
   transition: all 0.4s;
 }
 nav.scrolled {
-  background: rgba(250, 252, 244, 0.85);
+  background: rgba(247, 250, 240, 0.85);
   backdrop-filter: blur(20px) saturate(1.4);
   border-bottom: 1px solid var(--border-light);
   box-shadow: 0 1px 8px rgba(74, 90, 34, 0.04);
@@ -116,13 +110,15 @@ nav.scrolled {
   mask-image: linear-gradient(to bottom, black 60%, transparent);
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent);
 }
+/* Hero butterfly SVG positioned via class */
+.hero-butterfly-bg { position: absolute; right: -2%; top: 8%; width: 420px; opacity: 0.06; color: var(--accent-deep); pointer-events: none; z-index: 0; animation: flutter-drift 6s ease-in-out infinite; }
 .hero-content { flex: 1.2; }
 .hero-visual { flex: 1; display: flex; justify-content: center; }
 .hero-title {
   font-size: clamp(2.8rem, 6vw, 4.2rem);
   font-weight: 800; letter-spacing: -0.04em;
-  line-height: 1.2; margin-bottom: 1.5rem;
-  background: linear-gradient(135deg, var(--text-primary) 30%, var(--accent-dark) 80%, var(--accent-deep));
+  line-height: 1.35; margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, #1A2210 30%, #5A6B2A 70%, #B8D458);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
 }
@@ -174,14 +170,29 @@ nav.scrolled {
 .btn-primary {
   display: inline-flex; align-items: center; gap: 0.5rem;
   padding: 0.8rem 1.8rem; border: none; border-radius: 28px;
-  background: var(--gradient-accent); color: var(--accent-darkest);
+  background: var(--gradient-accent); color: #3A4A1E;
   font-size: 0.95rem; font-weight: 600; cursor: pointer;
   transition: all 0.3s; font-family: var(--font-body);
   box-shadow: 0 4px 16px var(--accent-glow);
   text-decoration: none;
 }
-.btn-primary:hover { transform: translateY(-2px); background: var(--gradient-accent-hover); box-shadow: 0 8px 28px rgba(184, 212, 88, 0.4); }
-.btn-primary svg { stroke: var(--accent-darkest); }
+.btn-primary:hover {
+  background: var(--gradient-accent-hover);
+  box-shadow: 0 8px 28px rgba(184, 212, 88, 0.4);
+  animation: wing-beat 0.4s ease;
+}
+@keyframes wing-beat {
+  0% { transform: scaleX(1) rotate(0deg); }
+  10% { transform: scaleX(0.7) rotate(-2deg); }
+  20% { transform: scaleX(1.05) rotate(1deg); }
+  30% { transform: scaleX(0.75) rotate(-1deg); }
+  40% { transform: scaleX(1.02) rotate(0.5deg); }
+  50% { transform: scaleX(0.8) rotate(-0.5deg); }
+  60% { transform: scaleX(1.01) rotate(0deg); }
+  75% { transform: scaleX(0.85) rotate(0deg); }
+  100% { transform: scaleX(1) rotate(0deg); }
+}
+.btn-primary svg { stroke: #3A4A1E; }
 .btn-secondary {
   display: inline-flex; align-items: center; gap: 0.5rem;
   padding: 0.8rem 1.8rem; border: 1px solid var(--border);
@@ -199,67 +210,27 @@ nav.scrolled {
 }
 
 /* macOS Mockup */
-.mac-mockup {
-  width: 320px; border-radius: 16px; overflow: hidden;
-  background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(0,0,0,0.02);
-}
-.mac-titlebar {
-  height: 36px; background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-light);
-  display: flex; align-items: center; padding: 0 14px; gap: 7px;
-}
+.mac-mockup { width: 320px; border-radius: var(--radius); overflow: hidden; background: var(--bg-card); border: 1px solid var(--border-light); box-shadow: var(--shadow-lg), 0 0 0 1px rgba(0,0,0,0.02); }
+.mac-titlebar { height: 36px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-light); display: flex; align-items: center; padding: 0 14px; gap: 7px; }
 .mac-dot { width: 11px; height: 11px; border-radius: 50%; }
-.mac-dot:nth-child(1) { background: #FF6159; }
-.mac-dot:nth-child(2) { background: #FFC130; }
-.mac-dot:nth-child(3) { background: #2AC840; }
-.mac-titlebar-text {
-  flex: 1; text-align: center; font-size: 0.72rem;
-  color: var(--text-muted); font-weight: 500;
-}
-.mac-menubar {
-  height: 28px; background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-light);
-  display: flex; align-items: center; justify-content: flex-end;
-  padding: 0 12px; gap: 10px;
-}
-.mac-menubar-icon { color: var(--text-muted); display: flex; }
-.mac-menubar-icon.active svg { color: var(--accent-deep); }
-.mac-panel {
-  padding: 20px; display: flex; flex-direction: column;
-  align-items: center; gap: 16px; min-height: 180px;
-  background: linear-gradient(180deg, var(--bg-card), var(--bg-secondary));
-}
-.mac-status {
-  font-size: 0.8rem; color: var(--text-secondary);
-  display: flex; align-items: center; gap: 0.5rem;
-}
-.mac-status-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: #EF4444; animation: rec-pulse 1.5s ease-in-out infinite;
-}
-@keyframes rec-pulse {
-  0%,100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.8); }
-}
-.mac-waveform { width: 100%; height: 50px; }
-.mac-waveform svg { width: 100%; height: 100%; }
-.mac-waveform path {
-  fill: none; stroke: var(--accent-main); stroke-width: 1.5;
-  stroke-linecap: round; opacity: 0.7;
-}
+.mac-dot:nth-child(1) { background: #FF6159; } .mac-dot:nth-child(2) { background: #FFC130; } .mac-dot:nth-child(3) { background: #2AC840; }
+.mac-titlebar-text { flex: 1; text-align: center; font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
+.mac-menubar { height: 28px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-light); display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; gap: 10px; }
+.mac-menubar-icon { color: var(--text-muted); display: flex; } .mac-menubar-icon.active svg { color: var(--accent-deep); }
+.mac-panel { padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; min-height: 180px; background: linear-gradient(180deg, var(--bg-card), var(--bg-secondary)); }
+.mac-status { font-size: 0.8rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem; }
+.mac-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #EF4444; animation: rec-pulse 1.5s ease-in-out infinite; }
+@keyframes rec-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
+.mac-waveform { width: 100%; height: 50px; } .mac-waveform svg { width: 100%; height: 100%; }
+.mac-waveform path { fill: none; stroke: var(--accent-main); stroke-width: 1.5; stroke-linecap: round; opacity: 0.7; }
 .mac-waveform path:last-child { stroke: var(--accent-bright); opacity: 0.3; }
-.mac-hint {
-  font-size: 0.72rem; color: var(--text-muted);
-  display: flex; align-items: center; gap: 0.35rem;
-}
-.mac-kbd {
-  padding: 0.15rem 0.4rem; border-radius: 5px;
-  background: var(--bg-secondary); border: 1px solid var(--border);
-  font-family: var(--font-mono); font-size: 0.65rem;
-  color: var(--text-secondary);
-}
+.mac-hint { font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem; }
+.mac-kbd { padding: 0.15rem 0.4rem; border-radius: 5px; background: var(--bg-secondary); border: 1px solid var(--border); font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-secondary); }
+
+/* ===== Section Divider (butterfly) ===== */
+.section-divider { display: flex; align-items: center; justify-content: center; padding: 0; color: var(--accent-dark); }
+.section-divider::before, .section-divider::after { content: ''; flex: 1; height: 1px; background: linear-gradient(to right, transparent, var(--border), transparent); }
+.divider-butterfly { margin: 0 1rem; color: var(--accent-dark); }
 
 /* ===== Proof Bar ===== */
 .proof-bar {
@@ -294,7 +265,7 @@ nav.scrolled {
 .section-title {
   font-size: clamp(1.8rem, 3.5vw, 2.5rem);
   font-weight: 800; letter-spacing: -0.03em;
-  line-height: 1.15; margin-bottom: 0.75rem;
+  line-height: 1.25; margin-bottom: 0.75rem;
 }
 .section-desc {
   font-size: 1rem; color: var(--text-secondary);
@@ -368,34 +339,11 @@ nav.scrolled {
 }
 
 /* ===== Privacy Statement ===== */
-.privacy-section {
-  padding: 5rem 2rem; text-align: center;
-  position: relative; overflow: hidden;
-  background: linear-gradient(160deg, #E8F0D0 0%, var(--bg-secondary) 50%, #E4ECC8 100%);
-}
-.privacy-section::before {
-  content: ''; position: absolute; inset: 0;
-  background: radial-gradient(circle at 30% 50%, rgba(212,232,124,0.2), transparent 50%),
-              radial-gradient(circle at 70% 50%, rgba(138,174,58,0.15), transparent 50%);
-}
-.privacy-main {
-  font-size: clamp(1.5rem, 3vw, 2.2rem);
-  font-weight: 800; letter-spacing: -0.02em;
-  line-height: 1.4; margin-bottom: 0.5rem;
-  position: relative;
-}
-.privacy-forever {
-  display: block; font-size: clamp(2rem, 4vw, 3rem);
-  background: var(--gradient-accent);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-top: 0.25rem; font-weight: 800;
-}
-.privacy-sub {
-  margin-top: 1.5rem; font-size: 0.85rem;
-  color: var(--text-muted); letter-spacing: 0.05em;
-  position: relative;
-}
+.privacy-section { padding: 5rem 2rem; text-align: center; position: relative; overflow: hidden; background: linear-gradient(160deg, #E4ECC8 0%, #F0F5E4 40%, #E8F0D0 100%); }
+.privacy-section::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 30% 50%, rgba(212,232,124,0.2), transparent 50%), radial-gradient(circle at 70% 50%, rgba(138,174,58,0.15), transparent 50%); }
+.privacy-main { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -0.02em; line-height: 1.5; margin-bottom: 0.5rem; position: relative; }
+.privacy-forever { display: block; font-size: clamp(2rem, 4vw, 3rem); background: var(--gradient-accent); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-top: 0.25rem; font-weight: 800; }
+.privacy-sub { margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-muted); letter-spacing: 0.05em; position: relative; }
 
 /* ===== Features Bento ===== */
 .bento-grid {
@@ -417,7 +365,7 @@ nav.scrolled {
 }
 .bento-card.large { grid-row: span 2; }
 .bento-icon {
-  width: 42px; height: 42px; border-radius: 12px;
+  width: 42px; height: 42px; border-radius: 50% 50% 50% 20%;
   background: linear-gradient(135deg, rgba(212,232,124,0.2), rgba(138,174,58,0.15));
   display: flex; align-items: center; justify-content: center;
   color: var(--accent-dark); margin-bottom: 1.25rem;
@@ -431,131 +379,110 @@ nav.scrolled {
 }
 
 /* ===== Tech Specs Terminal ===== */
-.terminal {
-  margin-top: 3.5rem; border-radius: var(--radius); overflow: hidden;
-  background: #1C1C1E; border: 1px solid rgba(255,255,255,0.08);
-  max-width: 620px; box-shadow: var(--shadow-lg);
-}
-.terminal-bar {
-  height: 40px; background: #2C2C2E;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  display: flex; align-items: center; padding: 0 16px; gap: 8px;
-}
+.terminal { margin-top: 3.5rem; border-radius: var(--radius); overflow: hidden; background: #1A2412; border: 1px solid rgba(255,255,255,0.08); max-width: 620px; box-shadow: var(--shadow-lg); }
+.terminal-bar { height: 40px; background: #242E1A; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 16px; gap: 8px; }
 .terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
-.terminal-dot:nth-child(1) { background: #FF6159; }
-.terminal-dot:nth-child(2) { background: #FFC130; }
-.terminal-dot:nth-child(3) { background: #2AC840; }
-.terminal-title {
-  flex: 1; text-align: center; font-size: 0.72rem;
-  color: #888; font-family: var(--font-mono);
-}
-.terminal-body {
-  padding: 1.5rem; font-family: var(--font-mono);
-  font-size: 0.82rem; line-height: 1.9; color: #E0E0E0;
-}
-.terminal-prompt { color: var(--accent-main); }
-.terminal-cmd { color: #E0E0E0; }
-.terminal-line { opacity: 0; transition: opacity 0.3s; }
-.terminal-line.visible { opacity: 1; }
-.terminal-key { color: var(--accent-bright); display: inline-block; min-width: 100px; }
-.terminal-val { color: #AAA; }
-.terminal-cursor {
-  display: inline-block; width: 8px; height: 1em;
-  background: var(--accent-main); animation: cblink 0.7s step-end infinite;
-  vertical-align: text-bottom;
-}
+.terminal-dot:nth-child(1) { background: #FF6159; } .terminal-dot:nth-child(2) { background: #FFC130; } .terminal-dot:nth-child(3) { background: #2AC840; }
+.terminal-title { flex: 1; text-align: center; font-size: 0.72rem; color: #888; font-family: var(--font-mono); }
+.terminal-body { padding: 1.5rem; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.9; color: #E0E0E0; }
+.terminal-prompt { color: var(--accent-main); } .terminal-cmd { color: #E0E0E0; }
+.terminal-line { opacity: 0; transition: opacity 0.3s; } .terminal-line.visible { opacity: 1; }
+.terminal-key { color: var(--accent-bright); display: inline-block; min-width: 100px; } .terminal-val { color: #AAA; }
+.terminal-cursor { display: inline-block; width: 8px; height: 1em; background: var(--accent-main); animation: cblink 0.7s step-end infinite; vertical-align: text-bottom; }
 
 /* ===== FAQ ===== */
-.faq-list { margin-top: 3rem; max-width: 680px; }
-.faq-item { border-bottom: 1px solid var(--border-light); }
-.faq-q {
-  width: 100%; padding: 1.25rem 0;
-  background: none; border: none; color: var(--text-primary);
-  font-size: 0.95rem; font-weight: 600; text-align: left;
-  cursor: pointer; display: flex; justify-content: space-between;
-  align-items: center; font-family: var(--font-body);
-  transition: color 0.3s;
-}
+.faq-list { margin-top: 3rem; max-width: 680px; } .faq-item { border-bottom: 1px solid var(--border-light); }
+.faq-q { width: 100%; padding: 1.25rem 0; background: none; border: none; color: var(--text-primary); font-size: 0.95rem; font-weight: 600; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-family: var(--font-body); transition: color 0.3s; }
 .faq-q:hover { color: var(--accent-dark); }
 .faq-arrow { transition: transform 0.3s; color: var(--text-muted); flex-shrink: 0; }
 .faq-item.open .faq-arrow { transform: rotate(90deg); color: var(--accent-deep); }
-.faq-a {
-  max-height: 0; overflow: hidden;
-  transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1), padding 0.3s;
-  padding: 0;
-}
+.faq-a { max-height: 0; overflow: hidden; transition: max-height 0.5s cubic-bezier(0.33, 1, 0.68, 1), padding 0.4s cubic-bezier(0.33, 1, 0.68, 1); padding: 0; }
 .faq-item.open .faq-a { max-height: 200px; padding-bottom: 1.25rem; }
 .faq-a-inner { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.7; }
 
 /* ===== CTA ===== */
-.cta {
-  text-align: center; padding: 6rem 2rem;
-  max-width: 700px; margin: 0 auto; position: relative;
-}
-.cta::before {
-  content: ''; position: absolute; top: 0; left: 10%; right: 10%; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent-bright), var(--accent-deep), var(--accent-bright), transparent);
-}
-.cta-tagline {
-  font-size: clamp(1.1rem, 2vw, 1.4rem);
-  font-weight: 600; letter-spacing: 0.02em;
-  color: var(--text-secondary); margin-bottom: 2rem;
-}
+.cta { text-align: center; padding: 6rem 2rem; max-width: 700px; margin: 0 auto; position: relative; }
+.cta::before { content: ''; position: absolute; top: 0; left: 10%; right: 10%; height: 1px; background: linear-gradient(90deg, transparent, var(--accent-bright), var(--accent-deep), var(--accent-bright), transparent); }
+.cta-tagline { font-size: clamp(1.1rem, 2vw, 1.4rem); font-weight: 600; letter-spacing: 0.02em; color: var(--text-secondary); margin-bottom: 2rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+.cta-butterfly { display: inline-block; color: var(--accent-dark); opacity: 0.4; animation: wing-beat-gentle 3s ease-in-out infinite; transform-origin: center center; }
 .cta-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
 .cta-note { margin-top: 1.25rem; font-size: 0.78rem; color: var(--text-muted); }
 
+/* ===== Butterfly Animations ===== */
+@keyframes flutter {
+  0% { transform: perspective(800px) rotateY(0) rotateX(2deg) scale(1); opacity:.06; }
+  15% { transform: perspective(800px) rotateY(12deg) rotateX(-1deg) scale(1.01); opacity:.07; }
+  30% { transform: perspective(800px) rotateY(-5deg) rotateX(3deg) scale(.99); opacity:.055; }
+  50% { transform: perspective(800px) rotateY(8deg) rotateX(-2deg) scale(1.02); opacity:.075; }
+  65% { transform: perspective(800px) rotateY(-10deg) rotateX(1deg) scale(1); opacity:.06; }
+  80% { transform: perspective(800px) rotateY(5deg) rotateX(-1deg) scale(1.01); opacity:.065; }
+  100% { transform: perspective(800px) rotateY(0) rotateX(2deg) scale(1); opacity:.06; }
+}
+@keyframes flutter-drift {
+  0% { transform: perspective(600px) rotateY(0) translateY(0) translateX(0); opacity:.06; }
+  20% { transform: perspective(600px) rotateY(15deg) translateY(-4px) translateX(2px); opacity:.07; }
+  40% { transform: perspective(600px) rotateY(-8deg) translateY(-2px) translateX(-1px); opacity:.055; }
+  60% { transform: perspective(600px) rotateY(10deg) translateY(-6px) translateX(3px); opacity:.075; }
+  80% { transform: perspective(600px) rotateY(-12deg) translateY(-1px) translateX(-2px); opacity:.06; }
+  100% { transform: perspective(600px) rotateY(0) translateY(0) translateX(0); opacity:.06; }
+}
+@keyframes wing-beat-gentle {
+  0%,100% { transform: scaleX(1); } 25% { transform: scaleX(.88); } 50% { transform: scaleX(1); } 75% { transform: scaleX(.92); }
+}
+.priv-butterfly { animation: flutter 4s ease-in-out infinite; transform-origin: center center; }
+.priv-butterfly:nth-child(2) { animation-duration: 5s; animation-delay: -1.2s; }
+.priv-butterfly:nth-child(3) { animation-duration: 6s; animation-delay: -2.8s; }
+.cta:hover .cta-butterfly { animation: wing-beat .8s ease-out; }
+
 /* ===== Footer ===== */
 footer { border-top: 1px solid var(--border-light); padding: 2rem; background: var(--bg-secondary); }
-.footer-inner {
-  max-width: 1100px; margin: 0 auto;
-  display: flex; align-items: center; justify-content: space-between;
-}
+.footer-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
 .footer-brand { font-size: 1rem; font-weight: 800; color: var(--text-muted); }
 .footer-copy { font-size: 0.75rem; color: var(--text-muted); }
 .footer-links { display: flex; gap: 1.25rem; }
-.footer-links a {
-  font-size: 0.78rem; color: var(--text-muted);
-  text-decoration: none; transition: color 0.3s;
-}
+.footer-links a { font-size: 0.78rem; color: var(--text-muted); text-decoration: none; transition: color 0.3s; }
 .footer-links a:hover { color: var(--accent-dark); }
 
 /* ===== Reveal ===== */
-.reveal {
-  opacity: 0; transform: translateY(16px);
-  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-}
+.reveal { opacity: 0; transform: translateY(16px); transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1); }
 .reveal.visible { opacity: 1; transform: translateY(0); }
-.rd1 { transition-delay: 0.1s; }
-.rd2 { transition-delay: 0.2s; }
-.rd3 { transition-delay: 0.3s; }
-.rd4 { transition-delay: 0.4s; }
+.rd1 { transition-delay: .08s; } .rd2 { transition-delay: .16s; } .rd3 { transition-delay: .24s; } .rd4 { transition-delay: .32s; }
 
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
-  nav { padding: 0.85rem 1.25rem; }
+  nav { padding: .85rem 1.25rem; }
   .nav-link { display: none; }
   .hero { flex-direction: column; gap: 2.5rem; padding: 5.5rem 1.5rem 3rem; min-height: auto; }
-  .hero-visual { display: none; }
+  .hero-visual, .hero-butterfly-bg, .priv-butterfly { display: none; }
   .hero-title { font-size: clamp(2.2rem, 8vw, 3rem); }
   .steps-layout { flex-direction: column; gap: 2rem; }
   .steps-demo { position: static; }
-  .bento-grid { grid-template-columns: 1fr; }
-  .bento-card.large { grid-row: span 1; }
-  .proof-inner { gap: 1rem; }
-  .proof-sep { display: none; }
-  .footer-inner { flex-direction: column; gap: 0.75rem; text-align: center; }
+  .bento-grid { grid-template-columns: 1fr; } .bento-card.large { grid-row: span 1; }
+  .proof-inner { gap: .75rem; } .proof-sep { display: none; }
+  .footer-inner { flex-direction: column; gap: .75rem; text-align: center; }
+  .cta-tagline { flex-wrap: wrap; }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; transition: none; }
-  .demo-wave span { animation: none; }
-  .mac-status-dot { animation: none; }
+  .demo-wave span, .mac-status-dot { animation: none; }
   .demo-cursor, .terminal-cursor { animation: none; opacity: 1; }
+  .hero-butterfly-bg, .priv-butterfly, .cta-butterfly { animation: none !important; }
 }
 </style>
 </head>
 <body>
+
+<!-- Shared SVG defs for butterfly clipPaths -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden;" aria-hidden="true">
+  <defs>
+    <clipPath id="hero-lw"><path d="M80 40 C72 20,50 4,28 8 C12 11,2 26,6 42 C9 54,20 60,36 58 C44 57,52 54,58 50 L72 56 C66 62,54 72,42 80 C30 88,16 92,10 100 C6 106,12 114,22 112 C36 108,54 96,66 80 L76 66 L80 60Z"/></clipPath>
+    <clipPath id="hero-rw"><path d="M80 40 C88 20,110 4,132 8 C148 11,158 26,154 42 C151 54,140 60,124 58 C116 57,108 54,102 50 L88 56 C94 62,106 72,118 80 C130 88,144 92,150 100 C154 106,148 114,138 112 C124 108,106 96,94 80 L84 66 L80 60Z"/></clipPath>
+    <clipPath id="priv-lw"><path d="M30 16 C27 8,18 2,10 4 C4 5,1 12,3 18 C4 22,9 24,15 23 L26 22 C22 26,16 32,10 36 C6 39,4 43,8 44 C14 43,22 38,28 30 L30 24Z"/></clipPath>
+    <clipPath id="priv-rw"><path d="M30 16 C33 8,42 2,50 4 C56 5,59 12,57 18 C56 22,51 24,45 23 L34 22 C38 26,44 32,50 36 C54 39,56 43,52 44 C46 43,38 38,32 30 L30 24Z"/></clipPath>
+    <clipPath id="sm-lw"><path d="M12 6 C10.5 3,7 0.5,4 1.5 C1.5 2.5,0.5 5,1.5 7.5 C2 9,4 10,7 9.5 L10.5 9 C8.5 11,6 13.5,3.5 15 C2 16,2 17.5,3.5 17 C6 16,9 13,11 10 L12 8.5Z"/></clipPath>
+    <clipPath id="sm-rw"><path d="M12 6 C13.5 3,17 0.5,20 1.5 C22.5 2.5,23.5 5,22.5 7.5 C22 9,20 10,17 9.5 L13.5 9 C15.5 11,18 13.5,20.5 15 C22 16,22 17.5,20.5 17 C18 16,15 13,13 10 L12 8.5Z"/></clipPath>
+  </defs>
+</svg>
 
 <!-- Nav -->
 <nav id="navbar">
@@ -575,6 +502,23 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
 
 <!-- Hero -->
 <section class="hero">
+  <!-- Hero butterfly decoration (large, background) -->
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="currentColor" aria-hidden="true" class="hero-butterfly-bg">
+    <path d="M80 40 C72 20,50 4,28 8 C12 11,2 26,6 42 C9 54,20 60,36 58 C44 57,52 54,58 50 L72 56 C66 62,54 72,42 80 C30 88,16 92,10 100 C6 106,12 114,22 112 C36 108,54 96,66 80 L76 66 L80 60Z" opacity="0.12"/>
+    <path d="M80 40 C88 20,110 4,132 8 C148 11,158 26,154 42 C151 54,140 60,124 58 C116 57,108 54,102 50 L88 56 C94 62,106 72,118 80 C130 88,144 92,150 100 C154 106,148 114,138 112 C124 108,106 96,94 80 L84 66 L80 60Z" opacity="0.12"/>
+    <g clip-path="url(#hero-lw)">
+      <rect x="16" y="24" width="4" height="72" rx="2" opacity="0.7"/><rect x="26" y="16" width="4" height="88" rx="2" opacity="0.8"/><rect x="36" y="10" width="4" height="98" rx="2" opacity="0.85"/><rect x="46" y="6" width="4" height="106" rx="2" opacity="0.95"/><rect x="56" y="12" width="4" height="96" rx="2" opacity="0.9"/><rect x="66" y="20" width="4" height="80" rx="2" opacity="0.8"/><rect x="74" y="30" width="3" height="58" rx="1.5" opacity="0.65"/>
+    </g>
+    <g clip-path="url(#hero-rw)">
+      <rect x="83" y="30" width="3" height="58" rx="1.5" opacity="0.65"/><rect x="90" y="20" width="4" height="80" rx="2" opacity="0.8"/><rect x="100" y="12" width="4" height="96" rx="2" opacity="0.9"/><rect x="110" y="6" width="4" height="106" rx="2" opacity="0.95"/><rect x="120" y="10" width="4" height="98" rx="2" opacity="0.85"/><rect x="130" y="16" width="4" height="88" rx="2" opacity="0.8"/><rect x="140" y="24" width="4" height="72" rx="2" opacity="0.7"/>
+    </g>
+    <rect x="78.5" y="34" width="3" height="46" rx="1.5"/>
+    <circle cx="80" cy="32" r="3"/>
+    <path d="M80 32 C76 22,68 14,62 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M80 32 C84 22,92 14,98 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="62" cy="10" r="2"/><circle cx="98" cy="10" r="2"/>
+  </svg>
+
   <div class="hero-content">
     <h1 class="hero-title">
       <span data-i18n="hero.t1">你的声音，</span><br>
@@ -640,6 +584,17 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
     </div>
   </div>
 </section>
+
+<!-- Divider before Proof Bar -->
+<div class="section-divider">
+  <svg class="divider-butterfly" width="28" height="18" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true" style="opacity:0.5;color:var(--accent-main);">
+    <path d="M12 6 C10.5 3,7 0.5,4 1.5 C1.5 2.5,0.5 5,1.5 7.5 C2 9,4 10,7 9.5 L10.5 9 C8.5 11,6 13.5,3.5 15 C2 16,2 17.5,3.5 17 C6 16,9 13,11 10 L12 8.5Z" opacity="0.1"/>
+    <path d="M12 6 C13.5 3,17 0.5,20 1.5 C22.5 2.5,23.5 5,22.5 7.5 C22 9,20 10,17 9.5 L13.5 9 C15.5 11,18 13.5,20.5 15 C22 16,22 17.5,20.5 17 C18 16,15 13,13 10 L12 8.5Z" opacity="0.1"/>
+    <g clip-path="url(#sm-lw)"><rect x="3.5" y="3" width="1.2" height="12" rx="0.6" opacity="0.8"/><rect x="6.5" y="1.5" width="1.2" height="15" rx="0.6"/><rect x="9.5" y="4" width="1" height="10" rx="0.5" opacity="0.75"/></g>
+    <g clip-path="url(#sm-rw)"><rect x="13.5" y="4" width="1" height="10" rx="0.5" opacity="0.75"/><rect x="16.3" y="1.5" width="1.2" height="15" rx="0.6"/><rect x="19.3" y="3" width="1.2" height="12" rx="0.6" opacity="0.8"/></g>
+    <rect x="11.5" y="5.5" width="1" height="8" rx="0.5"/><circle cx="12" cy="5" r="1"/>
+  </svg>
+</div>
 
 <!-- Proof Bar -->
 <div class="proof-bar">
@@ -721,8 +676,48 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
   </div>
 </section>
 
+<!-- Divider before Privacy -->
+<div class="section-divider">
+  <svg class="divider-butterfly" width="28" height="18" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true" style="opacity:0.5;color:var(--accent-main);">
+    <path d="M12 6 C10.5 3,7 0.5,4 1.5 C1.5 2.5,0.5 5,1.5 7.5 C2 9,4 10,7 9.5 L10.5 9 C8.5 11,6 13.5,3.5 15 C2 16,2 17.5,3.5 17 C6 16,9 13,11 10 L12 8.5Z" opacity="0.1"/>
+    <path d="M12 6 C13.5 3,17 0.5,20 1.5 C22.5 2.5,23.5 5,22.5 7.5 C22 9,20 10,17 9.5 L13.5 9 C15.5 11,18 13.5,20.5 15 C22 16,22 17.5,20.5 17 C18 16,15 13,13 10 L12 8.5Z" opacity="0.1"/>
+    <g clip-path="url(#sm-lw)"><rect x="3.5" y="3" width="1.2" height="12" rx="0.6" opacity="0.8"/><rect x="6.5" y="1.5" width="1.2" height="15" rx="0.6"/><rect x="9.5" y="4" width="1" height="10" rx="0.5" opacity="0.75"/></g>
+    <g clip-path="url(#sm-rw)"><rect x="13.5" y="4" width="1" height="10" rx="0.5" opacity="0.75"/><rect x="16.3" y="1.5" width="1.2" height="15" rx="0.6"/><rect x="19.3" y="3" width="1.2" height="12" rx="0.6" opacity="0.8"/></g>
+    <rect x="11.5" y="5.5" width="1" height="8" rx="0.5"/><circle cx="12" cy="5" r="1"/>
+  </svg>
+</div>
+
 <!-- Privacy Statement -->
 <div class="privacy-section">
+  <!-- Privacy butterfly decorations (3 medium butterflies) -->
+  <svg class="priv-butterfly" viewBox="0 0 60 46" fill="currentColor" aria-hidden="true" style="position:absolute;left:5%;top:10%;width:140px;opacity:0.04;color:var(--accent-deep);transform:rotate(-15deg);pointer-events:none;z-index:0;">
+    <path d="M30 16 C27 8,18 2,10 4 C4 5,1 12,3 18 C4 22,9 24,15 23 L26 22 C22 26,16 32,10 36 C6 39,4 43,8 44 C14 43,22 38,28 30 L30 24Z" opacity="0.1"/>
+    <path d="M30 16 C33 8,42 2,50 4 C56 5,59 12,57 18 C56 22,51 24,45 23 L34 22 C38 26,44 32,50 36 C54 39,56 43,52 44 C46 43,38 38,32 30 L30 24Z" opacity="0.1"/>
+    <g clip-path="url(#priv-lw)"><rect x="7" y="8" width="2" height="30" rx="1" opacity="0.8"/><rect x="13" y="5" width="2" height="36" rx="1" opacity="0.9"/><rect x="19" y="3" width="2" height="40" rx="1"/><rect x="24" y="7" width="2" height="32" rx="1" opacity="0.85"/><rect x="28" y="12" width="1.5" height="22" rx="0.75" opacity="0.7"/></g>
+    <g clip-path="url(#priv-rw)"><rect x="30.5" y="12" width="1.5" height="22" rx="0.75" opacity="0.7"/><rect x="34" y="7" width="2" height="32" rx="1" opacity="0.85"/><rect x="39" y="3" width="2" height="40" rx="1"/><rect x="45" y="5" width="2" height="36" rx="1" opacity="0.9"/><rect x="51" y="8" width="2" height="30" rx="1" opacity="0.8"/></g>
+    <rect x="29.25" y="14" width="1.5" height="18" rx="0.75"/><circle cx="30" cy="13" r="1.5"/>
+    <path d="M30 13 C28 8,24 5,22 3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M30 13 C32 8,36 5,38 3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    <circle cx="22" cy="3" r="1"/><circle cx="38" cy="3" r="1"/>
+  </svg>
+  <svg class="priv-butterfly" viewBox="0 0 60 46" fill="currentColor" aria-hidden="true" style="position:absolute;right:8%;top:30%;width:100px;opacity:0.035;color:var(--accent-dark);transform:rotate(12deg);pointer-events:none;z-index:0;">
+    <path d="M30 16 C27 8,18 2,10 4 C4 5,1 12,3 18 C4 22,9 24,15 23 L26 22 C22 26,16 32,10 36 C6 39,4 43,8 44 C14 43,22 38,28 30 L30 24Z" opacity="0.1"/>
+    <path d="M30 16 C33 8,42 2,50 4 C56 5,59 12,57 18 C56 22,51 24,45 23 L34 22 C38 26,44 32,50 36 C54 39,56 43,52 44 C46 43,38 38,32 30 L30 24Z" opacity="0.1"/>
+    <g clip-path="url(#priv-lw)"><rect x="7" y="8" width="2" height="30" rx="1" opacity="0.8"/><rect x="13" y="5" width="2" height="36" rx="1" opacity="0.9"/><rect x="19" y="3" width="2" height="40" rx="1"/><rect x="24" y="7" width="2" height="32" rx="1" opacity="0.85"/><rect x="28" y="12" width="1.5" height="22" rx="0.75" opacity="0.7"/></g>
+    <g clip-path="url(#priv-rw)"><rect x="30.5" y="12" width="1.5" height="22" rx="0.75" opacity="0.7"/><rect x="34" y="7" width="2" height="32" rx="1" opacity="0.85"/><rect x="39" y="3" width="2" height="40" rx="1"/><rect x="45" y="5" width="2" height="36" rx="1" opacity="0.9"/><rect x="51" y="8" width="2" height="30" rx="1" opacity="0.8"/></g>
+    <rect x="29.25" y="14" width="1.5" height="18" rx="0.75"/><circle cx="30" cy="13" r="1.5"/>
+    <path d="M30 13 C28 8,24 5,22 3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M30 13 C32 8,36 5,38 3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    <circle cx="22" cy="3" r="1"/><circle cx="38" cy="3" r="1"/>
+  </svg>
+  <svg class="priv-butterfly" viewBox="0 0 60 46" fill="currentColor" aria-hidden="true" style="position:absolute;left:18%;bottom:8%;width:70px;opacity:0.03;color:var(--accent-deep);transform:rotate(-8deg) scaleX(-1);pointer-events:none;z-index:0;">
+    <path d="M30 16 C27 8,18 2,10 4 C4 5,1 12,3 18 C4 22,9 24,15 23 L26 22 C22 26,16 32,10 36 C6 39,4 43,8 44 C14 43,22 38,28 30 L30 24Z" opacity="0.1"/>
+    <path d="M30 16 C33 8,42 2,50 4 C56 5,59 12,57 18 C56 22,51 24,45 23 L34 22 C38 26,44 32,50 36 C54 39,56 43,52 44 C46 43,38 38,32 30 L30 24Z" opacity="0.1"/>
+    <g clip-path="url(#priv-lw)"><rect x="7" y="8" width="2" height="30" rx="1" opacity="0.8"/><rect x="13" y="5" width="2" height="36" rx="1" opacity="0.9"/><rect x="19" y="3" width="2" height="40" rx="1"/><rect x="24" y="7" width="2" height="32" rx="1" opacity="0.85"/><rect x="28" y="12" width="1.5" height="22" rx="0.75" opacity="0.7"/></g>
+    <g clip-path="url(#priv-rw)"><rect x="30.5" y="12" width="1.5" height="22" rx="0.75" opacity="0.7"/><rect x="34" y="7" width="2" height="32" rx="1" opacity="0.85"/><rect x="39" y="3" width="2" height="40" rx="1"/><rect x="45" y="5" width="2" height="36" rx="1" opacity="0.9"/><rect x="51" y="8" width="2" height="30" rx="1" opacity="0.8"/></g>
+    <rect x="29.25" y="14" width="1.5" height="18" rx="0.75"/><circle cx="30" cy="13" r="1.5"/>
+    <path d="M30 13 C28 8,24 5,22 3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M30 13 C32 8,36 5,38 3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+    <circle cx="22" cy="3" r="1"/><circle cx="38" cy="3" r="1"/>
+  </svg>
+
   <p class="privacy-main reveal">
     <span data-i18n="priv.main">你的声音永远不会离开你的 Mac。</span>
     <span class="privacy-forever reveal rd1" data-i18n="priv.forever">永远。</span>
@@ -863,7 +858,23 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
 
 <!-- CTA -->
 <section class="cta">
-  <p class="cta-tagline reveal">Your Voice. Your Mac. Your Data.</p>
+  <p class="cta-tagline reveal">
+    <svg class="cta-butterfly" width="22" height="18" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true" style="vertical-align:middle;color:var(--accent-main);opacity:0.4;">
+      <path d="M12 6 C10.5 3,7 0.5,4 1.5 C1.5 2.5,0.5 5,1.5 7.5 C2 9,4 10,7 9.5 L10.5 9 C8.5 11,6 13.5,3.5 15 C2 16,2 17.5,3.5 17 C6 16,9 13,11 10 L12 8.5Z" opacity="0.1"/>
+      <path d="M12 6 C13.5 3,17 0.5,20 1.5 C22.5 2.5,23.5 5,22.5 7.5 C22 9,20 10,17 9.5 L13.5 9 C15.5 11,18 13.5,20.5 15 C22 16,22 17.5,20.5 17 C18 16,15 13,13 10 L12 8.5Z" opacity="0.1"/>
+      <g clip-path="url(#sm-lw)"><rect x="3.5" y="3" width="1.2" height="12" rx="0.6" opacity="0.8"/><rect x="6.5" y="1.5" width="1.2" height="15" rx="0.6"/><rect x="9.5" y="4" width="1" height="10" rx="0.5" opacity="0.75"/></g>
+      <g clip-path="url(#sm-rw)"><rect x="13.5" y="4" width="1" height="10" rx="0.5" opacity="0.75"/><rect x="16.3" y="1.5" width="1.2" height="15" rx="0.6"/><rect x="19.3" y="3" width="1.2" height="12" rx="0.6" opacity="0.8"/></g>
+      <rect x="11.5" y="5.5" width="1" height="8" rx="0.5"/><circle cx="12" cy="5" r="1"/>
+    </svg>
+    Your Voice. Your Mac. Your Data.
+    <svg class="cta-butterfly" width="22" height="18" viewBox="0 0 24 18" fill="currentColor" aria-hidden="true" style="vertical-align:middle;color:var(--accent-main);opacity:0.4;transform:scaleX(-1);">
+      <path d="M12 6 C10.5 3,7 0.5,4 1.5 C1.5 2.5,0.5 5,1.5 7.5 C2 9,4 10,7 9.5 L10.5 9 C8.5 11,6 13.5,3.5 15 C2 16,2 17.5,3.5 17 C6 16,9 13,11 10 L12 8.5Z" opacity="0.1"/>
+      <path d="M12 6 C13.5 3,17 0.5,20 1.5 C22.5 2.5,23.5 5,22.5 7.5 C22 9,20 10,17 9.5 L13.5 9 C15.5 11,18 13.5,20.5 15 C22 16,22 17.5,20.5 17 C18 16,15 13,13 10 L12 8.5Z" opacity="0.1"/>
+      <g clip-path="url(#sm-lw)"><rect x="3.5" y="3" width="1.2" height="12" rx="0.6" opacity="0.8"/><rect x="6.5" y="1.5" width="1.2" height="15" rx="0.6"/><rect x="9.5" y="4" width="1" height="10" rx="0.5" opacity="0.75"/></g>
+      <g clip-path="url(#sm-rw)"><rect x="13.5" y="4" width="1" height="10" rx="0.5" opacity="0.75"/><rect x="16.3" y="1.5" width="1.2" height="15" rx="0.6"/><rect x="19.3" y="3" width="1.2" height="12" rx="0.6" opacity="0.8"/></g>
+      <rect x="11.5" y="5.5" width="1" height="8" rx="0.5"/><circle cx="12" cy="5" r="1"/>
+    </svg>
+  </p>
   <div class="cta-actions reveal rd1">
     <a class="btn-primary" href="/downloads/VowKy-latest.dmg" data-i18n="cta.dl" data-umami-event="download_click" data-umami-event-location="cta" style="padding:0.85rem 2.25rem; font-size:1rem; text-decoration:none;">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -881,7 +892,7 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
 <footer>
   <div class="footer-inner">
     <span class="footer-brand">VowKy</span>
-    <span class="footer-copy">© 2025 VowKy</span>
+    <span class="footer-copy">&copy; 2025 VowKy</span>
     <div class="footer-links">
       <a href="https://github.com" target="_blank" data-umami-event="github_click" data-umami-event-location="footer">GitHub</a>
       <a href="#" data-i18n="footer.privacy">隐私政策</a>
