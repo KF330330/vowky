@@ -109,9 +109,20 @@ final class AudioRecorder: AudioRecorderProtocol {
         ) else { return }
 
         var error: NSError?
+        var hasProvided = false
         converter.convert(to: outputBuffer, error: &error) { _, outStatus in
+            if hasProvided {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            hasProvided = true
             outStatus.pointee = .haveData
             return buffer
+        }
+
+        if let error = error {
+            NSLog("[VowKy][Audio] Converter error: \(error)")
+            return
         }
 
         guard let data = outputBuffer.floatChannelData else { return }
