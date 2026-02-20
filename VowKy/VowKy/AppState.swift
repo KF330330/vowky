@@ -95,9 +95,50 @@ final class AppState: ObservableObject {
         hotkeyMgr.shouldInterceptCancel = { [weak self] in
             self?.state == .recording
         }
-        hotkeyMgr.start()
+        let started = hotkeyMgr.start()
         self.hotkeyManager = hotkeyMgr
-        print("[VowKy][AppState] setup() complete")
+
+        if !started {
+            // 快捷键启动失败（通常是还没有辅助功能权限），开始轮询
+            startPermissionPolling()
+        }
+        print("[VowKy][AppState] setup() complete, hotkey active: \(started)")
+    }
+
+    // MARK: - Permission Polling
+
+    private var permissionPollTimer: Timer?
+
+    /// 轮询辅助功能权限，授权后自动启动快捷键
+    private func startPermissionPolling() {
+        print("[VowKy][AppState] Starting permission polling...")
+        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.checkAndRetryHotkey()
+            }
+        }
+    }
+
+    private func checkAndRetryHotkey() {
+        guard let hotkeyMgr = hotkeyManager, !hotkeyMgr.isRunning else {
+            stopPermissionPolling()
+            return
+        }
+
+        guard permissionChecker.isAccessibilityGranted() else { return }
+
+        // 权限已授予，重试启动快捷键
+        let started = hotkeyMgr.start()
+        if started {
+            stopPermissionPolling()
+            print("[VowKy][AppState] Permission granted, hotkey now active!")
+        }
+    }
+
+    private func stopPermissionPolling() {
+        permissionPollTimer?.invalidate()
+        permissionPollTimer = nil
+        print("[VowKy][AppState] Permission polling stopped")
     }
 
     // MARK: - Hotkey Handler (Toggle Mode)

@@ -38,6 +38,7 @@ struct SettingsView: View {
     @State private var hotkeyDisplay = HotkeyConfig.current.displayName
     @State private var isRecording = false
     @State private var eventMonitor: Any?
+    @State private var permissionRefreshTimer: Timer?
 
     var body: some View {
         Form {
@@ -90,6 +91,7 @@ struct SettingsView: View {
                         Button("前往设置") {
                             let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: true] as CFDictionary
                             AXIsProcessTrustedWithOptions(options)
+                            startPermissionRefresh()
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -130,6 +132,7 @@ struct SettingsView: View {
         }
         .onDisappear {
             stopRecordingHotkey()
+            stopPermissionRefresh()
         }
     }
 
@@ -163,6 +166,26 @@ struct SettingsView: View {
             stopRecordingHotkey()
             return nil
         }
+    }
+
+    // MARK: - Permission Refresh
+
+    private func startPermissionRefresh() {
+        stopPermissionRefresh()
+        permissionRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in
+            DispatchQueue.main.async {
+                let granted = AXIsProcessTrusted()
+                if granted {
+                    isAccessibilityGranted = true
+                    stopPermissionRefresh()
+                }
+            }
+        }
+    }
+
+    private func stopPermissionRefresh() {
+        permissionRefreshTimer?.invalidate()
+        permissionRefreshTimer = nil
     }
 
     private func stopRecordingHotkey() {

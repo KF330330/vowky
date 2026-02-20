@@ -133,6 +133,9 @@ struct MenuBarView: View {
         case .loading:
             return "Loading model..."
         case .idle:
+            if let hm = appState.hotkeyManager, !hm.isRunning {
+                return "需要辅助功能权限"
+            }
             return "Ready (Option+Space)"
         case .recording:
             return "Recording..."
@@ -148,6 +151,9 @@ struct MenuBarView: View {
         case .loading:
             return .orange
         case .idle:
+            if let hm = appState.hotkeyManager, !hm.isRunning {
+                return .orange
+            }
             return .green
         case .recording:
             return .red
