@@ -127,8 +127,8 @@ nav.scrolled {
   animation: tighten 1s cubic-bezier(0.16, 1, 0.3, 1) 0.6s both;
 }
 @keyframes tighten {
-  from { letter-spacing: 0.15em; opacity: 0.3; }
-  to { letter-spacing: -0.04em; opacity: 1; }
+  from { letter-spacing: 0.15em; }
+  to { letter-spacing: -0.04em; }
 }
 .hero-stat {
   display: inline-flex; align-items: baseline; gap: 0.4rem;
@@ -388,8 +388,7 @@ nav.scrolled {
 /* ===== Features Bento ===== */
 .bento-grid {
   display: grid; margin-top: 3.5rem; gap: 1rem;
-  grid-template-columns: 1.2fr 1fr;
-  grid-template-rows: auto auto;
+  grid-template-columns: 1fr 1fr;
 }
 .bento-card {
   padding: 2rem; border-radius: var(--radius);
@@ -403,7 +402,6 @@ nav.scrolled {
   transform: translateY(-3px);
   border-color: var(--accent-bright);
 }
-.bento-card.large { grid-row: span 2; }
 .bento-icon {
   width: 42px; height: 42px; border-radius: 50% 50% 50% 20%;
   background: linear-gradient(135deg, rgba(212,232,124,0.2), rgba(138,174,58,0.15));
@@ -821,30 +819,12 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
   <p class="section-desc reveal" data-i18n="feat.desc">说话比打字快 4 倍，VowKy 让每个字都不浪费时间。</p>
 
   <div class="bento-grid">
-    <div class="bento-card large reveal rd1">
+    <div class="bento-card reveal rd1">
       <div class="bento-icon">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
       </div>
       <h3 class="bento-title" data-i18n="f1.title">完全离线</h3>
       <p class="bento-desc" data-i18n="f1.desc">基于 Sherpa-ONNX 引擎，语音识别完全在本地运行。断网能用，飞行模式也能用。你的声音数据从不离开这台电脑。</p>
-      <div class="bento-visual">
-        <div style="display:flex; align-items:center; gap:1.5rem; color:var(--text-muted); font-size:0.8rem; font-family:var(--font-mono);">
-          <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" stroke-width="1.5" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-            <span data-i18n="f1.v1">语音</span>
-          </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-main)" stroke-width="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" stroke-width="1.5" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
-            <span data-i18n="f1.v2">本地 AI</span>
-          </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-main)" stroke-width="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-          <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" stroke-width="1.5" stroke-linecap="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-            <span data-i18n="f1.v3">文字</span>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div class="bento-card reveal rd2">
