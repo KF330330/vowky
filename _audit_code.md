@@ -4,7 +4,7 @@
 > Scope: All non-.md files in `/Users/rl/Nutstore_Files/my_nutstore/520-program/vowky/`
 > Search variants: VoKey, vokey, VOKEY, Vokey, voKey (case-insensitive)
 
-## Summary
+## Summary  
 
 | File | Match Count | Risk Level |
 |------|-------------|------------|
