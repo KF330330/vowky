@@ -25,7 +25,7 @@ final class AudioRecorder: AudioRecorderProtocol {
     }()
 
     func startRecording() throws {
-        print("[VowKy][Audio] startRecording() called")
+        NSLog("[VowKy][Audio] startRecording() called")
         // Support VOWKY_TEST_AUDIO env var for testing
         if let testAudioDir = ProcessInfo.processInfo.environment["VOWKY_TEST_AUDIO"] {
             try startFromTestAudio(directory: testAudioDir)
@@ -35,8 +35,8 @@ final class AudioRecorder: AudioRecorderProtocol {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        print("[VowKy][Audio] Input format: sampleRate=\(inputFormat.sampleRate) channels=\(inputFormat.channelCount) bitsPerChannel=\(inputFormat.streamDescription.pointee.mBitsPerChannel)")
-        print("[VowKy][Audio] Target format: sampleRate=\(targetSampleRate) channels=1 Float32")
+        NSLog("[VowKy][Audio] Input format: sampleRate=\(inputFormat.sampleRate) channels=\(inputFormat.channelCount) bitsPerChannel=\(inputFormat.streamDescription.pointee.mBitsPerChannel)")
+        NSLog("[VowKy][Audio] Target format: sampleRate=\(targetSampleRate) channels=1 Float32")
 
         guard let targetFmt = targetFormat else {
             throw AudioRecorderError.formatCreationFailed
@@ -69,9 +69,9 @@ final class AudioRecorder: AudioRecorderProtocol {
     }
 
     func stopRecording() -> [Float] {
-        print("[VowKy][Audio] stopRecording() called")
+        NSLog("[VowKy][Audio] stopRecording() called")
         guard let engine = self.engine else {
-            print("[VowKy][Audio] No engine — returning empty samples")
+            NSLog("[VowKy][Audio] No engine — returning empty samples")
             return []
         }
 
@@ -90,7 +90,7 @@ final class AudioRecorder: AudioRecorderProtocol {
         let maxVal = samples.map { abs($0) }.max() ?? 0
         let avgVal = samples.isEmpty ? 0 : samples.map { abs($0) }.reduce(0, +) / Float(samples.count)
         let duration = Double(samples.count) / targetSampleRate
-        print("[VowKy][Audio] Returning \(samples.count) samples (duration=\(String(format: "%.1f", duration))s, maxAmp=\(String(format: "%.4f", maxVal)), avgAmp=\(String(format: "%.6f", avgVal)))")
+        NSLog("[VowKy][Audio] Returning \(samples.count) samples (duration=\(String(format: "%.1f", duration))s, maxAmp=\(String(format: "%.4f", maxVal)), avgAmp=\(String(format: "%.6f", avgVal)))")
         return samples
     }
 

@@ -11,8 +11,11 @@ import Foundation  // For NSString
 /// - Returns: A pointer that can be passed to C as `const char*`
 
 func toCPointer(_ s: String) -> UnsafePointer<Int8>! {
-  let cs = (s as NSString).utf8String
-  return UnsafePointer<Int8>(cs)
+  // Use strdup to create a persistent copy of the C string.
+  // The original implementation used (s as NSString).utf8String which returns
+  // a pointer to a temporary buffer — freed by the optimizer under -O,
+  // causing dangling pointers in config structs.
+  return s.withCString { UnsafePointer(strdup($0)) }
 }
 
 /// Return an instance of SherpaOnnxOnlineTransducerModelConfig.
@@ -1543,10 +1546,13 @@ class SherpaOnnxOfflinePunctuationWrapper {
   }
 
   func addPunct(text: String) -> String {
-    let cText = SherpaOfflinePunctuationAddPunct(ptr, toCPointer(text))
-    let ans = String(cString: cText!)
-    SherpaOfflinePunctuationFreeText(cText)
-    return ans
+    // Use withCString to avoid strdup leak on every call
+    text.withCString { cStr in
+      let cText = SherpaOfflinePunctuationAddPunct(ptr, cStr)
+      let ans = String(cString: cText!)
+      SherpaOfflinePunctuationFreeText(cText)
+      return ans
+    }
   }
 }
 
@@ -1589,10 +1595,13 @@ class SherpaOnnxOnlinePunctuationWrapper {
   }
 
   func addPunct(text: String) -> String {
-    let cText = SherpaOnnxOnlinePunctuationAddPunct(ptr, toCPointer(text))
-    let ans = String(cString: cText!)
-    SherpaOnnxOnlinePunctuationFreeText(cText)
-    return ans
+    // Use withCString to avoid strdup leak on every call
+    text.withCString { cStr in
+      let cText = SherpaOnnxOnlinePunctuationAddPunct(ptr, cStr)
+      let ans = String(cString: cText!)
+      SherpaOnnxOnlinePunctuationFreeText(cText)
+      return ans
+    }
   }
 }
 

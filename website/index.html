@@ -219,7 +219,7 @@ nav.scrolled {
   color: var(--text-muted); font-weight: 500;
 }
 .mac-menubar {
-  height: 28px; background: var(--bg-warm);
+  height: 28px; background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-light);
   display: flex; align-items: center; justify-content: flex-end;
   padding: 0 12px; gap: 10px;
@@ -229,7 +229,7 @@ nav.scrolled {
 .mac-panel {
   padding: 20px; display: flex; flex-direction: column;
   align-items: center; gap: 16px; min-height: 180px;
-  background: linear-gradient(180deg, var(--bg-card), var(--bg-warm));
+  background: linear-gradient(180deg, var(--bg-card), var(--bg-secondary));
 }
 .mac-status {
   font-size: 0.8rem; color: var(--text-secondary);
@@ -246,17 +246,17 @@ nav.scrolled {
 .mac-waveform { width: 100%; height: 50px; }
 .mac-waveform svg { width: 100%; height: 100%; }
 .mac-waveform path {
-  fill: none; stroke: var(--accent-2); stroke-width: 1.5;
+  fill: none; stroke: var(--accent-main); stroke-width: 1.5;
   stroke-linecap: round; opacity: 0.7;
 }
-.mac-waveform path:last-child { stroke: var(--accent-1); opacity: 0.3; }
+.mac-waveform path:last-child { stroke: var(--accent-bright); opacity: 0.3; }
 .mac-hint {
   font-size: 0.72rem; color: var(--text-muted);
   display: flex; align-items: center; gap: 0.35rem;
 }
 .mac-kbd {
   padding: 0.15rem 0.4rem; border-radius: 5px;
-  background: var(--bg-warm); border: 1px solid var(--border);
+  background: var(--bg-secondary); border: 1px solid var(--border);
   font-family: var(--font-mono); font-size: 0.65rem;
   color: var(--text-secondary);
 }
@@ -265,7 +265,7 @@ nav.scrolled {
 .proof-bar {
   border-top: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
-  background: var(--bg-warm);
+  background: var(--bg-secondary);
   padding: 1.1rem 2rem;
 }
 .proof-inner {
@@ -277,7 +277,7 @@ nav.scrolled {
   display: flex; align-items: center; gap: 0.5rem;
   font-size: 0.82rem; color: var(--text-secondary); font-weight: 500;
 }
-.proof-item svg { color: var(--accent-3); flex-shrink: 0; }
+.proof-item svg { color: var(--accent-deep); flex-shrink: 0; }
 .proof-sep { color: var(--border); font-size: 0.6rem; }
 
 /* ===== Sections Common ===== */
@@ -289,7 +289,7 @@ nav.scrolled {
   font-family: var(--font-mono);
   display: inline-block;
   padding: 0.3rem 0.8rem; border-radius: 20px;
-  background: rgba(200, 224, 80, 0.12);
+  background: rgba(212, 232, 124, 0.15);
 }
 .section-title {
   font-size: clamp(1.8rem, 3.5vw, 2.5rem);
@@ -318,13 +318,13 @@ nav.scrolled {
 }
 .step-dot {
   width: 12px; height: 12px; border-radius: 50%;
-  border: 2.5px solid var(--accent-2); background: var(--bg);
+  border: 2.5px solid var(--accent-main); background: var(--bg);
   flex-shrink: 0; z-index: 1; transition: all 0.3s;
 }
-.step:hover .step-dot { background: var(--accent-1); border-color: var(--accent-3); }
+.step:hover .step-dot { background: var(--accent-bright); border-color: var(--accent-deep); }
 .step-connector {
   width: 2px; flex: 1; min-height: 40px;
-  background: linear-gradient(to bottom, var(--accent-1), var(--border-light));
+  background: linear-gradient(to bottom, var(--accent-bright), var(--border-light));
   border-radius: 1px;
 }
 .step-body { flex: 1; padding-top: 0; }
@@ -338,8 +338,8 @@ nav.scrolled {
 .kbd {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0.2rem 0.5rem; border-radius: 6px;
-  background: var(--bg-warm); border: 1px solid var(--border);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(74, 90, 34, 0.08);
   font-family: var(--font-mono); font-size: 0.75rem;
   color: var(--text-primary); white-space: nowrap;
 }
@@ -352,7 +352,7 @@ nav.scrolled {
   box-shadow: var(--shadow-md);
 }
 .demo-window-bar {
-  height: 36px; background: var(--bg-warm);
+  height: 36px; background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-light);
   display: flex; align-items: center; padding: 0 14px; gap: 7px;
 }
@@ -364,19 +364,19 @@ nav.scrolled {
   padding: 24px; min-height: 220px;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 16px;
-  background: linear-gradient(180deg, #fff, var(--bg-warm));
+  background: linear-gradient(180deg, #fff, var(--bg-secondary));
 }
 
 /* ===== Privacy Statement ===== */
 .privacy-section {
   padding: 5rem 2rem; text-align: center;
   position: relative; overflow: hidden;
-  background: linear-gradient(160deg, #F4F8E0 0%, var(--bg-warm) 50%, #EEF5D8 100%);
+  background: linear-gradient(160deg, #E8F0D0 0%, var(--bg-secondary) 50%, #E4ECC8 100%);
 }
 .privacy-section::before {
   content: ''; position: absolute; inset: 0;
-  background: radial-gradient(circle at 30% 50%, rgba(200,224,80,0.15), transparent 50%),
-              radial-gradient(circle at 70% 50%, rgba(138,206,72,0.1), transparent 50%);
+  background: radial-gradient(circle at 30% 50%, rgba(212,232,124,0.2), transparent 50%),
+              radial-gradient(circle at 70% 50%, rgba(138,174,58,0.15), transparent 50%);
 }
 .privacy-main {
   font-size: clamp(1.5rem, 3vw, 2.2rem);
@@ -413,12 +413,12 @@ nav.scrolled {
 .bento-card:hover {
   box-shadow: var(--shadow-lg);
   transform: translateY(-3px);
-  border-color: var(--accent-1);
+  border-color: var(--accent-bright);
 }
 .bento-card.large { grid-row: span 2; }
 .bento-icon {
   width: 42px; height: 42px; border-radius: 12px;
-  background: linear-gradient(135deg, rgba(200,224,80,0.2), rgba(138,206,72,0.15));
+  background: linear-gradient(135deg, rgba(212,232,124,0.2), rgba(138,174,58,0.15));
   display: flex; align-items: center; justify-content: center;
   color: var(--accent-dark); margin-bottom: 1.25rem;
 }
@@ -426,7 +426,7 @@ nav.scrolled {
 .bento-desc { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.65; }
 .bento-visual {
   margin-top: 1.5rem; padding: 1.25rem; border-radius: var(--radius-sm);
-  background: var(--bg-warm); border: 1px solid var(--border-light);
+  background: var(--bg-secondary); border: 1px solid var(--border-light);
   display: flex; align-items: center; justify-content: center;
 }
 
@@ -453,15 +453,15 @@ nav.scrolled {
   padding: 1.5rem; font-family: var(--font-mono);
   font-size: 0.82rem; line-height: 1.9; color: #E0E0E0;
 }
-.terminal-prompt { color: var(--accent-2); }
+.terminal-prompt { color: var(--accent-main); }
 .terminal-cmd { color: #E0E0E0; }
 .terminal-line { opacity: 0; transition: opacity 0.3s; }
 .terminal-line.visible { opacity: 1; }
-.terminal-key { color: var(--accent-1); display: inline-block; min-width: 100px; }
+.terminal-key { color: var(--accent-bright); display: inline-block; min-width: 100px; }
 .terminal-val { color: #AAA; }
 .terminal-cursor {
   display: inline-block; width: 8px; height: 1em;
-  background: var(--accent-2); animation: cblink 0.7s step-end infinite;
+  background: var(--accent-main); animation: cblink 0.7s step-end infinite;
   vertical-align: text-bottom;
 }
 
@@ -478,7 +478,7 @@ nav.scrolled {
 }
 .faq-q:hover { color: var(--accent-dark); }
 .faq-arrow { transition: transform 0.3s; color: var(--text-muted); flex-shrink: 0; }
-.faq-item.open .faq-arrow { transform: rotate(90deg); color: var(--accent-3); }
+.faq-item.open .faq-arrow { transform: rotate(90deg); color: var(--accent-deep); }
 .faq-a {
   max-height: 0; overflow: hidden;
   transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1), padding 0.3s;
@@ -494,7 +494,7 @@ nav.scrolled {
 }
 .cta::before {
   content: ''; position: absolute; top: 0; left: 10%; right: 10%; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent-1), var(--accent-3), var(--accent-1), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-bright), var(--accent-deep), var(--accent-bright), transparent);
 }
 .cta-tagline {
   font-size: clamp(1.1rem, 2vw, 1.4rem);
@@ -505,7 +505,7 @@ nav.scrolled {
 .cta-note { margin-top: 1.25rem; font-size: 0.78rem; color: var(--text-muted); }
 
 /* ===== Footer ===== */
-footer { border-top: 1px solid var(--border-light); padding: 2rem; background: var(--bg-warm); }
+footer { border-top: 1px solid var(--border-light); padding: 2rem; background: var(--bg-secondary); }
 .footer-inner {
   max-width: 1100px; margin: 0 auto;
   display: flex; align-items: center; justify-content: space-between;
@@ -712,7 +712,7 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
         </div>
         <div class="demo-window-body">
           <svg id="demoWave" width="200" height="60" viewBox="0 0 200 60">
-            <path fill="none" stroke="var(--accent-2)" stroke-width="1.5" stroke-linecap="round" opacity="0.6" id="demoWavePath"/>
+            <path fill="none" stroke="var(--accent-main)" stroke-width="1.5" stroke-linecap="round" opacity="0.6" id="demoWavePath"/>
           </svg>
           <div style="font-size:0.8rem; color:var(--text-muted); text-align:center;" data-i18n="demo.hint">声波可视化演示</div>
         </div>
@@ -746,17 +746,17 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
       <div class="bento-visual">
         <div style="display:flex; align-items:center; gap:1.5rem; color:var(--text-muted); font-size:0.8rem; font-family:var(--font-mono);">
           <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-3)" stroke-width="1.5" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" stroke-width="1.5" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
             <span data-i18n="f1.v1">语音</span>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-main)" stroke-width="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-3)" stroke-width="1.5" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" stroke-width="1.5" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg>
             <span data-i18n="f1.v2">本地 AI</span>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-main)" stroke-width="1.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           <div style="display:flex; flex-direction:column; align-items:center; gap:0.3rem;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-3)" stroke-width="1.5" stroke-linecap="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" stroke-width="1.5" stroke-linecap="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
             <span data-i18n="f1.v3">文字</span>
           </div>
         </div>
