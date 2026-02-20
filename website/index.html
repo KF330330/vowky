@@ -378,18 +378,6 @@ nav.scrolled {
   display: flex; align-items: center; justify-content: center;
 }
 
-/* ===== Tech Specs Terminal ===== */
-.terminal { margin-top: 3.5rem; border-radius: var(--radius); overflow: hidden; background: #1A2412; border: 1px solid rgba(255,255,255,0.08); max-width: 620px; box-shadow: var(--shadow-lg); }
-.terminal-bar { height: 40px; background: #242E1A; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 16px; gap: 8px; }
-.terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
-.terminal-dot:nth-child(1) { background: #FF6159; } .terminal-dot:nth-child(2) { background: #FFC130; } .terminal-dot:nth-child(3) { background: #2AC840; }
-.terminal-title { flex: 1; text-align: center; font-size: 0.72rem; color: #888; font-family: var(--font-mono); }
-.terminal-body { padding: 1.5rem; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.9; color: #E0E0E0; }
-.terminal-prompt { color: var(--accent-main); } .terminal-cmd { color: #E0E0E0; }
-.terminal-line { opacity: 0; transition: opacity 0.3s; } .terminal-line.visible { opacity: 1; }
-.terminal-key { color: var(--accent-bright); display: inline-block; min-width: 100px; } .terminal-val { color: #AAA; }
-.terminal-cursor { display: inline-block; width: 8px; height: 1em; background: var(--accent-main); animation: cblink 0.7s step-end infinite; vertical-align: text-bottom; }
-
 /* ===== FAQ ===== */
 .faq-list { margin-top: 3rem; max-width: 680px; } .faq-item { border-bottom: 1px solid var(--border-light); }
 .faq-q { width: 100%; padding: 1.25rem 0; background: none; border: none; color: var(--text-primary); font-size: 0.95rem; font-weight: 600; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-family: var(--font-body); transition: color 0.3s; }
@@ -465,7 +453,7 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; transition: none; }
   .demo-wave span, .mac-status-dot { animation: none; }
-  .demo-cursor, .terminal-cursor { animation: none; opacity: 1; }
+  .demo-cursor { animation: none; opacity: 1; }
   .hero-butterfly-bg, .priv-butterfly, .cta-butterfly { animation: none !important; }
 }
 </style>
@@ -524,7 +512,7 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
       <span data-i18n="hero.t1">你的声音，</span><br>
       <span class="unlock" data-i18n="hero.t2">解锁文字。</span>
     </h1>
-    <p class="hero-sub" data-i18n="hero.sub">按下 ⌥ Space，说话，文字直达光标位置。完全离线识别，隐私无忧。</p>
+    <p class="hero-sub" data-i18n="hero.sub">按下 ⌘ \，说话，文字直达光标位置。完全离线识别，隐私无忧。</p>
 
     <div class="demo-line">
       <div class="demo-wave"><span></span><span></span><span></span><span></span></div>
@@ -577,7 +565,7 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
         </div>
         <div class="mac-hint">
           <span data-i18n="mock.hint">再次按下</span>
-          <span class="mac-kbd">⌥</span><span class="mac-kbd">Space</span>
+          <span class="mac-kbd">⌘</span><span class="mac-kbd">\</span>
           <span data-i18n="mock.hint2">结束录音</span>
         </div>
       </div>
@@ -613,11 +601,6 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       <span data-i18n="proof.3">macOS 原生</span>
     </div>
-    <span class="proof-sep">·</span>
-    <div class="proof-item">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-      <span data-i18n="proof.4">&lt; 50MB</span>
-    </div>
   </div>
 </div>
 
@@ -636,7 +619,7 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
           <h3 class="step-title" data-i18n="s1.title">按下快捷键</h3>
           <p class="step-desc">
             <span data-i18n="s1.desc">在任何应用中按下</span>
-            <span class="kbd">⌥ Option</span> + <span class="kbd">Space</span>
+            <span class="kbd">⌘ Command</span> + <span class="kbd">\</span>
           </p>
         </div>
       </div>
@@ -784,34 +767,6 @@ footer { border-top: 1px solid var(--border-light); padding: 2rem; background: v
   </div>
 </section>
 
-<!-- Tech Specs -->
-<section class="section" id="specs">
-  <span class="section-label reveal" data-i18n="spec.label">UNDER THE HOOD</span>
-  <h2 class="section-title reveal" data-i18n="spec.title">引擎盖之下</h2>
-
-  <div class="terminal reveal rd1" id="terminal">
-    <div class="terminal-bar">
-      <div class="terminal-dot"></div>
-      <div class="terminal-dot"></div>
-      <div class="terminal-dot"></div>
-      <span class="terminal-title">vowky --info</span>
-    </div>
-    <div class="terminal-body">
-      <div><span class="terminal-prompt">$</span> <span class="terminal-cmd">vowky --info</span></div>
-      <br>
-      <div class="terminal-line" data-idx="0"><span class="terminal-key">engine</span> <span class="terminal-val">Sherpa-ONNX Paraformer</span></div>
-      <div class="terminal-line" data-idx="1"><span class="terminal-key">punct</span> <span class="terminal-val">CT-Transformer</span></div>
-      <div class="terminal-line" data-idx="2"><span class="terminal-key">audio</span> <span class="terminal-val">AVAudioEngine · 16kHz mono Float32</span></div>
-      <div class="terminal-line" data-idx="3"><span class="terminal-key" data-i18n="spec.output">output</span> <span class="terminal-val" data-i18n="spec.output.v">CGEvent 键盘模拟（非剪贴板）</span></div>
-      <div class="terminal-line" data-idx="4"><span class="terminal-key">storage</span> <span class="terminal-val">SQLite3</span></div>
-      <div class="terminal-line" data-idx="5"><span class="terminal-key">requires</span> <span class="terminal-val">macOS 13.0 Ventura+</span></div>
-      <div class="terminal-line" data-idx="6"><span class="terminal-key" data-i18n="spec.privacy">privacy</span> <span class="terminal-val" data-i18n="spec.privacy.v">100% 本地处理</span></div>
-      <br>
-      <div class="terminal-line" data-idx="7"><span class="terminal-cursor"></span></div>
-    </div>
-  </div>
-</section>
-
 <!-- FAQ -->
 <section class="section" id="faq">
   <span class="section-label reveal" data-i18n="faq.label">FAQ</span>
@@ -906,11 +861,11 @@ const i18n = {
   zh: {
     'nav.download': '下载',
     'hero.t1': '你的声音，', 'hero.t2': '解锁文字。',
-    'hero.sub': '按下 ⌥ Space，说话，文字直达光标位置。完全离线识别，隐私无忧。',
+    'hero.sub': '按下 ⌘ \\，说话，文字直达光标位置。完全离线识别，隐私无忧。',
     'hero.dl': '免费下载', 'hero.src': '查看源码',
     'hero.note': 'macOS 13.0+ · 完全免费 · 开源',
     'mock.status': '正在录音...', 'mock.hint': '再次按下', 'mock.hint2': '结束录音',
-    'proof.1': '100% 离线', 'proof.2': '开源代码', 'proof.3': 'macOS 原生', 'proof.4': '< 50MB',
+    'proof.1': '100% 离线', 'proof.2': '开源代码', 'proof.3': 'macOS 原生',
     'how.label': '使用方式', 'how.title': '三步，仅此而已',
     'how.desc': '没有复杂的设置，没有账号注册。安装即用。',
     's1.title': '按下快捷键', 's1.desc': '在任何应用中按下',
@@ -926,9 +881,6 @@ const i18n = {
     'f2.title': '全局输入', 'f2.desc': '在任何应用的任何输入框中使用。浏览器、编辑器、聊天软件——无处不在。',
     'f3.title': '即时响应', 'f3.desc': '本地推理，毫秒级响应。自动补全标点符号。',
     'f4.title': '极简设计', 'f4.desc': '菜单栏常驻，不占 Dock。自定义快捷键，Escape 随时取消。历史记录可查。',
-    'spec.label': '技术细节', 'spec.title': '引擎盖之下',
-    'spec.output': 'output', 'spec.output.v': 'CGEvent 键盘模拟（非剪贴板）',
-    'spec.privacy': 'privacy', 'spec.privacy.v': '100% 本地处理',
     'faq.label': '常见问题', 'faq.title': '常见问题',
     'q1.q': 'VowKy 支持哪些语言？', 'q1.a': '目前支持中文普通话识别，基于 Paraformer 模型。未来将支持更多语言。',
     'q2.q': '需要联网吗？', 'q2.a': '完全不需要。所有语音识别在本地完成，即使在飞行模式下也能正常使用。',
@@ -941,11 +893,11 @@ const i18n = {
   en: {
     'nav.download': 'Download',
     'hero.t1': 'Your voice,', 'hero.t2': 'unlocked.',
-    'hero.sub': 'Press ⌥ Space, speak, and text lands at your cursor. Fully offline. Complete privacy.',
+    'hero.sub': 'Press ⌘ \\, speak, and text lands at your cursor. Fully offline. Complete privacy.',
     'hero.dl': 'Free Download', 'hero.src': 'View Source',
     'hero.note': 'macOS 13.0+ · Free · Open Source',
     'mock.status': 'Recording...', 'mock.hint': 'Press', 'mock.hint2': 'again to stop',
-    'proof.1': '100% Offline', 'proof.2': 'Open Source', 'proof.3': 'Native macOS', 'proof.4': '< 50MB',
+    'proof.1': '100% Offline', 'proof.2': 'Open Source', 'proof.3': 'Native macOS',
     'how.label': 'HOW IT WORKS', 'how.title': 'Three steps. That\'s it.',
     'how.desc': 'No setup, no account, no cloud. Install and go.',
     's1.title': 'Press Hotkey', 's1.desc': 'Press',
@@ -961,9 +913,6 @@ const i18n = {
     'f2.title': 'Global Input', 'f2.desc': 'Works in any text field across any app. Browsers, editors, chat — everywhere.',
     'f3.title': 'Instant', 'f3.desc': 'Local inference, millisecond response. Auto punctuation.',
     'f4.title': 'Minimal', 'f4.desc': 'Menu bar only, no Dock icon. Custom hotkey. Escape to cancel. Full history.',
-    'spec.label': 'UNDER THE HOOD', 'spec.title': 'Under the Hood',
-    'spec.output': 'output', 'spec.output.v': 'CGEvent keyboard sim (no clipboard)',
-    'spec.privacy': 'privacy', 'spec.privacy.v': '100% local processing',
     'faq.label': 'FAQ', 'faq.title': 'Frequently Asked',
     'q1.q': 'What languages are supported?', 'q1.a': 'Currently supports Mandarin Chinese via the Paraformer model. More languages coming soon.',
     'q2.q': 'Does it need internet?', 'q2.a': 'Not at all. All recognition is local. Works even in airplane mode.',
@@ -1072,26 +1021,6 @@ function switchLang(lang) {
 (function() {
   const nav = document.getElementById('navbar');
   window.addEventListener('scroll', () => nav.classList.toggle('scrolled', window.scrollY > 30), { passive: true });
-})();
-
-// ===== Terminal Line Print =====
-(function() {
-  const terminal = document.getElementById('terminal');
-  if (!terminal) return;
-  const lines = terminal.querySelectorAll('.terminal-line');
-  let printed = false;
-
-  const obs = new IntersectionObserver(entries => {
-    entries.forEach(e => {
-      if (e.isIntersecting && !printed) {
-        printed = true;
-        lines.forEach((line, i) => {
-          setTimeout(() => line.classList.add('visible'), i * 150);
-        });
-      }
-    });
-  }, { threshold: 0.3 });
-  obs.observe(terminal);
 })();
 
 // ===== FAQ Toggle =====
