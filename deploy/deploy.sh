@@ -18,7 +18,7 @@ log_info "开始构建..."
 
 VERSION="$(get_version)"
 BUILD="$(get_build)"
-DMG_NAME="VowKy-${VERSION}-${BUILD}.dmg"
+DMG_NAME="VowKy-${VERSION}.dmg"
 DMG_PATH="${BUILD_DIR}/dmg/${DMG_NAME}"
 
 if [ ! -f "${DMG_PATH}" ]; then
