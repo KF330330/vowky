@@ -20,7 +20,7 @@ fi
 
 VERSION="$(get_version)"
 BUILD="$(get_build)"
-DMG_NAME="VowKy-${VERSION}-${BUILD}.dmg"
+DMG_NAME="VowKy-${VERSION}.dmg"
 
 ARCHIVE_DIR="${BUILD_DIR}/archive"
 APP_DIR="${BUILD_DIR}/app"

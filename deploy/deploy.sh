@@ -27,13 +27,22 @@ if [ ! -f "${DMG_PATH}" ]; then
 fi
 
 # ============================================================
-# 2. 上传网站
+# 2. 上传网站（替换下载链接为带版本号的文件名）
 # ============================================================
 log_info "上传网站到 ${SERVER}:${WEB_ROOT}/site/..."
 ssh "${SERVER}" "mkdir -p ${WEB_ROOT}/site ${WEB_ROOT}/downloads"
+
+# 创建临时目录，替换下载链接后上传
+SITE_STAGING="${BUILD_DIR}/site-staging"
+rm -rf "${SITE_STAGING}"
+cp -R "${WEBSITE_DIR}" "${SITE_STAGING}"
+sed -i '' "s|VowKy-latest\.dmg|${DMG_NAME}|g" "${SITE_STAGING}/index.html"
+log_info "下载链接已替换为 ${DMG_NAME}"
+
 rsync -avz --delete \
-    "${WEBSITE_DIR}/" \
+    "${SITE_STAGING}/" \
     "${SERVER}:${WEB_ROOT}/site/"
+rm -rf "${SITE_STAGING}"
 log_ok "网站上传完成"
 
 # ============================================================
