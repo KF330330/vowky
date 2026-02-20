@@ -35,6 +35,8 @@ final class AudioRecorder: AudioRecorderProtocol {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        print("[VowKy][Audio] Input format: sampleRate=\(inputFormat.sampleRate) channels=\(inputFormat.channelCount) bitsPerChannel=\(inputFormat.streamDescription.pointee.mBitsPerChannel)")
+        print("[VowKy][Audio] Target format: sampleRate=\(targetSampleRate) channels=1 Float32")
 
         guard let targetFmt = targetFormat else {
             throw AudioRecorderError.formatCreationFailed
@@ -84,7 +86,11 @@ final class AudioRecorder: AudioRecorderProtocol {
         lock.unlock()
 
         audioLevel = 0
-        print("[VowKy][Audio] Returning \(samples.count) samples")
+        // 统计音频采样信息，帮助诊断是否录到有效音频
+        let maxVal = samples.map { abs($0) }.max() ?? 0
+        let avgVal = samples.isEmpty ? 0 : samples.map { abs($0) }.reduce(0, +) / Float(samples.count)
+        let duration = Double(samples.count) / targetSampleRate
+        print("[VowKy][Audio] Returning \(samples.count) samples (duration=\(String(format: "%.1f", duration))s, maxAmp=\(String(format: "%.4f", maxVal)), avgAmp=\(String(format: "%.6f", avgVal)))")
         return samples
     }
 
