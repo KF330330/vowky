@@ -76,7 +76,7 @@ Mocks: `VowKyTests/Mocks/TestMocks.swift` has `MockSpeechRecognizer`, `MockAudio
 - **Build tool**: XcodeGen (`project.yml`)
 - **Bundle ID**: `com.vowky.app`
 - **Deployment target**: macOS 13.0
-- **Signing**: Apple Development, Team REDACTED_TEAM_ID
+- **Signing**: Apple Development (set your own DEVELOPMENT_TEAM in project.yml)
 - **Native libs**: `Libraries/sherpa-onnx.xcframework` + `Libraries/libonnxruntime.a` (linked via `-lonnxruntime -lc++`)
 - **Bridging header**: `VowKy/SherpaOnnx/SherpaOnnx-Bridging-Header.h`
 - **LSUIElement**: true (menu bar only, no Dock icon)

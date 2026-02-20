@@ -36,7 +36,7 @@ targets:
         HEADER_SEARCH_PATHS:
           - "$(PROJECT_DIR)/Libraries/sherpa-onnx.xcframework/macos-arm64_x86_64/Headers"
         CODE_SIGN_IDENTITY: "Apple Development"
-        DEVELOPMENT_TEAM: "REDACTED_TEAM_ID"
+        DEVELOPMENT_TEAM: ""  # Set your own Apple Developer Team ID
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: VowKy/VowKy.entitlements
