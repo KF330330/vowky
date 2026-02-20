@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VowKy Analytics</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #f8faf2; --bg-card: #fff; --border: #e2e8d0;
+  --text: #1a2210; --text2: #4e5c3a; --text3: #8a9670;
+  --accent: #b8d458; --accent-dark: #7a9a1e; --accent-bg: #f0f5e0;
+  --radius: 12px; --shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+.container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+/* Header */
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
+.header h1 { font-size: 1.5rem; font-weight: 700; }
+.header h1 span { color: var(--accent-dark); }
+.period-btns { display: flex; gap: .5rem; }
+.period-btn {
+  padding: .4rem .9rem; border-radius: 20px; border: 1px solid var(--border);
+  background: var(--bg-card); font-size: .82rem; cursor: pointer; color: var(--text2);
+  transition: all .2s;
+}
+.period-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Stats Cards */
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+.stat-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1.25rem; box-shadow: var(--shadow);
+}
+.stat-label { font-size: .75rem; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .4rem; }
+.stat-value { font-size: 2rem; font-weight: 800; color: var(--text); line-height: 1.2; }
+.stat-sub { font-size: .75rem; color: var(--text3); margin-top: .3rem; }
+.stat-sub b { color: var(--accent-dark); }
+
+/* Charts */
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+.chart-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1.25rem; box-shadow: var(--shadow);
+}
+.chart-card.full { grid-column: span 2; }
+.chart-title { font-size: .9rem; font-weight: 600; margin-bottom: 1rem; color: var(--text2); }
+.chart-wrap { position: relative; height: 260px; }
+.chart-wrap-sm { position: relative; height: 200px; }
+
+/* Funnel */
+.funnel { display: flex; flex-direction: column; gap: .5rem; }
+.funnel-step { display: flex; align-items: center; gap: .75rem; }
+.funnel-label { width: 80px; font-size: .78rem; color: var(--text2); text-align: right; }
+.funnel-bar-wrap { flex: 1; height: 24px; background: var(--accent-bg); border-radius: 12px; overflow: hidden; }
+.funnel-bar { height: 100%; background: var(--accent); border-radius: 12px; transition: width .8s ease; min-width: 2px; }
+.funnel-val { width: 40px; font-size: .78rem; font-weight: 600; color: var(--text); }
+
+/* Empty state */
+.empty { text-align: center; color: var(--text3); padding: 3rem 1rem; font-size: .9rem; }
+
+/* Loading */
+.loading { opacity: .5; pointer-events: none; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .chart-grid { grid-template-columns: 1fr; }
+  .chart-card.full { grid-column: span 1; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1><span>VowKy</span> Analytics</h1>
+    <div class="period-btns">
+      <button class="period-btn" data-period="1d">Today</button>
+      <button class="period-btn active" data-period="7d">7 Days</button>
+      <button class="period-btn" data-period="30d">30 Days</button>
+    </div>
+  </div>
+
+  <!-- Stats Cards -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Page Views</div>
+      <div class="stat-value" id="sPv">-</div>
+      <div class="stat-sub">Today: <b id="sPvToday">-</b></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Unique Visitors</div>
+      <div class="stat-value" id="sUv">-</div>
+      <div class="stat-sub">Today: <b id="sUvToday">-</b></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Downloads</div>
+      <div class="stat-value" id="sDl">-</div>
+      <div class="stat-sub">Today: <b id="sDlToday">-</b></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">GitHub Clicks</div>
+      <div class="stat-value" id="sGh">-</div>
+      <div class="stat-sub">Total events: <b id="sEv">-</b></div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-grid">
+    <div class="chart-card full">
+      <div class="chart-title">Traffic Trend</div>
+      <div class="chart-wrap"><canvas id="chartTrend"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Events</div>
+      <div class="chart-wrap"><canvas id="chartEvents"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Scroll Funnel</div>
+      <div id="funnelWrap" class="funnel"></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Browsers</div>
+      <div class="chart-wrap-sm"><canvas id="chartBrowser"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Operating Systems</div>
+      <div class="chart-wrap-sm"><canvas id="chartOS"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let period = '7d';
+let charts = {};
+
+const COLORS = ['#b8d458','#7a9a1e','#d4e87c','#4e5c3a','#a0c040','#5a6b2a','#e0eca0','#3a4520'];
+
+function $(id) { return document.getElementById(id); }
+
+async function api(path) {
+  const r = await fetch(API + path + (path.includes('?') ? '&' : '?') + 'period=' + period);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function destroyChart(key) {
+  if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+}
+
+async function loadStats() {
+  try {
+    const d = await api('/api/stats');
+    $('sPv').textContent = d.pv.toLocaleString();
+    $('sUv').textContent = d.uv.toLocaleString();
+    $('sDl').textContent = d.downloads.toLocaleString();
+    $('sGh').textContent = d.github.toLocaleString();
+    $('sEv').textContent = d.events.toLocaleString();
+    $('sPvToday').textContent = d.today.pv.toLocaleString();
+    $('sUvToday').textContent = d.today.uv.toLocaleString();
+    $('sDlToday').textContent = d.today.downloads.toLocaleString();
+  } catch(e) { console.error('stats', e); }
+}
+
+async function loadTrend() {
+  try {
+    const d = await api('/api/pageviews');
+    destroyChart('trend');
+    charts.trend = new Chart($('chartTrend'), {
+      type: 'line',
+      data: {
+        labels: d.map(r => r.date),
+        datasets: [
+          { label: 'PV', data: d.map(r => r.pv), borderColor: '#b8d458', backgroundColor: 'rgba(184,212,88,.15)', fill: true, tension: .3 },
+          { label: 'UV', data: d.map(r => r.uv), borderColor: '#7a9a1e', backgroundColor: 'rgba(122,154,30,.1)', fill: true, tension: .3 },
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } },
+        scales: { y: { beginAtZero: true } } }
+    });
+  } catch(e) { console.error('trend', e); }
+}
+
+async function loadEvents() {
+  try {
+    const d = await api('/api/events');
+    destroyChart('events');
+    charts.events = new Chart($('chartEvents'), {
+      type: 'bar',
+      data: {
+        labels: d.map(r => r.name),
+        datasets: [{ data: d.map(r => r.count), backgroundColor: COLORS.slice(0, d.length), borderRadius: 4 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+        plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+    });
+  } catch(e) { console.error('events', e); }
+}
+
+async function loadFunnel() {
+  try {
+    const d = await api('/api/funnel');
+    const max = Math.max(...d.map(r => r.visitors), 1);
+    const wrap = $('funnelWrap');
+    wrap.innerHTML = '';
+    if (d.every(r => r.visitors === 0)) {
+      wrap.innerHTML = '<div class="empty">No data yet</div>';
+      return;
+    }
+    d.forEach(r => {
+      const pct = (r.visitors / max * 100).toFixed(1);
+      wrap.innerHTML += `<div class="funnel-step">
+        <div class="funnel-label">${r.step}</div>
+        <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:${pct}%"></div></div>
+        <div class="funnel-val">${r.visitors}</div>
+      </div>`;
+    });
+  } catch(e) { console.error('funnel', e); }
+}
+
+async function loadDevices() {
+  try {
+    const d = await api('/api/devices');
+    destroyChart('browser');
+    charts.browser = new Chart($('chartBrowser'), {
+      type: 'doughnut',
+      data: { labels: d.browsers.map(r => r.name), datasets: [{ data: d.browsers.map(r => r.count), backgroundColor: COLORS }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+    });
+    destroyChart('os');
+    charts.os = new Chart($('chartOS'), {
+      type: 'doughnut',
+      data: { labels: d.os.map(r => r.name), datasets: [{ data: d.os.map(r => r.count), backgroundColor: COLORS }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+    });
+  } catch(e) { console.error('devices', e); }
+}
+
+async function loadAll() {
+  document.querySelector('.container').classList.add('loading');
+  await Promise.all([loadStats(), loadTrend(), loadEvents(), loadFunnel(), loadDevices()]);
+  document.querySelector('.container').classList.remove('loading');
+}
+
+document.querySelectorAll('.period-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    period = btn.dataset.period;
+    loadAll();
+  });
+});
+
+loadAll();
+</script>
+</body>
+</html>

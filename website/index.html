@@ -8,7 +8,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script defer src="https://analytics.vowky.com/script.js" data-website-id="YOUR_WEBSITE_ID"></script>
+<script>
+(function(){
+  new Image().src='https://analytics.vowky.com/t.gif?p='+encodeURIComponent(location.pathname);
+  window._track=function(n,d){
+    try{navigator.sendBeacon('https://analytics.vowky.com/api/event',JSON.stringify({name:n,data:d||{},path:location.pathname}));}catch(e){}
+  };
+})();
+</script>
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1167,16 +1174,16 @@ function toggleFaq(btn) {
   const item = btn.closest('.faq-item');
   const wasOpen = item.classList.contains('open');
   item.classList.toggle('open');
-  if (!wasOpen && typeof umami !== 'undefined') {
+  if (!wasOpen && typeof window._track === 'function') {
     const idx = Array.from(document.querySelectorAll('.faq-item')).indexOf(item);
-    umami.track('faq_open', { question: 'q' + (idx + 1) });
+    window._track('faq_open', { question: 'q' + (idx + 1) });
   }
 }
 
 // ===== Analytics Events =====
 (function() {
   function track(event, data) {
-    if (typeof umami !== 'undefined') umami.track(event, data);
+    if (typeof window._track === 'function') window._track(event, data);
   }
 
   var origSwitchLang = window.switchLang;
@@ -1184,6 +1191,13 @@ function toggleFaq(btn) {
     origSwitchLang(lang);
     track('lang_switch', { to: lang });
   };
+
+  // Auto-track data-umami-event click elements
+  document.querySelectorAll('[data-umami-event]').forEach(function(el) {
+    el.addEventListener('click', function() {
+      track(el.dataset.umamiEvent, { location: el.dataset.umamiEventLocation || '' });
+    });
+  });
 
   var sectionsSeen = {};
   var sectionMap = [

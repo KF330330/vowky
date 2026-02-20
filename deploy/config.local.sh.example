@@ -10,3 +10,6 @@ SERVER="user@your-server-ip"
 PROD_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 TEAM_ID="YOUR_TEAM_ID"
 NOTARY_PROFILE="Your-Notary-Profile"
+
+# Umami Analytics（网站统计）
+UMAMI_WEBSITE_ID="your-umami-website-id"

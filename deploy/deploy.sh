@@ -39,6 +39,14 @@ cp -R "${WEBSITE_DIR}" "${SITE_STAGING}"
 sed -i '' "s|VowKy-latest\.dmg|${DMG_NAME}|g" "${SITE_STAGING}/index.html"
 log_info "下载链接已替换为 ${DMG_NAME}"
 
+# 注入 Umami website-id（从 config.local.sh 读取）
+if [ -n "${UMAMI_WEBSITE_ID:-}" ]; then
+    sed -i '' "s|YOUR_WEBSITE_ID|${UMAMI_WEBSITE_ID}|g" "${SITE_STAGING}/index.html"
+    log_ok "Umami website-id 已注入"
+else
+    log_warn "UMAMI_WEBSITE_ID 未设置，跳过注入"
+fi
+
 rsync -avz --delete \
     "${SITE_STAGING}/" \
     "${SERVER}:${WEB_ROOT}/site/"

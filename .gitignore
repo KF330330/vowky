@@ -28,5 +28,9 @@ deploy/server/setup.sh
 .env
 .env.*
 
+# Profiling data
+*.profraw
+*.profdata
+
 # Design iterations (not needed for build)
 vowky_icons/
