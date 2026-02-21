@@ -70,7 +70,8 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 @MainActor
 final class OnboardingViewModel: ObservableObject {
     @Published var currentStep: OnboardingStep = .welcome
-    @Published var isAccessibilityGranted: Bool = false
+    @Published var isAccessibilityGranted: Bool = AXIsProcessTrusted()
+    @Published var isWaitingForPermission: Bool = false
     @Published var hotkeyDisplay: String = HotkeyConfig.current.displayName
     @Published var isRecordingHotkey: Bool = false
     @Published var hasConflict: Bool = false
@@ -155,6 +156,7 @@ final class OnboardingViewModel: ObservableObject {
     func openAccessibilitySettings() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
+        isWaitingForPermission = true
         startPermissionPolling()
     }
 
@@ -449,12 +451,14 @@ private struct PermissionsStepView: View {
                 .controlSize(.large)
                 .padding(.top, 8)
 
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("等待授权中...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                if viewModel.isWaitingForPermission {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("等待授权中...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
