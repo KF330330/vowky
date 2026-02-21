@@ -20,7 +20,7 @@ source "${_CONFIG_DIR}/config.local.sh"
 # ============================================================
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VOWKY_DIR="${REPO_ROOT}/VowKy"
-WEBSITE_DIR="${REPO_ROOT}/website"
+WEBSITE_DIR="${REPO_ROOT}/_local/website"
 INFOPLIST="${VOWKY_DIR}/VowKy/Info.plist"
 BUILD_DIR="${REPO_ROOT}/deploy/build"
 

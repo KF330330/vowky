@@ -35,24 +35,10 @@ deploy/server/setup.sh
 # Design iterations (not needed for build)
 vowky_icons/
 
-# Internal docs (local only)
-PRD_*.md
-prd_draft.md
-DEV_PLAN.md
-MVP_PLAN.md
-MVP_VERIFICATION.md
-CROSSPLATFORM_PLAN.md
-_audit_*.md
-_review_*.md
-icon-prompts.md
+# Local-only files (docs, website, analytics — managed by separate git)
+_local/
 CLAUDE.md
 VowKy/CLAUDE.md
-
-# Website (deployed separately)
-website/
-
-# Analytics (deployed separately)
-analytics/
 
 # Backup files
 *.bak/
