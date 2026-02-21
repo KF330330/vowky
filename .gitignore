@@ -48,6 +48,9 @@ icon-prompts.md
 CLAUDE.md
 VowKy/CLAUDE.md
 
+# Website (deployed separately)
+website/
+
 # Backup files
 *.bak/
 *.bak
