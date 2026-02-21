@@ -28,9 +28,18 @@ struct VowKyApp: App {
                     if appState.hotkeyManager == nil {
                         appState.setup()
                     }
+                    checkOnboarding()
                 }
         }
         .menuBarExtraStyle(.window)
+    }
+
+    private func checkOnboarding() {
+        let hasCompleted = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        guard !hasCompleted else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            OnboardingWindowController.shared.showWindow(appState: appState)
+        }
     }
 
     private var menuBarIconName: String {

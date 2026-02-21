@@ -3,8 +3,12 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        checkAccessibilityPermission()
-        checkOptionSpaceConflict()
+        // 首次启动由新手引导统一处理权限和冲突检测
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        if hasCompletedOnboarding {
+            checkAccessibilityPermission()
+            checkOptionSpaceConflict()
+        }
     }
 
     // MARK: - Accessibility Permission
