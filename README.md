@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="website/icon.png" width="128" height="128" alt="VowKy icon">
+  <img src="icon.png" width="128" height="128" alt="VowKy icon">
 </p>
 
 <h1 align="center">VowKy</h1>
@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://vowky.com">官网</a> ·
-  <a href="https://vowky.com/downloads/VowKy-latest.dmg">下载</a> ·
+  <a href="https://github.com/KF330330/vowky/releases/latest">下载</a> ·
   <a href="#功能特性">功能</a> ·
   <a href="#从源码构建">构建</a>
 </p>
