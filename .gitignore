@@ -51,6 +51,9 @@ VowKy/CLAUDE.md
 # Website (deployed separately)
 website/
 
+# Analytics (deployed separately)
+analytics/
+
 # Backup files
 *.bak/
 *.bak
