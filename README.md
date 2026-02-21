@@ -127,6 +127,14 @@ vowky/
 open website/index.html
 ```
 
+## 交流
+
+扫码加微信，一起聊聊 VowKy：
+
+<p align="center">
+  <img src="wechat-qr.jpg" width="200" alt="WeChat QR Code">
+</p>
+
 ## 许可证
 
 [MIT](LICENSE)
