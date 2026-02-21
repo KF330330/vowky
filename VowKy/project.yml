@@ -45,6 +45,7 @@ targets:
       path: VowKy/VowKy.entitlements
       properties:
         com.apple.security.cs.allow-unsigned-executable-memory: true
+        com.apple.security.device.audio-input: true
     dependencies:
       - framework: Libraries/sherpa-onnx.xcframework
         embed: false
