@@ -1,7 +1,7 @@
 #!/bin/bash
 # deploy/deploy.sh — VowKy 主部署入口
 # 用法: ./deploy/deploy.sh
-# 步骤: 构建 → 上传网站 → 上传 DMG → 生成 appcast.xml
+# 步骤: 构建 → 上传网站 → 上传 DMG → 生成 appcast.xml → 创建 GitHub Release
 
 set -euo pipefail
 
@@ -36,8 +36,7 @@ ssh "${SERVER}" "mkdir -p ${WEB_ROOT}/site ${WEB_ROOT}/downloads"
 SITE_STAGING="${BUILD_DIR}/site-staging"
 rm -rf "${SITE_STAGING}"
 cp -R "${WEBSITE_DIR}" "${SITE_STAGING}"
-sed -i '' "s|VowKy-latest\.dmg|${DMG_NAME}|g" "${SITE_STAGING}/index.html"
-log_info "下载链接已替换为 ${DMG_NAME}"
+# 下载链接已改为指向 GitHub Releases，无需替换文件名
 
 # 注入 Umami website-id（从 config.local.sh 读取）
 if [ -n "${UMAMI_WEBSITE_ID:-}" ]; then
@@ -74,8 +73,8 @@ log_info "生成 appcast.xml..."
 
 DMG_SIZE_BYTES=$(wc -c < "${DMG_PATH}" | tr -d ' ')
 PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S %z")
-DOWNLOAD_URL="https://${DOMAIN}/downloads/${DMG_NAME}"
-LATEST_URL="https://${DOMAIN}/downloads/VowKy-latest.dmg"
+DOWNLOAD_URL="https://github.com/KF330330/vowky/releases/download/v${VERSION}/${DMG_NAME}"
+GITHUB_RELEASES_URL="https://github.com/KF330330/vowky/releases/latest"
 
 # 尝试用 Sparkle sign_update 签名
 SPARKLE_SIGNATURE=""
@@ -171,6 +170,20 @@ ssh "${SERVER}" "ln -sf ${WEB_ROOT}/site/appcast.xml ${WEB_ROOT}/appcast.xml"
 log_ok "appcast.xml 上传完成"
 
 # ============================================================
+# 6. 创建 GitHub Release
+# ============================================================
+log_info "创建 GitHub Release v${VERSION}..."
+if gh release view "v${VERSION}" &>/dev/null; then
+    log_warn "Release v${VERSION} 已存在，上传 DMG asset..."
+    gh release upload "v${VERSION}" "${DMG_PATH}" --clobber
+else
+    gh release create "v${VERSION}" "${DMG_PATH}" \
+        --title "VowKy ${VERSION}" \
+        --notes "VowKy ${VERSION} (build ${BUILD})"
+fi
+log_ok "GitHub Release 完成"
+
+# ============================================================
 # 输出摘要
 # ============================================================
 echo ""
@@ -180,6 +193,6 @@ echo "============================================"
 echo "  版本:     ${VERSION} (${BUILD})"
 echo "  环境:     ${ENV}"
 echo "  网站:     https://${DOMAIN}/"
-echo "  下载:     ${LATEST_URL}"
+echo "  下载:     ${GITHUB_RELEASES_URL}"
 echo "  Appcast:  https://${DOMAIN}/appcast.xml"
 echo "============================================"

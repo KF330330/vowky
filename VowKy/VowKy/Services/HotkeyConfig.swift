@@ -9,9 +9,9 @@ struct HotkeyConfig {
 
     // MARK: - Defaults
 
-    static let defaultKeyCode: Int64 = 49 // Space
-    static let defaultOption = true
-    static let defaultCommand = false
+    static let defaultKeyCode: Int64 = 42 // Backslash (\)
+    static let defaultOption = false
+    static let defaultCommand = true
     static let defaultControl = false
     static let defaultShift = false
 
