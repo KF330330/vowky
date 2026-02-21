@@ -12,7 +12,7 @@
 (function(){
   new Image().src='https://analytics.vowky.com/t.gif?p='+encodeURIComponent(location.pathname);
   window._track=function(n,d){
-    try{navigator.sendBeacon('https://analytics.vowky.com/api/event',JSON.stringify({name:n,data:d||{},path:location.pathname}));}catch(e){}
+    try{navigator.sendBeacon('https://analytics.vowky.com/api/event',new Blob([JSON.stringify({name:n,data:d||{},path:location.pathname})],{type:'application/json'}));}catch(e){}
   };
 })();
 </script>

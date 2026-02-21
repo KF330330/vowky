@@ -34,3 +34,20 @@ deploy/server/setup.sh
 
 # Design iterations (not needed for build)
 vowky_icons/
+
+# Internal docs (local only)
+PRD_*.md
+prd_draft.md
+DEV_PLAN.md
+MVP_PLAN.md
+MVP_VERIFICATION.md
+CROSSPLATFORM_PLAN.md
+_audit_*.md
+_review_*.md
+icon-prompts.md
+CLAUDE.md
+VowKy/CLAUDE.md
+
+# Backup files
+*.bak/
+*.bak
