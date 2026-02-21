@@ -71,7 +71,6 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 final class OnboardingViewModel: ObservableObject {
     @Published var currentStep: OnboardingStep = .welcome
     @Published var isAccessibilityGranted: Bool = AXIsProcessTrusted()
-    @Published var isWaitingForPermission: Bool = false
     @Published var hotkeyDisplay: String = HotkeyConfig.current.displayName
     @Published var isRecordingHotkey: Bool = false
     @Published var hasConflict: Bool = false
@@ -131,17 +130,16 @@ final class OnboardingViewModel: ObservableObject {
         guard !isAccessibilityGranted else { return }
 
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 guard let self else { return }
                 let granted = AXIsProcessTrusted()
                 if granted {
                     self.isAccessibilityGranted = true
                     self.stopPermissionPolling()
                     // Auto-advance after brief delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                        if self.currentStep == .permissions {
-                            self.goNext()
-                        }
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    if self.currentStep == .permissions {
+                        self.goNext()
                     }
                 }
             }
@@ -156,8 +154,12 @@ final class OnboardingViewModel: ObservableObject {
     func openAccessibilitySettings() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
-        isWaitingForPermission = true
         startPermissionPolling()
+    }
+
+    /// 是否正在等待用户授权（已点过按钮，轮询中）
+    var isPollingPermission: Bool {
+        permissionTimer != nil
     }
 
     // MARK: - Hotkey Recording
@@ -451,7 +453,7 @@ private struct PermissionsStepView: View {
                 .controlSize(.large)
                 .padding(.top, 8)
 
-                if viewModel.isWaitingForPermission {
+                if viewModel.isPollingPermission {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)

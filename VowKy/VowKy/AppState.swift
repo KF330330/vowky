@@ -228,6 +228,7 @@ final class AppState: ObservableObject {
             addToRecentResults(finalText)
             textOutputService?.insertText(finalText)
             backupService?.finalizeAndDelete()
+            AnalyticsService.shared.trackRecognition()
             state = .idle
             print("[VowKy][AppState] Text inserted → state = .idle")
         }

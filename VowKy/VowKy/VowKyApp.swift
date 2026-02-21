@@ -29,6 +29,8 @@ struct VowKyApp: App {
                         appState.setup()
                     }
                     checkOnboarding()
+                    AnalyticsService.shared.trackInstall()
+                    AnalyticsService.shared.trackDAU()
                 }
         }
         .menuBarExtraStyle(.window)
