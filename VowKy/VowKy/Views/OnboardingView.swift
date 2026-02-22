@@ -70,7 +70,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 @MainActor
 final class OnboardingViewModel: ObservableObject {
     @Published var currentStep: OnboardingStep = .welcome
-    @Published var isAccessibilityGranted: Bool = AXIsProcessTrusted()
+    @Published var isAccessibilityGranted: Bool = false
     @Published var hotkeyDisplay: String = HotkeyConfig.current.displayName
     @Published var isRecordingHotkey: Bool = false
     @Published var hasConflict: Bool = false
@@ -123,21 +123,32 @@ final class OnboardingViewModel: ObservableObject {
         stopTryItObserving()
     }
 
+    // MARK: - Permission Check (dual: AXIsProcessTrusted + HotkeyManager)
+
+    /// 双重检测：AXIsProcessTrusted 或 HotkeyManager 已运行
+    func checkPermission() -> Bool {
+        if AXIsProcessTrusted() { return true }
+        if appState?.hotkeyManager?.isRunning == true { return true }
+        return false
+    }
+
+    func refreshPermissionState() {
+        isAccessibilityGranted = checkPermission()
+    }
+
     // MARK: - Permission Polling
 
     func startPermissionPolling() {
-        isAccessibilityGranted = AXIsProcessTrusted()
+        refreshPermissionState()
         guard !isAccessibilityGranted else { return }
 
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
                 guard let self else { return }
-                let granted = AXIsProcessTrusted()
+                let granted = self.checkPermission()
                 if granted {
                     self.isAccessibilityGranted = true
                     self.stopPermissionPolling()
-                    // Auto-advance after brief delay
-                    try? await Task.sleep(nanoseconds: 800_000_000)
                     if self.currentStep == .permissions {
                         self.goNext()
                     }
@@ -366,9 +377,6 @@ struct OnboardingView: View {
     }
 
     private var isNextDisabled: Bool {
-        if viewModel.currentStep == .permissions {
-            return !viewModel.isAccessibilityGranted
-        }
         return false
     }
 }
@@ -462,10 +470,14 @@ private struct PermissionsStepView: View {
                             .foregroundColor(.secondary)
                     }
                 }
+
+                Text("也可以点击「下一步」稍后设置")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .onAppear {
-            viewModel.isAccessibilityGranted = AXIsProcessTrusted()
+            viewModel.refreshPermissionState()
             if !viewModel.isAccessibilityGranted {
                 viewModel.startPermissionPolling()
             }
