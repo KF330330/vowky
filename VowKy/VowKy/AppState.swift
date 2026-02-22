@@ -52,7 +52,8 @@ final class AppState: ObservableObject {
 
     // MARK: - Setup (called once at app launch)
 
-    func setup() {
+    /// - Parameter skipHotkey: 新手引导期间跳过热键创建，避免触发系统辅助功能对话框
+    func setup(skipHotkey: Bool = false) {
         // 0. Open history database
         HistoryStore.shared.open()
 
@@ -84,7 +85,19 @@ final class AppState: ObservableObject {
         // 4. Create text output service
         textOutputService = TextOutputService()
 
-        // 5. Wire hotkey manager callbacks (toggle mode)
+        // 5. Wire hotkey manager (skip during onboarding to avoid system dialog)
+        if !skipHotkey {
+            startHotkey()
+        }
+        print("[VowKy][AppState] setup() complete, skipHotkey: \(skipHotkey)")
+    }
+
+    /// 创建并启动热键管理器（新手引导完成后调用）
+    func startHotkey() {
+        guard hotkeyManager == nil else {
+            print("[VowKy][AppState] startHotkey() skipped, already initialized")
+            return
+        }
         let hotkeyMgr = HotkeyManager()
         hotkeyMgr.onHotkeyPressed = { [weak self] in
             self?.handleHotkeyToggle()
@@ -99,10 +112,9 @@ final class AppState: ObservableObject {
         self.hotkeyManager = hotkeyMgr
 
         if !started {
-            // 快捷键启动失败（通常是还没有辅助功能权限），开始轮询
             startPermissionPolling()
         }
-        print("[VowKy][AppState] setup() complete, hotkey active: \(started)")
+        print("[VowKy][AppState] startHotkey() complete, hotkey active: \(started)")
     }
 
     // MARK: - Permission Polling

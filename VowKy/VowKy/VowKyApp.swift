@@ -25,10 +25,14 @@ struct VowKyApp: App {
         } label: {
             Image(systemName: menuBarIconName)
                 .task {
+                    let needsOnboarding = !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
                     if appState.hotkeyManager == nil {
-                        appState.setup()
+                        // 新手引导期间跳过热键创建，避免弹出系统辅助功能对话框
+                        appState.setup(skipHotkey: needsOnboarding)
                     }
-                    checkOnboarding()
+                    if needsOnboarding {
+                        checkOnboarding()
+                    }
                     AnalyticsService.shared.trackInstall()
                     AnalyticsService.shared.trackDAU()
                 }

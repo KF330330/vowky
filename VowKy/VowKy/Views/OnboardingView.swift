@@ -131,6 +131,8 @@ final class OnboardingViewModel: ObservableObject {
     func completeOnboarding() {
         cleanup()
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        // 新手引导完成后启动热键
+        appState?.startHotkey()
         onComplete?()
     }
 
@@ -140,17 +142,10 @@ final class OnboardingViewModel: ObservableObject {
         stopTryItObserving()
     }
 
-    // MARK: - Permission Check (dual: AXIsProcessTrusted + HotkeyManager)
-
-    /// 双重检测：AXIsProcessTrusted 或 HotkeyManager 已运行
-    func checkPermission() -> Bool {
-        if AXIsProcessTrusted() { return true }
-        if appState?.hotkeyManager?.isRunning == true { return true }
-        return false
-    }
+    // MARK: - Permission Check
 
     func refreshPermissionState() {
-        isAccessibilityGranted = checkPermission()
+        isAccessibilityGranted = AXIsProcessTrusted()
     }
 
     // MARK: - Permission Polling
@@ -159,11 +154,10 @@ final class OnboardingViewModel: ObservableObject {
         refreshPermissionState()
         guard !isAccessibilityGranted else { return }
 
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                let granted = self.checkPermission()
-                if granted {
+                if AXIsProcessTrusted() {
                     self.isAccessibilityGranted = true
                     self.stopPermissionPolling()
                     if self.currentStep == .permissions {
@@ -219,7 +213,8 @@ final class OnboardingViewModel: ObservableObject {
             self.stopRecordingHotkey()
             self.checkHotkeyConflict()
 
-            // Notify AppState to reload hotkey
+            // 新手引导期间 hotkeyManager 尚未创建，配置保存即可
+            // 完成引导后 startHotkey() 会读取最新配置
             if let hotkeyMgr = self.appState?.hotkeyManager {
                 hotkeyMgr.stop()
                 _ = hotkeyMgr.start()
