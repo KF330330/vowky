@@ -10,6 +10,7 @@ enum OnboardingStep: Int, CaseIterable {
     case permissions = 1
     case hotkey = 2
     case tryIt = 3
+    case menuBar = 4
 }
 
 // MARK: - Onboarding Window Controller
@@ -346,6 +347,8 @@ struct OnboardingView: View {
                     HotkeyStepView(viewModel: viewModel)
                 case .tryIt:
                     TryItStepView(viewModel: viewModel)
+                case .menuBar:
+                    MenuBarStepView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -372,7 +375,7 @@ struct OnboardingView: View {
                     }
                 }
 
-                if viewModel.currentStep == .tryIt {
+                if viewModel.currentStep == .menuBar {
                     Button("完成") {
                         viewModel.completeOnboarding()
                     }
@@ -422,21 +425,6 @@ private struct WelcomeStepView: View {
                 FeatureRow(icon: "cursorarrow.click.badge.clock", text: "全局快捷键，任意应用可用")
             }
             .padding(.top, 8)
-
-            Divider()
-
-            HStack(spacing: 8) {
-                Image(systemName: "menubar.arrow.up.rectangle")
-                    .font(.title3)
-                    .foregroundColor(.accentColor)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("VowKy 常驻屏幕右上角菜单栏")
-                        .font(.callout)
-                    Text("点击菜单栏图标可查看状态、识别历史和设置")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
         }
     }
 }
