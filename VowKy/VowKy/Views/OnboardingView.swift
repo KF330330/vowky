@@ -120,6 +120,10 @@ final class OnboardingViewModel: ObservableObject {
             completeOnboarding()
             return
         }
+        // 进入 Try It 前启动热键，让用户可以测试
+        if next == .tryIt {
+            appState?.startHotkey()
+        }
         currentStep = next
     }
 
@@ -131,7 +135,7 @@ final class OnboardingViewModel: ObservableObject {
     func completeOnboarding() {
         cleanup()
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
-        // 新手引导完成后启动热键
+        // startHotkey() 已在进入 Try It 步骤时调用，内部有 guard 防重复
         appState?.startHotkey()
         onComplete?()
     }
@@ -160,9 +164,7 @@ final class OnboardingViewModel: ObservableObject {
                 if AXIsProcessTrusted() {
                     self.isAccessibilityGranted = true
                     self.stopPermissionPolling()
-                    if self.currentStep == .permissions {
-                        self.goNext()
-                    }
+                    // 不自动跳转，让用户看到绿色勾后手动点下一步
                 }
             }
         }
