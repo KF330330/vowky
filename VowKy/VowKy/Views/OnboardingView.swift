@@ -514,11 +514,7 @@ private struct HotkeyStepView: View {
     @ObservedObject var viewModel: OnboardingViewModel
 
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "keyboard")
-                .font(.system(size: 48))
-                .foregroundColor(.accentColor)
-
+        VStack(spacing: 14) {
             Text("设置快捷键")
                 .font(.title2)
                 .bold()
@@ -530,11 +526,18 @@ private struct HotkeyStepView: View {
                 Text("请按下新快捷键...")
                     .font(.system(size: 24, design: .monospaced))
                     .foregroundColor(.orange)
-                    .padding(.vertical, 8)
             } else {
                 Text(viewModel.hotkeyDisplay)
                     .font(.system(size: 24, design: .monospaced))
-                    .padding(.vertical, 8)
+            }
+
+            if let image = NSImage(contentsOfFile: Bundle.main.path(forResource: "onboarding-hotkey", ofType: "jpg") ?? "") {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxHeight: 140)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(radius: 2)
             }
 
             Button(viewModel.isRecordingHotkey ? "取消" : "修改快捷键") {
