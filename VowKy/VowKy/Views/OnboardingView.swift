@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import ServiceManagement
 
 // MARK: - Onboarding Step
 
@@ -137,6 +138,8 @@ final class OnboardingViewModel: ObservableObject {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
         // startHotkey() 已在进入 Try It 步骤时调用，内部有 guard 防重复
         appState?.startHotkey()
+        // 默认开启开机自启
+        try? SMAppService.mainApp.register()
         onComplete?()
     }
 
@@ -419,6 +422,21 @@ private struct WelcomeStepView: View {
                 FeatureRow(icon: "cursorarrow.click.badge.clock", text: "全局快捷键，任意应用可用")
             }
             .padding(.top, 8)
+
+            Divider()
+
+            HStack(spacing: 8) {
+                Image(systemName: "menubar.arrow.up.rectangle")
+                    .font(.title3)
+                    .foregroundColor(.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("VowKy 常驻屏幕右上角菜单栏")
+                        .font(.callout)
+                    Text("点击菜单栏图标可查看状态、识别历史和设置")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
     }
 }
