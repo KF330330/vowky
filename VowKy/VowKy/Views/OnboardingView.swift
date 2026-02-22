@@ -671,3 +671,32 @@ private struct TryItStepView: View {
         }
     }
 }
+
+// MARK: - Step 5: Menu Bar
+
+private struct MenuBarStepView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "menubar.arrow.up.rectangle")
+                .font(.system(size: 48))
+                .foregroundColor(.accentColor)
+
+            Text("菜单栏")
+                .font(.title2)
+                .bold()
+
+            Text("VowKy 常驻屏幕右上角菜单栏\n点击图标可查看状态、识别历史和设置")
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+
+            if let image = NSImage(contentsOfFile: Bundle.main.path(forResource: "onboarding-menubar", ofType: "jpg") ?? "") {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxHeight: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(radius: 4)
+            }
+        }
+    }
+}
