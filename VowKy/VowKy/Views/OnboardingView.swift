@@ -14,14 +14,15 @@ enum OnboardingStep: Int, CaseIterable {
 // MARK: - Onboarding Window Controller
 
 @MainActor
-final class OnboardingWindowController: NSObject, NSWindowDelegate {
+final class OnboardingWindowController {
     static let shared = OnboardingWindowController()
 
     private var window: NSWindow?
     private var viewModel: OnboardingViewModel?
+    private var closeObserver: Any?
 
     func showWindow(appState: AppState) {
-        if let window = window {
+        if let window = window, window.isVisible {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -42,26 +43,42 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 520, height: 420))
         window.center()
-        window.delegate = self
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Observe window close (user clicks X button)
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleWindowClosed()
+        }
 
         self.window = window
     }
 
     func closeWindow() {
         viewModel?.cleanup()
+        removeCloseObserver()
         window?.close()
         window = nil
         viewModel = nil
     }
 
-    // NSWindowDelegate — user clicked X button
-    func windowWillClose(_ notification: Notification) {
-        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+    private func handleWindowClosed() {
+        // User clicked X — cleanup but don't mark completed, show again next launch
         viewModel?.cleanup()
+        removeCloseObserver()
         window = nil
         viewModel = nil
+    }
+
+    private func removeCloseObserver() {
+        if let observer = closeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            closeObserver = nil
+        }
     }
 }
 
