@@ -163,6 +163,7 @@ struct SettingsView: View {
             )
             config.save()
             hotkeyDisplay = config.displayName
+            AnalyticsService.shared.trackHotkeyChange()
             stopRecordingHotkey()
             return nil
         }

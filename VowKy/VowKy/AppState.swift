@@ -34,6 +34,9 @@ final class AppState: ObservableObject {
     var textOutputService: TextOutputService?
     var recordingPanel: RecordingPanel?
 
+    /// Timestamp when recording started (for duration tracking)
+    private var recordingStartTime: Date?
+
     // MARK: - Init
 
     init(
@@ -192,6 +195,8 @@ final class AppState: ObservableObject {
             try audioRecorder.startRecording()
             try? backupService?.startBackup()
             state = .recording
+            recordingStartTime = Date()
+            AnalyticsService.shared.trackVoiceStart()
             print("[VowKy][AppState] Recording started → state = .recording")
         } catch {
             state = .idle
@@ -209,6 +214,7 @@ final class AppState: ObservableObject {
         }
         _ = audioRecorder.stopRecording()
         backupService?.deleteBackup()
+        AnalyticsService.shared.trackVoiceCancel()
         state = .idle
         print("[VowKy][AppState] Recording cancelled → state = .idle")
     }
@@ -226,6 +232,7 @@ final class AppState: ObservableObject {
             // If result is nil or empty, go back to idle without outputting
             guard let text = result, !text.isEmpty else {
                 backupService?.deleteBackup()
+                AnalyticsService.shared.trackVoiceFailure()
                 state = .idle
                 print("[VowKy][AppState] Empty result → state = .idle")
                 return
@@ -241,6 +248,8 @@ final class AppState: ObservableObject {
             textOutputService?.insertText(finalText)
             backupService?.finalizeAndDelete()
             AnalyticsService.shared.trackRecognition()
+            let durationMs = Int((Date().timeIntervalSince(self.recordingStartTime ?? Date())) * 1000)
+            AnalyticsService.shared.trackVoiceComplete(durationMs: durationMs, charCount: finalText.count)
             state = .idle
             print("[VowKy][AppState] Text inserted → state = .idle")
         }
@@ -284,6 +293,7 @@ final class AppState: ObservableObject {
             addToRecentResults(finalText)
             textOutputService?.insertText(finalText)
             backup.deleteBackup()
+            AnalyticsService.shared.trackRecovery()
             state = .idle
             print("[VowKy][AppState] Recovery complete: \(finalText)")
         }

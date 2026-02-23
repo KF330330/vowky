@@ -47,6 +47,9 @@ struct HistoryView: View {
                 TextField("搜索历史记录...", text: $searchText)
                     .textFieldStyle(.plain)
                     .onChange(of: searchText) { _ in
+                        if !searchText.isEmpty {
+                            AnalyticsService.shared.trackHistorySearch()
+                        }
                         loadRecords()
                     }
                 if !searchText.isEmpty {
@@ -146,6 +149,7 @@ struct HistoryRowView: View {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(record.content, forType: .string)
+                        AnalyticsService.shared.trackHistoryCopy()
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 12))

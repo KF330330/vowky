@@ -75,7 +75,7 @@ final class AnalyticsService {
 
     // MARK: - Private
 
-    private func send(_ body: [String: String]) {
+    private func send(_ body: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
 
         var request = URLRequest(url: endpoint)
@@ -91,5 +91,45 @@ final class AnalyticsService {
         fmt.dateFormat = "yyyy-MM-dd"
         fmt.timeZone = TimeZone.current
         return fmt.string(from: Date())
+    }
+}
+
+// MARK: - UsageTrackerProtocol
+
+extension AnalyticsService: UsageTrackerProtocol {
+    func trackVoiceStart() {
+        send(["event": "voice_start", "device_id": deviceId])
+    }
+
+    func trackVoiceComplete(durationMs: Int, charCount: Int) {
+        send([
+            "event": "voice_complete",
+            "device_id": deviceId,
+            "data": ["duration_ms": durationMs, "char_count": charCount],
+        ])
+    }
+
+    func trackVoiceCancel() {
+        send(["event": "voice_cancel", "device_id": deviceId])
+    }
+
+    func trackVoiceFailure() {
+        send(["event": "voice_failure", "device_id": deviceId])
+    }
+
+    func trackRecovery() {
+        send(["event": "recovery", "device_id": deviceId])
+    }
+
+    func trackHotkeyChange() {
+        send(["event": "hotkey_change", "device_id": deviceId])
+    }
+
+    func trackHistorySearch() {
+        send(["event": "history_search", "device_id": deviceId])
+    }
+
+    func trackHistoryCopy() {
+        send(["event": "history_copy", "device_id": deviceId])
     }
 }

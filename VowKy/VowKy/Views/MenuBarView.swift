@@ -45,6 +45,7 @@ struct MenuBarView: View {
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(appState.recentResults[index], forType: .string)
+                            AnalyticsService.shared.trackHistoryCopy()
                         } label: {
                             Image(systemName: "doc.on.doc")
                                 .font(.system(size: 10))
