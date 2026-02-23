@@ -173,11 +173,15 @@ log_ok "appcast.xml 上传完成"
 # 6. 创建 GitHub Release
 # ============================================================
 log_info "创建 GitHub Release v${VERSION}..."
+# 复制一份不带版本号的 DMG，用于 /releases/latest/download/VowKy.dmg
+DMG_LATEST="${BUILD_DIR}/dmg/VowKy.dmg"
+cp "${DMG_PATH}" "${DMG_LATEST}"
+
 if gh release view "v${VERSION}" &>/dev/null; then
     log_warn "Release v${VERSION} 已存在，上传 DMG asset..."
-    gh release upload "v${VERSION}" "${DMG_PATH}" --clobber
+    gh release upload "v${VERSION}" "${DMG_PATH}" "${DMG_LATEST}" --clobber
 else
-    gh release create "v${VERSION}" "${DMG_PATH}" \
+    gh release create "v${VERSION}" "${DMG_PATH}" "${DMG_LATEST}" \
         --title "VowKy ${VERSION}" \
         --notes "VowKy ${VERSION} (build ${BUILD})"
 fi
