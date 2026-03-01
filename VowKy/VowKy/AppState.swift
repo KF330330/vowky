@@ -57,16 +57,22 @@ final class AppState: ObservableObject {
 
     /// - Parameter skipHotkey: 新手引导期间跳过热键创建，避免触发系统辅助功能对话框
     func setup(skipHotkey: Bool = false) {
+        CrashLogger.log("[AppState] setup() start, skipHotkey: \(skipHotkey)")
+
         // 0. Open history database
         HistoryStore.shared.open()
+        CrashLogger.log("[AppState] HistoryStore opened")
 
         // 1. Load speech model + punctuation model in background
         state = .loading
+        CrashLogger.log("[AppState] Loading speech model...")
         if let recognizer = speechRecognizer as? LocalSpeechRecognizer {
             let punctService = punctuationService as? PunctuationService
             Task.detached(priority: .userInitiated) {
                 recognizer.loadModel()
+                CrashLogger.log("[AppState] Speech model loaded")
                 punctService?.loadModel()
+                CrashLogger.log("[AppState] Punctuation model loaded")
                 await MainActor.run {
                     self.state = .idle
                     self.checkForRecovery()
@@ -92,15 +98,19 @@ final class AppState: ObservableObject {
         if !skipHotkey {
             startHotkey()
         }
+        CrashLogger.log("[AppState] setup() complete")
         print("[VowKy][AppState] setup() complete, skipHotkey: \(skipHotkey)")
     }
 
     /// 创建并启动热键管理器（新手引导完成后调用）
     func startHotkey() {
         guard hotkeyManager == nil else {
+            CrashLogger.log("[AppState] startHotkey() skipped, already initialized")
             print("[VowKy][AppState] startHotkey() skipped, already initialized")
             return
         }
+        let config = HotkeyConfig.current
+        CrashLogger.log("[AppState] startHotkey() config: \(config.displayName) (keyCode=\(config.keyCode))")
         let hotkeyMgr = HotkeyManager()
         hotkeyMgr.onHotkeyPressed = { [weak self] in
             self?.handleHotkeyToggle()
@@ -115,8 +125,10 @@ final class AppState: ObservableObject {
         self.hotkeyManager = hotkeyMgr
 
         if !started {
+            CrashLogger.log("[AppState] startHotkey() failed, starting permission polling")
             startPermissionPolling()
         }
+        CrashLogger.log("[AppState] startHotkey() complete, hotkey active: \(started)")
         print("[VowKy][AppState] startHotkey() complete, hotkey active: \(started)")
     }
 
@@ -268,19 +280,23 @@ final class AppState: ObservableObject {
     // MARK: - Recovery
 
     private func checkForRecovery() {
+        CrashLogger.log("[Recovery] checkForRecovery() start, hasBackup: \(backupService?.hasBackup ?? false)")
         guard let backup = backupService, backup.hasBackup else { return }
         print("[VowKy][AppState] Found backup recording, attempting recovery...")
 
         guard let samples = backup.recoverSamples(), !samples.isEmpty else {
             backup.deleteBackup()
+            CrashLogger.log("[Recovery] Backup empty or corrupt, deleted")
             print("[VowKy][AppState] Backup empty or corrupt, deleted")
             return
         }
+        CrashLogger.log("[Recovery] Recovered \(samples.count) samples, starting recognition")
 
         // Recognize the recovered audio
         state = .recognizing
         Task { @MainActor in
             let result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+            CrashLogger.log("[Recovery] Recognition result: \(result ?? "nil")")
             guard let text = result, !text.isEmpty else {
                 backup.deleteBackup()
                 state = .idle
@@ -288,13 +304,16 @@ final class AppState: ObservableObject {
                 return
             }
 
+            CrashLogger.log("[Recovery] Adding punctuation to: \(text)")
             let finalText = punctuationService?.addPunctuation(to: text) ?? text
+            CrashLogger.log("[Recovery] Punctuation done: \(finalText)")
             lastResult = finalText
             addToRecentResults(finalText)
             textOutputService?.insertText(finalText)
             backup.deleteBackup()
             AnalyticsService.shared.trackRecovery()
             state = .idle
+            CrashLogger.log("[Recovery] Complete: \(finalText)")
             print("[VowKy][AppState] Recovery complete: \(finalText)")
         }
     }

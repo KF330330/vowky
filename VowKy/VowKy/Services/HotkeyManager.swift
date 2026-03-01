@@ -80,7 +80,13 @@ final class HotkeyManager {
     /// Returns true if tap was created successfully.
     @discardableResult
     func start() -> Bool {
-        guard eventTapPort == nil else { return true }
+        let config = HotkeyConfig.current
+        CrashLogger.log("[HotkeyManager] start() called, config: \(config.displayName) (keyCode=\(config.keyCode))")
+
+        guard eventTapPort == nil else {
+            CrashLogger.log("[HotkeyManager] Already running, skipped")
+            return true
+        }
 
         let eventMask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) |
@@ -107,6 +113,7 @@ final class HotkeyManager {
         ) else {
             holder.deallocate()
             context.deallocate()
+            CrashLogger.log("[HotkeyManager] CGEvent.tapCreate failed (no accessibility permission?)")
             return false
         }
 
@@ -119,6 +126,7 @@ final class HotkeyManager {
         CGEvent.tapEnable(tap: tap, enable: true)
         self.runLoopSource = source
 
+        CrashLogger.log("[HotkeyManager] Event tap created successfully")
         print("[VowKy][Hotkey] Event tap created and running")
         return true
     }

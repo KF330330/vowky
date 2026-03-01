@@ -46,6 +46,17 @@ struct HotkeyConfig {
         )
     }
 
+    static func resetToDefault() {
+        let config = HotkeyConfig(
+            keyCode: defaultKeyCode,
+            needsOption: defaultOption,
+            needsCommand: defaultCommand,
+            needsControl: defaultControl,
+            needsShift: defaultShift
+        )
+        config.save()
+    }
+
     func save() {
         let defaults = UserDefaults.standard
         defaults.set(Int(keyCode), forKey: Self.keyCodeKey)

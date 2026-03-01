@@ -1549,7 +1549,11 @@ class SherpaOnnxOfflinePunctuationWrapper {
     // Use withCString to avoid strdup leak on every call
     text.withCString { cStr in
       let cText = SherpaOfflinePunctuationAddPunct(ptr, cStr)
-      let ans = String(cString: cText!)
+      guard let cText = cText else {
+        CrashLogger.log("[SherpaOnnx] addPunct returned NULL for text: \(text)")
+        return text
+      }
+      let ans = String(cString: cText)
       SherpaOfflinePunctuationFreeText(cText)
       return ans
     }

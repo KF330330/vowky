@@ -2,13 +2,59 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
+    private static let crashTimestampsKey = "crashLoop_launchTimestamps"
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        CrashLogger.logLaunch()
+
+        // Crash loop detection: 30s 内 ≥3 次启动 → 重置快捷键 + 删除 backup
+        if detectCrashLoop() {
+            CrashLogger.log("[CrashLoop] Detected! Resetting hotkey and deleting backup")
+            HotkeyConfig.resetToDefault()
+            deleteBackupFile()
+            showCrashLoopAlert()
+        }
+
         // 首次启动由新手引导统一处理权限和冲突检测
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         if hasCompletedOnboarding {
             checkAccessibilityPermission()
             checkOptionSpaceConflict()
         }
+    }
+
+    // MARK: - Crash Loop Detection
+
+    /// Records current launch timestamp. Returns true if ≥3 launches within 30 seconds.
+    private func detectCrashLoop() -> Bool {
+        let defaults = UserDefaults.standard
+        let now = Date().timeIntervalSince1970
+        var timestamps = defaults.array(forKey: Self.crashTimestampsKey) as? [Double] ?? []
+
+        // Keep only timestamps within the last 30 seconds
+        timestamps = timestamps.filter { now - $0 < 30 }
+        timestamps.append(now)
+        defaults.set(timestamps, forKey: Self.crashTimestampsKey)
+
+        CrashLogger.log("[CrashLoop] Launch count in 30s window: \(timestamps.count)")
+        return timestamps.count >= 3
+    }
+
+    private func deleteBackupFile() {
+        let tmpBackup = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vowky_recording_backup.wav")
+        try? FileManager.default.removeItem(at: tmpBackup)
+        CrashLogger.log("[CrashLoop] Deleted backup file")
+    }
+
+    private func showCrashLoopAlert() {
+        let config = HotkeyConfig.current
+        let alert = NSAlert()
+        alert.messageText = "VowKy 检测到启动异常"
+        alert.informativeText = "VowKy 在短时间内多次重启，可能是快捷键冲突导致。已将快捷键重置为默认值（\(config.displayName)）。\n\n您可以在设置中重新自定义快捷键。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "我知道了")
+        alert.runModal()
     }
 
     // MARK: - Accessibility Permission
