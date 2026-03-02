@@ -220,18 +220,17 @@ struct HistoryRowView: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(record.content)
-                    .font(.system(size: 13))
-                    .foregroundColor(Brand.textPrimary)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(formatDate(record.createdAt))
-                    .font(.system(size: 11))
-                    .foregroundColor(Brand.textMuted)
-            }
-
+        VStack(alignment: .leading, spacing: 4) {
+            Text(record.content)
+                .font(.system(size: 13))
+                .foregroundColor(Brand.textPrimary)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(formatDate(record.createdAt))
+                .font(.system(size: 11))
+                .foregroundColor(Brand.textMuted)
+        }
+        .overlay(alignment: .topTrailing) {
             if isHovered {
                 HStack(spacing: 6) {
                     Button {
@@ -256,6 +255,11 @@ struct HistoryRowView: View {
                     .buttonStyle(.plain)
                     .help("删除")
                 }
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Brand.bgSecondary)
+                )
             }
         }
         .padding(.horizontal, 12)
