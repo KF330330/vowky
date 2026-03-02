@@ -57,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        CrashLogger.log("[App] applicationWillTerminate — graceful exit")
+    }
+
     // MARK: - Accessibility Permission
 
     private func checkAccessibilityPermission() {

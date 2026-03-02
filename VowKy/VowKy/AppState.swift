@@ -171,6 +171,7 @@ final class AppState: ObservableObject {
     // MARK: - Hotkey Handler (Toggle Mode)
 
     func handleHotkeyToggle() {
+        CrashLogger.log("[Hotkey] handleHotkeyToggle() state=\(state)")
         print("[VowKy][AppState] handleHotkeyToggle() called, current state: \(state)")
 
         // Clear previous error
@@ -186,10 +187,12 @@ final class AppState: ObservableObject {
         case .loading:
             if !speechRecognizer.isReady {
                 errorMessage = "语音模型加载中..."
+                CrashLogger.log("[Hotkey] Model still loading, ignored")
                 print("[VowKy][AppState] Model still loading, ignoring toggle")
             }
 
         case .recognizing, .outputting:
+            CrashLogger.log("[Hotkey] Ignored in state: \(state)")
             print("[VowKy][AppState] Ignoring toggle in state: \(state)")
         }
     }
@@ -198,6 +201,7 @@ final class AppState: ObservableObject {
         // Check accessibility permission
         guard permissionChecker.isAccessibilityGranted() else {
             errorMessage = "请在系统设置中授予辅助功能权限"
+            CrashLogger.log("[Recording] Accessibility not granted")
             print("[VowKy][AppState] Accessibility not granted")
             return
         }
@@ -209,10 +213,12 @@ final class AppState: ObservableObject {
             state = .recording
             recordingStartTime = Date()
             AnalyticsService.shared.trackVoiceStart()
+            CrashLogger.log("[Recording] Started")
             print("[VowKy][AppState] Recording started → state = .recording")
         } catch {
             state = .idle
             errorMessage = error.localizedDescription
+            CrashLogger.log("[Recording] Failed: \(error.localizedDescription)")
             print("[VowKy][AppState] Recording failed: \(error.localizedDescription)")
         }
     }
@@ -233,12 +239,15 @@ final class AppState: ObservableObject {
 
     private func stopRecordingAndRecognize() {
         let samples = audioRecorder.stopRecording()
+        CrashLogger.log("[Recognize] Stopped recording, \(samples.count) samples")
         print("[VowKy][AppState] Recording stopped, samples count: \(samples.count)")
         state = .recognizing
 
         Task { @MainActor in
+            CrashLogger.log("[Recognize] Starting speech recognition...")
             print("[VowKy][AppState] Starting recognition...")
             let result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+            CrashLogger.log("[Recognize] Result: \(result ?? "nil")")
             print("[VowKy][AppState] Recognition result: \(result ?? "nil")")
 
             // If result is nil or empty, go back to idle without outputting
@@ -251,18 +260,22 @@ final class AppState: ObservableObject {
             }
 
             // Add punctuation if available
+            CrashLogger.log("[Recognize] Adding punctuation to: \(text)")
             let finalText = punctuationService?.addPunctuation(to: text) ?? text
+            CrashLogger.log("[Recognize] Punctuation done: \(finalText)")
             print("[VowKy][AppState] Final text: \(finalText)")
 
             // Valid result: insert text and return to idle
             lastResult = finalText
             addToRecentResults(finalText)
+            CrashLogger.log("[Recognize] Inserting text...")
             textOutputService?.insertText(finalText)
             backupService?.finalizeAndDelete()
             AnalyticsService.shared.trackRecognition()
             let durationMs = Int((Date().timeIntervalSince(self.recordingStartTime ?? Date())) * 1000)
             AnalyticsService.shared.trackVoiceComplete(durationMs: durationMs, charCount: finalText.count)
             state = .idle
+            CrashLogger.log("[Recognize] Complete → idle")
             print("[VowKy][AppState] Text inserted → state = .idle")
         }
     }

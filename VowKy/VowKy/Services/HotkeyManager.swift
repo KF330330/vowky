@@ -174,6 +174,7 @@ private func hotkeyTapCallback(
 
     // tapDisabledByTimeout auto-recovery
     if type == .tapDisabledByTimeout {
+        CrashLogger.log("[HotkeyCallback] tapDisabledByTimeout — auto-recovering")
         print("[VowKy][Hotkey] tapDisabledByTimeout — auto-recovering")
         if let port = context.tapHolder.pointee {
             CGEvent.tapEnable(tap: port, enable: true)
@@ -206,6 +207,7 @@ private func hotkeyTapCallback(
 
     switch action {
     case .hotkeyDown:
+        CrashLogger.log("[HotkeyCallback] Hotkey keyDown — dispatching")
         print("[VowKy][Hotkey] Option+Space keyDown — dispatching onHotkeyPressed")
         let manager = Unmanaged<HotkeyManager>.fromOpaque(context.manager).takeUnretainedValue()
         DispatchQueue.main.async {
