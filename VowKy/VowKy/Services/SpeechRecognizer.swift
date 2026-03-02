@@ -32,15 +32,17 @@ final class LocalSpeechRecognizer: SpeechRecognizerProtocol {
         self.modelPathString = model
         self.tokensPathString = tokens
 
-        let paraformerConfig = sherpaOnnxOfflineParaformerModelConfig(
-            model: self.modelPathString
+        let senseVoiceConfig = sherpaOnnxOfflineSenseVoiceModelConfig(
+            model: self.modelPathString,
+            language: "auto",
+            useInverseTextNormalization: true
         )
 
         let modelConfig = sherpaOnnxOfflineModelConfig(
             tokens: self.tokensPathString,
-            paraformer: paraformerConfig,
             debug: 0,
-            modelType: "paraformer"
+            modelType: "sense_voice",
+            senseVoice: senseVoiceConfig
         )
 
         let featConfig = sherpaOnnxFeatureConfig(
