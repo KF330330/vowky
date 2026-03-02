@@ -70,7 +70,7 @@ struct SettingsView: View {
             // Model
             Section("语音模型") {
                 LabeledContent("模型") {
-                    Text("Paraformer-zh (int8)")
+                    Text("SenseVoice (int8)")
                 }
                 LabeledContent("引擎") {
                     Text("sherpa-onnx (本地)")
