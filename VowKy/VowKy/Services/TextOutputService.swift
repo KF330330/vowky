@@ -56,6 +56,7 @@ final class TextOutputService {
 
         pb.clearContents()
         pb.setString(text, forType: .string)
+        let changeCountAfterSet = pb.changeCount
 
         // Simulate Cmd+V
         let source = CGEventSource(stateID: .hidSystemState)
@@ -66,8 +67,13 @@ final class TextOutputService {
         vUp?.flags = .maskCommand
         vUp?.post(tap: .cghidEventTap)
 
-        // Restore original clipboard after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        // Restore original clipboard after delay (0.5s to ensure target app has processed paste)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Safety: if another app modified clipboard during the wait, don't overwrite
+            guard pb.changeCount == changeCountAfterSet else {
+                CrashLogger.log("[TextOutput] Clipboard changed externally, skip restore")
+                return
+            }
             if let saved = saved {
                 pb.clearContents()
                 pb.setString(saved, forType: .string)
