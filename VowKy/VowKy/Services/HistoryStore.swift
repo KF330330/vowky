@@ -126,7 +126,7 @@ final class HistoryStore {
     // MARK: - Export
 
     func exportAsText() -> String {
-        let records = fetchAll(limit: Int.max)
+        let records = fetchAll(limit: Int(Int32.max))
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return records.map { "[\(formatter.string(from: $0.createdAt))] \($0.content)" }
@@ -134,7 +134,7 @@ final class HistoryStore {
     }
 
     func exportAsCSV() -> String {
-        let records = fetchAll(limit: Int.max)
+        let records = fetchAll(limit: Int(Int32.max))
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         var lines = ["时间,内容,类型"]
