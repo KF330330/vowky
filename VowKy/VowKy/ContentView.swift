@@ -188,7 +188,7 @@ struct ContentView: View {
             let result = rec.decode(samples: samples, sampleRate: Int(format.sampleRate))
 
             DispatchQueue.main.async {
-                let text = result.text
+                let text = result?.text ?? ""
                 resultText += "✅ S2: \"\(text)\"\n"
                 statusText = "识别完成"
             }
@@ -348,7 +348,7 @@ struct ContentView: View {
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = rec.decode(samples: allSamples, sampleRate: 16000)
                 DispatchQueue.main.async {
-                    let text = result.text
+                    let text = result?.text ?? ""
                     resultText += "✅ S4: \"\(text)\" (样本数:\(allSamples.count))\n"
                     statusText = "识别完成"
                 }

@@ -68,7 +68,11 @@ final class LocalSpeechRecognizer: SpeechRecognizerProtocol {
         }
 
         NSLog("[VowKy][SpeechRecognizer] recognize() start: \(samples.count) samples at \(sampleRate)Hz")
-        let result = rec.decode(samples: samples, sampleRate: sampleRate)
+        guard let result = rec.decode(samples: samples, sampleRate: sampleRate) else {
+            CrashLogger.log("[SpeechRecognizer] decode() returned nil")
+            NSLog("[VowKy][SpeechRecognizer] decode() returned nil")
+            return nil
+        }
         let text = result.text
         NSLog("[VowKy][SpeechRecognizer] Raw recognition result: '\(text)'")
         return text.isEmpty ? nil : text

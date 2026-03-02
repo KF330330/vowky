@@ -724,9 +724,10 @@ class SherpaOnnxOfflineRecognizer {
   ///   - samples: Audio samples normalized to the range [-1, 1]
   ///   - sampleRate: Sample rate of the input audio samples. Must match
   ///                 the one expected by the model.
-  func decode(samples: [Float], sampleRate: Int = 16_000) -> SherpaOnnxOfflineRecongitionResult {
+  func decode(samples: [Float], sampleRate: Int = 16_000) -> SherpaOnnxOfflineRecongitionResult? {
     guard let stream = SherpaOnnxCreateOfflineStream(recognizer) else {
-      fatalError("Failed to create offline stream")
+      CrashLogger.log("[SherpaOnnx] Failed to create offline stream")
+      return nil
     }
 
     defer { SherpaOnnxDestroyOfflineStream(stream) }
@@ -736,7 +737,8 @@ class SherpaOnnxOfflineRecognizer {
     SherpaOnnxDecodeOfflineStream(recognizer, stream)
 
     guard let resultPtr = SherpaOnnxGetOfflineStreamResult(stream) else {
-      fatalError("Failed to get offline recognition result")
+      CrashLogger.log("[SherpaOnnx] Failed to get offline recognition result")
+      return nil
     }
 
     return SherpaOnnxOfflineRecongitionResult(result: resultPtr)
