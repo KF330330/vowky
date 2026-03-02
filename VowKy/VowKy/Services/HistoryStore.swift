@@ -123,6 +123,28 @@ final class HistoryStore {
         sqlite3_exec(db, "DELETE FROM input_history;", nil, nil, nil)
     }
 
+    // MARK: - Export
+
+    func exportAsText() -> String {
+        let records = fetchAll(limit: Int.max)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return records.map { "[\(formatter.string(from: $0.createdAt))] \($0.content)" }
+            .joined(separator: "\n")
+    }
+
+    func exportAsCSV() -> String {
+        let records = fetchAll(limit: Int.max)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        var lines = ["时间,内容,类型"]
+        for record in records {
+            let escaped = record.content.replacingOccurrences(of: "\"", with: "\"\"")
+            lines.append("\(formatter.string(from: record.createdAt)),\"\(escaped)\",\(record.sourceType)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Count
 
     func count() -> Int {
