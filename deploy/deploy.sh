@@ -110,7 +110,9 @@ fi
 EDDSA_ATTR=""
 if [ -n "$SPARKLE_SIGNATURE" ]; then
     # sign_update 输出格式: sparkle:edSignature="xxx" length="yyy"
-    EDDSA_ATTR=" ${SPARKLE_SIGNATURE}"
+    # 只提取 edSignature，length 已在模板中由 DMG_SIZE_BYTES 提供
+    EDDSA_SIG=$(echo "$SPARKLE_SIGNATURE" | grep -o 'sparkle:edSignature="[^"]*"')
+    EDDSA_ATTR=" ${EDDSA_SIG}"
 fi
 
 # 生成 appcast.xml
