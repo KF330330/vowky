@@ -3,6 +3,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let crashTimestampsKey = "crashLoop_launchTimestamps"
+    private static let lastLaunchedVersionKey = "lastLaunchedVersion"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CrashLogger.logLaunch()
@@ -15,10 +16,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showCrashLoopAlert()
         }
 
+        // 第一层防御：移除 quarantine xattr，防止 App Translocation 导致 TCC 失效
+        removeQuarantineXattr()
+        checkAppTranslocation()
+
         // 首次启动由新手引导统一处理权限和冲突检测
         let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         if hasCompletedOnboarding {
-            checkAccessibilityPermission()
+            // 第二层防御：检测更新后权限丢失，执行 tccutil reset 恢复
+            let handledByPostUpdate = handlePostUpdatePermissionIfNeeded()
+            if !handledByPostUpdate {
+                checkAccessibilityPermission()
+            }
             checkOptionSpaceConflict()
         }
     }
@@ -59,6 +68,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         CrashLogger.log("[App] applicationWillTerminate — graceful exit")
+    }
+
+    // MARK: - Anti-Translocation (Layer 1)
+
+    /// 移除 quarantine xattr，防止 Sparkle 更新后 macOS App Translocation
+    private func removeQuarantineXattr() {
+        let bundlePath = Bundle.main.bundlePath
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+        process.arguments = ["-dr", "com.apple.quarantine", bundlePath]
+        process.standardOutput = nil
+        process.standardError = nil
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                CrashLogger.log("[AntiTranslocation] Quarantine xattr removed from \(bundlePath)")
+            }
+        } catch {
+            CrashLogger.log("[AntiTranslocation] xattr removal failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// 检测当前是否在 App Translocation 临时路径运行
+    /// macOS 会将带 quarantine 的 app 移到 /private/var/folders/.../AppTranslocation/ 下运行
+    private func checkAppTranslocation() {
+        let bundlePath = Bundle.main.bundlePath
+        if bundlePath.contains("/AppTranslocation/") {
+            CrashLogger.log("[AntiTranslocation] App is translocated! Path: \(bundlePath)")
+            showTranslocationAlert()
+        }
+    }
+
+    private func showTranslocationAlert() {
+        let alert = NSAlert()
+        alert.messageText = "VowKy 需要移动到应用程序文件夹"
+        alert.informativeText = "macOS 安全机制限制了 VowKy 的运行位置，可能导致快捷键无法使用。\n\n请将 VowKy 拖动到「应用程序」文件夹后重新打开。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "打开应用程序文件夹")
+        alert.addButton(withTitle: "稍后处理")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications"))
+        }
+    }
+
+    // MARK: - Post-Update Permission Recovery (Layer 2)
+
+    /// 检测 Sparkle 更新后 TCC 权限丢失，执行 tccutil reset 恢复
+    /// 返回 true 表示已处理（调用方应跳过通用权限检查）
+    private func handlePostUpdatePermissionIfNeeded() -> Bool {
+        let defaults = UserDefaults.standard
+        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let lastVersion = defaults.string(forKey: Self.lastLaunchedVersionKey)
+
+        defer {
+            defaults.set(currentVersion, forKey: Self.lastLaunchedVersionKey)
+        }
+
+        // 首次记录版本 或 版本未变 → 跳过
+        guard let lastVersion = lastVersion, lastVersion != currentVersion else {
+            return false
+        }
+
+        CrashLogger.log("[PostUpdate] Version changed: \(lastVersion) → \(currentVersion)")
+
+        // 版本变了但权限还在 → 无需处理
+        if AXIsProcessTrusted() {
+            CrashLogger.log("[PostUpdate] Permission still valid after update")
+            return false
+        }
+
+        // 权限丢失 → 执行 tccutil reset 清除脏 TCC 条目
+        CrashLogger.log("[PostUpdate] Permission lost after update, running tccutil reset")
+        runTCCUtilReset()
+        showPostUpdatePermissionAlert(fromVersion: lastVersion, toVersion: currentVersion)
+        return true
+    }
+
+    private func runTCCUtilReset() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", "com.vowky.app"]
+        process.standardOutput = nil
+        process.standardError = nil
+        do {
+            try process.run()
+            process.waitUntilExit()
+            CrashLogger.log("[PostUpdate] tccutil reset exit code: \(process.terminationStatus)")
+        } catch {
+            CrashLogger.log("[PostUpdate] tccutil reset failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func showPostUpdatePermissionAlert(fromVersion: String, toVersion: String) {
+        let alert = NSAlert()
+        alert.messageText = "更新后需要重新授权"
+        alert.informativeText = "VowKy 已从 v\(fromVersion) 更新到 v\(toVersion)。\n\nmacOS 要求应用更新后重新授予辅助功能权限，请在接下来的系统对话框中点击「打开系统设置」并开启 VowKy 的开关。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "去授权")
+        alert.addButton(withTitle: "稍后")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            AXIsProcessTrustedWithOptions(options)
+        }
     }
 
     // MARK: - Accessibility Permission
