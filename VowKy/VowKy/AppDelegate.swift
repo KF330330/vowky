@@ -73,7 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showAccessibilityGuide() {
         let alert = NSAlert()
         alert.messageText = "VowKy 需要辅助功能权限"
-        alert.informativeText = "VowKy 使用全局快捷键（Option+Space）来触发语音输入，需要辅助功能权限才能正常工作。\n\n点击「打开系统设置」后，请在列表中找到 VowKy 并开启开关。"
+        let hotkeyName = HotkeyConfig.current.displayName
+        alert.informativeText = "VowKy 使用全局快捷键（\(hotkeyName)）来触发语音输入，需要辅助功能权限才能正常工作。\n\n点击「打开系统设置」后，请在列表中找到 VowKy 并开启开关。"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "打开系统设置")
         alert.addButton(withTitle: "稍后设置")
