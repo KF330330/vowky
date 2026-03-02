@@ -16,6 +16,8 @@ final class HistoryWindowController {
     private var window: NSWindow?
 
     func showWindow() {
+        NSApp.setActivationPolicy(.accessory)
+
         if let window = window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -33,6 +35,14 @@ final class HistoryWindowController {
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { _ in
+            NSApp.setActivationPolicy(.prohibited)
+        }
 
         self.window = window
     }
@@ -58,6 +68,7 @@ struct HistoryView: View {
     @State private var records: [HistoryRecord] = []
     @State private var searchText = ""
     @State private var totalCount = 0
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +80,7 @@ struct HistoryView: View {
                 TextField("搜索历史记录...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
+                    .focused($isSearchFocused)
                     .onChange(of: searchText) { _ in
                         if !searchText.isEmpty {
                             AnalyticsService.shared.trackHistorySearch()
@@ -161,6 +173,9 @@ struct HistoryView: View {
         .frame(minWidth: 420, minHeight: 400)
         .onAppear {
             loadRecords()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isSearchFocused = true
+            }
         }
     }
 
