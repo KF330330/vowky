@@ -1,22 +1,15 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Keyable Window (fixes TextField focus in LSUIElement apps)
-
-private class KeyableWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-}
-
 // MARK: - History Window Controller
 
 final class HistoryWindowController {
     static let shared = HistoryWindowController()
 
-    private var window: NSWindow?
+    private var window: NSPanel?
 
     func showWindow() {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
 
         if let window = window {
             window.makeKeyAndOrderFront(nil)
@@ -27,24 +20,33 @@ final class HistoryWindowController {
         let historyView = HistoryView()
         let hostingController = NSHostingController(rootView: historyView)
 
-        let window = KeyableWindow(contentViewController: hostingController)
-        window.title = "VowKy 识别历史"
-        window.styleMask = [.titled, .closable, .resizable, .miniaturizable]
-        window.setContentSize(NSSize(width: 520, height: 620))
-        window.minSize = NSSize(width: 420, height: 400)
-        window.center()
-        window.makeKeyAndOrderFront(nil)
+        let panel = NSPanel(contentViewController: hostingController)
+        panel.title = "VowKy 识别历史"
+        panel.styleMask = [.titled, .closable, .resizable, .miniaturizable, .nonactivatingPanel]
+        panel.styleMask.remove(.nonactivatingPanel)
+        panel.isFloatingPanel = false
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.setContentSize(NSSize(width: 520, height: 620))
+        panel.minSize = NSSize(width: 420, height: 400)
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Force first responder to content view for keyboard input
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            panel.makeFirstResponder(hostingController.view)
+        }
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
-            object: window,
+            object: panel,
             queue: .main
-        ) { _ in
+        ) { [weak self] _ in
+            self?.window = nil
             NSApp.setActivationPolicy(.prohibited)
         }
 
-        self.window = window
+        self.window = panel
     }
 }
 
