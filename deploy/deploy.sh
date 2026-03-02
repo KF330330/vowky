@@ -185,7 +185,8 @@ if gh release view "v${VERSION}" &>/dev/null; then
 else
     gh release create "v${VERSION}" "${DMG_PATH}" "${DMG_LATEST}" \
         --title "VowKy ${VERSION}" \
-        --notes "VowKy ${VERSION} (build ${BUILD})"
+        --notes "VowKy ${VERSION} (build ${BUILD})" \
+        --latest
 fi
 log_ok "GitHub Release 完成"
 
