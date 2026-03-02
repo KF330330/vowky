@@ -140,32 +140,68 @@ struct SettingsView: View {
 
     private func startRecordingHotkey() {
         isRecording = true
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
-            let keyCode = Int64(event.keyCode)
+        // 同时监听 keyDown 和 flagsChanged，支持单修饰键录入
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+            if event.type == .flagsChanged {
+                let keyCode = Int64(event.keyCode)
+                // 只处理修饰键（含 Fn = 63）
+                let modifierKeyCodes: Set<Int64> = [55, 56, 58, 59, 61, 62, 63]
+                guard modifierKeyCodes.contains(keyCode) else { return event }
 
-            // Ignore pure modifier keys
-            if keyCode == 55 || keyCode == 56 || keyCode == 58 || keyCode == 59 || keyCode == 61 || keyCode == 62 {
+                // 检测是否只有一个修饰键按下
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                let isSingleModifier = flags == .command || flags == .shift
+                    || flags == .option || flags == .control || flags == .function
+
+                if isSingleModifier {
+                    // 统一左右键：61→58(Option), 62→59(Control)
+                    let normalizedKeyCode: Int64
+                    switch keyCode {
+                    case 61: normalizedKeyCode = 58
+                    case 62: normalizedKeyCode = 59
+                    default: normalizedKeyCode = keyCode
+                    }
+                    let config = HotkeyConfig(
+                        keyCode: normalizedKeyCode,
+                        needsOption: false, needsCommand: false,
+                        needsControl: false, needsShift: false,
+                        isModifierOnly: true
+                    )
+                    config.save()
+                    hotkeyDisplay = config.displayName
+                    AnalyticsService.shared.trackHotkeyChange()
+                    stopRecordingHotkey()
+                    return nil
+                }
                 return event
-            }
 
-            // Escape without modifiers = cancel
-            if keyCode == 53 && event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
+            } else {
+                // keyDown 事件：原有组合键录制逻辑
+                let keyCode = Int64(event.keyCode)
+
+                // Ignore pure modifier keys (in keyDown they shouldn't appear, but be safe)
+                if [55, 56, 58, 59, 61, 62].contains(keyCode) { return event }
+
+                // Escape without modifiers = cancel
+                if keyCode == 53 && event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
+                    stopRecordingHotkey()
+                    return nil
+                }
+
+                let config = HotkeyConfig(
+                    keyCode: keyCode,
+                    needsOption: event.modifierFlags.contains(.option),
+                    needsCommand: event.modifierFlags.contains(.command),
+                    needsControl: event.modifierFlags.contains(.control),
+                    needsShift: event.modifierFlags.contains(.shift),
+                    isModifierOnly: false
+                )
+                config.save()
+                hotkeyDisplay = config.displayName
+                AnalyticsService.shared.trackHotkeyChange()
                 stopRecordingHotkey()
                 return nil
             }
-
-            let config = HotkeyConfig(
-                keyCode: keyCode,
-                needsOption: event.modifierFlags.contains(.option),
-                needsCommand: event.modifierFlags.contains(.command),
-                needsControl: event.modifierFlags.contains(.control),
-                needsShift: event.modifierFlags.contains(.shift)
-            )
-            config.save()
-            hotkeyDisplay = config.displayName
-            AnalyticsService.shared.trackHotkeyChange()
-            stopRecordingHotkey()
-            return nil
         }
     }
 

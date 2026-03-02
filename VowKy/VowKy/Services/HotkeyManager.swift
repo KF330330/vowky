@@ -74,6 +74,12 @@ final class HotkeyManager {
     /// Returns true if cancel (Escape) should be intercepted (i.e. currently recording)
     var shouldInterceptCancel: (() -> Bool)?
 
+    // MARK: - Modifier-only mode state
+    /// 单修饰键模式：目标修饰键是否正在按下
+    var modifierIsDown: Bool = false
+    /// 单修饰键模式：按下期间是否有其他 keyDown（组合键）
+    var hadKeyDownWhileModifierHeld: Bool = false
+
     var isRunning: Bool { eventTapPort != nil }
 
     /// Start listening for the global hotkey (Option+Space).
@@ -182,6 +188,105 @@ private func hotkeyTapCallback(
         return Unmanaged.passRetained(event)
     }
 
+    let config = HotkeyConfig.current
+    let manager = Unmanaged<HotkeyManager>.fromOpaque(context.manager).takeUnretainedValue()
+
+    if config.isModifierOnly {
+        // ===== 单修饰键模式（短按触发） =====
+        return handleModifierOnlyMode(type: type, event: event, config: config, manager: manager)
+    } else {
+        // ===== 原有组合键模式 =====
+        return handleComboKeyMode(type: type, event: event, manager: manager)
+    }
+}
+
+/// 单修饰键模式：通过 flagsChanged 检测短按
+private func handleModifierOnlyMode(
+    type: CGEventType,
+    event: CGEvent,
+    config: HotkeyConfig,
+    manager: HotkeyManager
+) -> Unmanaged<CGEvent>? {
+
+    if type == .flagsChanged {
+        let flags = event.flags
+        guard let targetFlag = config.modifierFlag else {
+            return Unmanaged.passRetained(event)
+        }
+        let hasTarget = flags.contains(targetFlag)
+
+        // 检查是否有其他修饰键同时按下
+        let allModifiers: CGEventFlags = [.maskAlternate, .maskCommand, .maskControl, .maskShift, .maskSecondaryFn]
+        let otherFlags = allModifiers.subtracting(targetFlag)
+        let hasOtherModifiers = !flags.intersection(otherFlags).isEmpty
+
+        if hasTarget && !hasOtherModifiers && !manager.modifierIsDown {
+            // 目标修饰键刚按下，无其他修饰键
+            manager.modifierIsDown = true
+            manager.hadKeyDownWhileModifierHeld = false
+        } else if !hasTarget && manager.modifierIsDown {
+            // 目标修饰键释放
+            if !manager.hadKeyDownWhileModifierHeld {
+                // 短按单独触发
+                CrashLogger.log("[HotkeyCallback] Modifier-only release — dispatching")
+                print("[VowKy][Hotkey] Modifier-only \(config.displayName) release — dispatching onHotkeyPressed")
+                DispatchQueue.main.async {
+                    manager.onHotkeyPressed?()
+                }
+            }
+            manager.modifierIsDown = false
+            manager.hadKeyDownWhileModifierHeld = false
+        } else if hasOtherModifiers && manager.modifierIsDown {
+            // 其他修饰键介入，取消
+            manager.modifierIsDown = false
+            manager.hadKeyDownWhileModifierHeld = false
+        }
+        return Unmanaged.passRetained(event) // 不吞掉 flagsChanged
+
+    } else if type == .keyDown {
+        // 修饰键按住期间有 keyDown → 标记为组合键
+        if manager.modifierIsDown {
+            manager.hadKeyDownWhileModifierHeld = true
+        }
+
+        // 检查 Escape 取消键
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        let flags = event.flags
+        let modifiers = HotkeyModifiers(
+            option: flags.contains(.maskAlternate),
+            command: flags.contains(.maskCommand),
+            control: flags.contains(.maskControl),
+            shift: flags.contains(.maskShift)
+        )
+        let cancelAction = HotkeyEvaluator.evaluateCancelEvent(
+            keyCode: keyCode,
+            modifiers: modifiers,
+            isKeyUp: false
+        )
+        if cancelAction == .cancelRecording {
+            let shouldIntercept = manager.shouldInterceptCancel?() ?? false
+            if shouldIntercept {
+                print("[VowKy][Hotkey] Escape keyDown — dispatching onCancelPressed")
+                DispatchQueue.main.async {
+                    manager.onCancelPressed?()
+                }
+                return nil
+            }
+        }
+        return Unmanaged.passRetained(event)
+
+    } else {
+        return Unmanaged.passRetained(event)
+    }
+}
+
+/// 原有组合键模式
+private func handleComboKeyMode(
+    type: CGEventType,
+    event: CGEvent,
+    manager: HotkeyManager
+) -> Unmanaged<CGEvent>? {
+
     guard type == .keyDown || type == .keyUp else {
         return Unmanaged.passRetained(event)
     }
@@ -208,8 +313,7 @@ private func hotkeyTapCallback(
     switch action {
     case .hotkeyDown:
         CrashLogger.log("[HotkeyCallback] Hotkey keyDown — dispatching")
-        print("[VowKy][Hotkey] Option+Space keyDown — dispatching onHotkeyPressed")
-        let manager = Unmanaged<HotkeyManager>.fromOpaque(context.manager).takeUnretainedValue()
+        print("[VowKy][Hotkey] Hotkey keyDown — dispatching onHotkeyPressed")
         DispatchQueue.main.async {
             manager.onHotkeyPressed?()
         }
@@ -231,7 +335,6 @@ private func hotkeyTapCallback(
             isKeyUp: isKeyUp
         )
         if cancelAction == .cancelRecording {
-            let manager = Unmanaged<HotkeyManager>.fromOpaque(context.manager).takeUnretainedValue()
             let shouldIntercept = manager.shouldInterceptCancel?() ?? false
             if shouldIntercept {
                 print("[VowKy][Hotkey] Escape keyDown — dispatching onCancelPressed")

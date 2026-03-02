@@ -194,39 +194,80 @@ final class OnboardingViewModel: ObservableObject {
 
     func startRecordingHotkey() {
         isRecordingHotkey = true
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+        // 同时监听 keyDown 和 flagsChanged，支持单修饰键录入
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
-            let keyCode = Int64(event.keyCode)
 
-            // Ignore pure modifier keys
-            if [55, 56, 58, 59, 61, 62].contains(keyCode) { return event }
+            if event.type == .flagsChanged {
+                let keyCode = Int64(event.keyCode)
+                // 只处理修饰键（含 Fn = 63）
+                let modifierKeyCodes: Set<Int64> = [55, 56, 58, 59, 61, 62, 63]
+                guard modifierKeyCodes.contains(keyCode) else { return event }
 
-            // Escape without modifiers = cancel
-            if keyCode == 53 && event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
+                // 检测是否只有一个修饰键按下
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                let isSingleModifier = flags == .command || flags == .shift
+                    || flags == .option || flags == .control || flags == .function
+
+                if isSingleModifier {
+                    // 统一左右键：61→58(Option), 62→59(Control)
+                    let normalizedKeyCode: Int64
+                    switch keyCode {
+                    case 61: normalizedKeyCode = 58
+                    case 62: normalizedKeyCode = 59
+                    default: normalizedKeyCode = keyCode
+                    }
+                    let config = HotkeyConfig(
+                        keyCode: normalizedKeyCode,
+                        needsOption: false, needsCommand: false,
+                        needsControl: false, needsShift: false,
+                        isModifierOnly: true
+                    )
+                    config.save()
+                    self.hotkeyDisplay = config.displayName
+                    self.stopRecordingHotkey()
+                    self.checkHotkeyConflict()
+
+                    if let hotkeyMgr = self.appState?.hotkeyManager {
+                        hotkeyMgr.stop()
+                        _ = hotkeyMgr.start()
+                    }
+                    return nil
+                }
+                return event
+
+            } else {
+                // keyDown 事件：原有组合键录制逻辑
+                let keyCode = Int64(event.keyCode)
+
+                // Ignore pure modifier keys
+                if [55, 56, 58, 59, 61, 62].contains(keyCode) { return event }
+
+                // Escape without modifiers = cancel
+                if keyCode == 53 && event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
+                    self.stopRecordingHotkey()
+                    return nil
+                }
+
+                let config = HotkeyConfig(
+                    keyCode: keyCode,
+                    needsOption: event.modifierFlags.contains(.option),
+                    needsCommand: event.modifierFlags.contains(.command),
+                    needsControl: event.modifierFlags.contains(.control),
+                    needsShift: event.modifierFlags.contains(.shift),
+                    isModifierOnly: false
+                )
+                config.save()
+                self.hotkeyDisplay = config.displayName
                 self.stopRecordingHotkey()
+                self.checkHotkeyConflict()
+
+                if let hotkeyMgr = self.appState?.hotkeyManager {
+                    hotkeyMgr.stop()
+                    _ = hotkeyMgr.start()
+                }
                 return nil
             }
-
-            let config = HotkeyConfig(
-                keyCode: keyCode,
-                needsOption: event.modifierFlags.contains(.option),
-                needsCommand: event.modifierFlags.contains(.command),
-                needsControl: event.modifierFlags.contains(.control),
-                needsShift: event.modifierFlags.contains(.shift)
-            )
-            config.save()
-            self.hotkeyDisplay = config.displayName
-            self.stopRecordingHotkey()
-            self.checkHotkeyConflict()
-
-            // 新手引导期间 hotkeyManager 尚未创建，配置保存即可
-            // 完成引导后 startHotkey() 会读取最新配置
-            if let hotkeyMgr = self.appState?.hotkeyManager {
-                hotkeyMgr.stop()
-                _ = hotkeyMgr.start()
-            }
-
-            return nil
         }
     }
 

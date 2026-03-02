@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct HotkeyConfig {
     var keyCode: Int64
@@ -6,6 +7,7 @@ struct HotkeyConfig {
     var needsCommand: Bool
     var needsControl: Bool
     var needsShift: Bool
+    var isModifierOnly: Bool  // true = 单修饰键短按触发模式
 
     // MARK: - Defaults
 
@@ -14,6 +16,7 @@ struct HotkeyConfig {
     static let defaultCommand = true
     static let defaultControl = false
     static let defaultShift = false
+    static let defaultIsModifierOnly = false
 
     // MARK: - UserDefaults Keys
 
@@ -22,6 +25,7 @@ struct HotkeyConfig {
     private static let commandKey = "hotkey_command"
     private static let controlKey = "hotkey_control"
     private static let shiftKey = "hotkey_shift"
+    private static let isModifierOnlyKey = "hotkey_isModifierOnly"
 
     // MARK: - Read / Write
 
@@ -34,7 +38,8 @@ struct HotkeyConfig {
                 needsOption: defaultOption,
                 needsCommand: defaultCommand,
                 needsControl: defaultControl,
-                needsShift: defaultShift
+                needsShift: defaultShift,
+                isModifierOnly: defaultIsModifierOnly
             )
         }
         return HotkeyConfig(
@@ -42,7 +47,8 @@ struct HotkeyConfig {
             needsOption: defaults.bool(forKey: optionKey),
             needsCommand: defaults.bool(forKey: commandKey),
             needsControl: defaults.bool(forKey: controlKey),
-            needsShift: defaults.bool(forKey: shiftKey)
+            needsShift: defaults.bool(forKey: shiftKey),
+            isModifierOnly: defaults.bool(forKey: isModifierOnlyKey)
         )
     }
 
@@ -52,7 +58,8 @@ struct HotkeyConfig {
             needsOption: defaultOption,
             needsCommand: defaultCommand,
             needsControl: defaultControl,
-            needsShift: defaultShift
+            needsShift: defaultShift,
+            isModifierOnly: defaultIsModifierOnly
         )
         config.save()
     }
@@ -64,11 +71,44 @@ struct HotkeyConfig {
         defaults.set(needsCommand, forKey: Self.commandKey)
         defaults.set(needsControl, forKey: Self.controlKey)
         defaults.set(needsShift, forKey: Self.shiftKey)
+        defaults.set(isModifierOnly, forKey: Self.isModifierOnlyKey)
+    }
+
+    // MARK: - Display Name
+
+    // MARK: - Modifier-Only Helpers
+
+    /// 返回目标修饰键对应的 CGEventFlags
+    var modifierFlag: CGEventFlags? {
+        guard isModifierOnly else { return nil }
+        switch keyCode {
+        case 55: return .maskCommand
+        case 56: return .maskShift
+        case 58: return .maskAlternate
+        case 59: return .maskControl
+        case 63: return .maskSecondaryFn
+        default: return nil
+        }
+    }
+
+    /// 修饰键 keyCode → 显示名
+    static func modifierName(for keyCode: Int64) -> String {
+        switch keyCode {
+        case 55: return "⌘"
+        case 56: return "⇧"
+        case 58: return "⌥"
+        case 59: return "⌃"
+        case 63: return "Fn"
+        default: return "Key\(keyCode)"
+        }
     }
 
     // MARK: - Display Name
 
     var displayName: String {
+        if isModifierOnly {
+            return Self.modifierName(for: keyCode)
+        }
         var parts: [String] = []
         if needsControl { parts.append("⌃") }
         if needsOption { parts.append("⌥") }
