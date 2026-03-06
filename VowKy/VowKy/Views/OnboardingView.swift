@@ -112,6 +112,7 @@ final class OnboardingViewModel: ObservableObject {
 
     private var permissionTimer: Timer?
     private var eventMonitor: Any?
+    private var pendingModifierKeyCode: Int64?
     private var stateCancellable: AnyCancellable?
     private var resultCancellable: AnyCancellable?
 
@@ -194,6 +195,7 @@ final class OnboardingViewModel: ObservableObject {
 
     func startRecordingHotkey() {
         isRecordingHotkey = true
+        pendingModifierKeyCode = nil
         // 同时监听 keyDown 和 flagsChanged，支持单修饰键录入
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self else { return event }
@@ -204,21 +206,13 @@ final class OnboardingViewModel: ObservableObject {
                 let modifierKeyCodes: Set<Int64> = [55, 56, 58, 59, 61, 62, 63]
                 guard modifierKeyCodes.contains(keyCode) else { return event }
 
-                // 检测是否只有一个修饰键按下
                 let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                let isSingleModifier = flags == .command || flags == .shift
-                    || flags == .option || flags == .control || flags == .function
 
-                if isSingleModifier {
-                    // 统一左右键：61→58(Option), 62→59(Control)
-                    let normalizedKeyCode: Int64
-                    switch keyCode {
-                    case 61: normalizedKeyCode = 58
-                    case 62: normalizedKeyCode = 59
-                    default: normalizedKeyCode = keyCode
-                    }
+                // 修饰键全部释放 → 如果有 pending 修饰键，保存为单修饰键模式
+                if flags.isEmpty, let pending = self.pendingModifierKeyCode {
+                    self.pendingModifierKeyCode = nil
                     let config = HotkeyConfig(
-                        keyCode: normalizedKeyCode,
+                        keyCode: pending,
                         needsOption: false, needsCommand: false,
                         needsControl: false, needsShift: false,
                         isModifierOnly: true
@@ -234,10 +228,26 @@ final class OnboardingViewModel: ObservableObject {
                     }
                     return nil
                 }
+
+                // 检测是否只有一个修饰键按下 → 记为 pending，等释放后再保存
+                let isSingleModifier = flags == .command || flags == .shift
+                    || flags == .option || flags == .control || flags == .function
+
+                if isSingleModifier {
+                    // 统一左右键：61→58(Option), 62→59(Control)
+                    switch keyCode {
+                    case 61: self.pendingModifierKeyCode = 58
+                    case 62: self.pendingModifierKeyCode = 59
+                    default: self.pendingModifierKeyCode = keyCode
+                    }
+                } else {
+                    self.pendingModifierKeyCode = nil
+                }
                 return event
 
             } else {
-                // keyDown 事件：原有组合键录制逻辑
+                // keyDown 事件：清除 pending，走组合键录制逻辑
+                self.pendingModifierKeyCode = nil
                 let keyCode = Int64(event.keyCode)
 
                 // Ignore pure modifier keys
