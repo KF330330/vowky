@@ -43,9 +43,11 @@ final class AnalyticsService {
             "device_id": deviceId,
             "app_version": appVersion,
             "os_version": osVersion,
-        ])
-
-        UserDefaults.standard.set(true, forKey: key)
+        ]) { success in
+            if success {
+                UserDefaults.standard.set(true, forKey: key)
+            }
+        }
     }
 
     /// Call at every app launch. Only sends once per calendar day.
@@ -60,9 +62,11 @@ final class AnalyticsService {
             "event": "dau",
             "device_id": deviceId,
             "app_version": appVersion,
-        ])
-
-        UserDefaults.standard.set(today, forKey: key)
+        ]) { success in
+            if success {
+                UserDefaults.standard.set(today, forKey: key)
+            }
+        }
     }
 
     /// Call after each successful recognition.
@@ -75,15 +79,22 @@ final class AnalyticsService {
 
     // MARK: - Private
 
-    private func send(_ body: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
+    private func send(_ body: [String: Any], completion: ((Bool) -> Void)? = nil) {
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+            completion?(false)
+            return
+        }
 
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = data
 
-        session.dataTask(with: request) { _, _, _ in }.resume()
+        session.dataTask(with: request) { _, response, error in
+            let success = error == nil &&
+                (200..<300).contains((response as? HTTPURLResponse)?.statusCode ?? 0)
+            completion?(success)
+        }.resume()
     }
 
     private static func todayString() -> String {
