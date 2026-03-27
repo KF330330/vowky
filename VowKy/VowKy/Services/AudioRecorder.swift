@@ -37,6 +37,7 @@ final class AudioRecorder: AudioRecorderProtocol {
         let inputFormat = inputNode.outputFormat(forBus: 0)
         NSLog("[VowKy][Audio] Input format: sampleRate=\(inputFormat.sampleRate) channels=\(inputFormat.channelCount) bitsPerChannel=\(inputFormat.streamDescription.pointee.mBitsPerChannel)")
         NSLog("[VowKy][Audio] Target format: sampleRate=\(targetSampleRate) channels=1 Float32")
+        CrashLogger.log("[Audio] Input: rate=\(inputFormat.sampleRate) ch=\(inputFormat.channelCount) bits=\(inputFormat.streamDescription.pointee.mBitsPerChannel)")
 
         guard let targetFmt = targetFormat else {
             throw AudioRecorderError.formatCreationFailed
@@ -91,6 +92,7 @@ final class AudioRecorder: AudioRecorderProtocol {
         let avgVal = samples.isEmpty ? 0 : samples.map { abs($0) }.reduce(0, +) / Float(samples.count)
         let duration = Double(samples.count) / targetSampleRate
         NSLog("[VowKy][Audio] Returning \(samples.count) samples (duration=\(String(format: "%.1f", duration))s, maxAmp=\(String(format: "%.4f", maxVal)), avgAmp=\(String(format: "%.6f", avgVal)))")
+        CrashLogger.log("[Audio] samples=\(samples.count) duration=\(String(format: "%.1f", duration))s maxAmp=\(String(format: "%.4f", maxVal)) avgAmp=\(String(format: "%.6f", avgVal))")
         return samples
     }
 
