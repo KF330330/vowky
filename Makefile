@@ -1,7 +1,14 @@
-.PHONY: build deploy deploy-skip-notarize bump-patch bump-minor bump-major preflight verify help
+.PHONY: build run deploy deploy-skip-notarize bump-patch bump-minor bump-major preflight verify help
 
 help: ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+
+run: ## Debug 构建并启动（从 DerivedData 原地运行）
+	@cd VowKy && xcodegen generate -q 2>/dev/null; \
+	APP=$$(xcodebuild -scheme VowKy -configuration Debug -showBuildSettings 2>/dev/null | grep -m1 ' BUILT_PRODUCTS_DIR' | awk '{print $$3}')/VowKy.app; \
+	xcodebuild build -scheme VowKy -configuration Debug -destination 'platform=macOS' -quiet 2>&1 | grep -v '^$$' | grep -v 'warning:' || true; \
+	echo "→ Launching $$APP"; \
+	open "$$APP"
 
 build: ## 构建 DMG（Developer ID 签名 + 公证）
 	./deploy/build.sh
