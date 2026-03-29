@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let crashTimestampsKey = "crashLoop_launchTimestamps"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.register(defaults: ["autoCopyToClipboard": true])
         CrashLogger.logLaunch()
         logLaunchDiagnostics()
 

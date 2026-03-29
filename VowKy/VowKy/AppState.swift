@@ -269,7 +269,8 @@ final class AppState: ObservableObject {
             lastResult = finalText
             addToRecentResults(finalText)
             CrashLogger.log("[Recognize] Inserting text...")
-            textOutputService?.insertText(finalText)
+            let autoCopy = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
+            textOutputService?.insertText(finalText, copyToClipboard: autoCopy)
             backupService?.finalizeAndDelete()
             AnalyticsService.shared.trackRecognition()
             let durationMs = Int((Date().timeIntervalSince(self.recordingStartTime ?? Date())) * 1000)
@@ -322,7 +323,8 @@ final class AppState: ObservableObject {
             CrashLogger.log("[Recovery] Punctuation done: \(finalText)")
             lastResult = finalText
             addToRecentResults(finalText)
-            textOutputService?.insertText(finalText)
+            let autoCopy = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
+            textOutputService?.insertText(finalText, copyToClipboard: autoCopy)
             backup.deleteBackup()
             AnalyticsService.shared.trackRecovery()
             state = .idle
