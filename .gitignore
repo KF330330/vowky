@@ -43,3 +43,4 @@ VowKy/CLAUDE.md
 # Backup files
 *.bak/
 *.bak
+.worktrees/
