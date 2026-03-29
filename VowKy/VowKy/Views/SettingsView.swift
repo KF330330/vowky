@@ -39,6 +39,7 @@ struct SettingsView: View {
     @State private var isRecording = false
     @State private var eventMonitor: Any?
     @State private var pendingModifierKeyCode: Int64?
+    @State private var autoCopyToClipboard = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
     @State private var permissionRefreshTimer: Timer?
 
     var body: some View {
@@ -122,10 +123,14 @@ struct SettingsView: View {
                             launchAtLogin = !newValue
                         }
                     }
+                Toggle("识别后自动复制到剪贴板", isOn: $autoCopyToClipboard)
+                    .onChange(of: autoCopyToClipboard) { newValue in
+                        UserDefaults.standard.set(newValue, forKey: "autoCopyToClipboard")
+                    }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 380, height: 380)
+        .frame(width: 380, height: 420)
         .onAppear {
             isAccessibilityGranted = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled

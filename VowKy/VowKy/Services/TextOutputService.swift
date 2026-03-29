@@ -7,13 +7,18 @@ final class TextOutputService {
     /// Insert text at the current cursor position.
     /// Uses clipboard paste for Electron apps (CGEvent causes duplication in Chromium),
     /// and CGEvent keyboard simulation for native macOS apps.
-    func insertText(_ text: String) {
-        print("[VowKy][TextOutput] insertText() called with: \(text)")
+    func insertText(_ text: String, copyToClipboard: Bool = false) {
+        print("[VowKy][TextOutput] insertText() called with: \(text), copyToClipboard: \(copyToClipboard)")
         if isFrontmostElectron() {
             print("[VowKy][TextOutput] Electron app detected, using clipboard strategy")
-            insertViaClipboard(text)
+            insertViaClipboard(text, keepInClipboard: copyToClipboard)
         } else {
             insertViaCGEvent(text)
+            if copyToClipboard {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(text, forType: .string)
+            }
         }
         print("[VowKy][TextOutput] Text inserted (\(text.utf16.count) chars)")
     }
@@ -50,7 +55,7 @@ final class TextOutputService {
 
     /// Insert text via clipboard paste (Cmd+V). Saves and restores original clipboard content.
     /// Used for Electron/Chromium apps where CGEvent Unicode simulation causes duplication.
-    private func insertViaClipboard(_ text: String) {
+    private func insertViaClipboard(_ text: String, keepInClipboard: Bool = false) {
         let pb = NSPasteboard.general
         let saved = pb.string(forType: .string)
 
@@ -66,6 +71,9 @@ final class TextOutputService {
         let vUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
         vUp?.flags = .maskCommand
         vUp?.post(tap: .cghidEventTap)
+
+        // If keepInClipboard is true, skip restoring — let user paste again elsewhere
+        guard !keepInClipboard else { return }
 
         // Restore original clipboard after delay (0.5s to ensure target app has processed paste)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
