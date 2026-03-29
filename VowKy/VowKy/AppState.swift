@@ -115,6 +115,9 @@ final class AppState: ObservableObject {
         hotkeyMgr.onHotkeyPressed = { [weak self] in
             self?.handleHotkeyToggle()
         }
+        hotkeyMgr.onHotkeyReleased = { [weak self] in
+            self?.handleHotkeyRelease()
+        }
         hotkeyMgr.onCancelPressed = { [weak self] in
             self?.cancelRecording()
         }
@@ -182,7 +185,10 @@ final class AppState: ObservableObject {
             startRecordingFromIdle()
 
         case .recording:
-            stopRecordingAndRecognize()
+            if !HotkeyConfig.current.isHoldMode {
+                stopRecordingAndRecognize()
+            }
+            // 长按模式：录音中收到 keyDown 忽略，等松手再停止
 
         case .loading:
             if !speechRecognizer.isReady {
@@ -221,6 +227,15 @@ final class AppState: ObservableObject {
             CrashLogger.log("[Recording] Failed: \(error.localizedDescription)")
             print("[VowKy][AppState] Recording failed: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Hold Mode Release
+
+    func handleHotkeyRelease() {
+        CrashLogger.log("[Hotkey] handleHotkeyRelease() state=\(state)")
+        print("[VowKy][AppState] handleHotkeyRelease() called, current state: \(state)")
+        guard state == .recording else { return }
+        stopRecordingAndRecognize()
     }
 
     // MARK: - Cancel Recording

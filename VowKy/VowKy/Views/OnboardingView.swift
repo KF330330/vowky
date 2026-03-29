@@ -215,7 +215,8 @@ final class OnboardingViewModel: ObservableObject {
                         keyCode: pending,
                         needsOption: false, needsCommand: false,
                         needsControl: false, needsShift: false,
-                        isModifierOnly: true
+                        isModifierOnly: true,
+                        isHoldMode: HotkeyConfig.current.isHoldMode
                     )
                     config.save()
                     self.hotkeyDisplay = config.displayName
@@ -265,7 +266,8 @@ final class OnboardingViewModel: ObservableObject {
                     needsCommand: event.modifierFlags.contains(.command),
                     needsControl: event.modifierFlags.contains(.control),
                     needsShift: event.modifierFlags.contains(.shift),
-                    isModifierOnly: false
+                    isModifierOnly: false,
+                    isHoldMode: HotkeyConfig.current.isHoldMode
                 )
                 config.save()
                 self.hotkeyDisplay = config.displayName

@@ -36,6 +36,7 @@ struct SettingsView: View {
     @State private var isAccessibilityGranted = AXIsProcessTrusted()
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var hotkeyDisplay = HotkeyConfig.current.displayName
+    @State private var isHoldMode = HotkeyConfig.current.isHoldMode
     @State private var isRecording = false
     @State private var eventMonitor: Any?
     @State private var pendingModifierKeyCode: Int64?
@@ -66,6 +67,17 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                }
+
+                Picker("触发方式", selection: $isHoldMode) {
+                    Text("按键切换").tag(false)
+                    Text("长按说话").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: isHoldMode) { newValue in
+                    var config = HotkeyConfig.current
+                    config.isHoldMode = newValue
+                    config.save()
                 }
             }
 
@@ -135,6 +147,7 @@ struct SettingsView: View {
             isAccessibilityGranted = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
             hotkeyDisplay = HotkeyConfig.current.displayName
+            isHoldMode = HotkeyConfig.current.isHoldMode
         }
         .onDisappear {
             stopRecordingHotkey()
@@ -164,7 +177,8 @@ struct SettingsView: View {
                         keyCode: pending,
                         needsOption: false, needsCommand: false,
                         needsControl: false, needsShift: false,
-                        isModifierOnly: true
+                        isModifierOnly: true,
+                        isHoldMode: HotkeyConfig.current.isHoldMode
                     )
                     config.save()
                     hotkeyDisplay = config.displayName
@@ -209,7 +223,8 @@ struct SettingsView: View {
                     needsCommand: event.modifierFlags.contains(.command),
                     needsControl: event.modifierFlags.contains(.control),
                     needsShift: event.modifierFlags.contains(.shift),
-                    isModifierOnly: false
+                    isModifierOnly: false,
+                    isHoldMode: HotkeyConfig.current.isHoldMode
                 )
                 config.save()
                 hotkeyDisplay = config.displayName
