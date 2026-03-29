@@ -68,6 +68,9 @@ final class HotkeyManager {
     /// Called on main thread when hotkey is pressed (toggle mode: keyDown only)
     var onHotkeyPressed: (() -> Void)?
 
+    /// Called on main thread when hotkey is released (hold mode only)
+    var onHotkeyReleased: (() -> Void)?
+
     /// Called on main thread when Escape is pressed during recording
     var onCancelPressed: (() -> Void)?
 
@@ -79,6 +82,10 @@ final class HotkeyManager {
     var modifierIsDown: Bool = false
     /// 单修饰键模式：按下期间是否有其他 keyDown（组合键）
     var hadKeyDownWhileModifierHeld: Bool = false
+
+    // MARK: - Hold mode state
+    /// 长按模式：是否正在长按录音中
+    var isHoldRecording: Bool = false
 
     var isRunning: Bool { eventTapPort != nil }
 
@@ -220,26 +227,50 @@ private func handleModifierOnlyMode(
         let otherFlags = allModifiers.subtracting(targetFlag)
         let hasOtherModifiers = !flags.intersection(otherFlags).isEmpty
 
-        if hasTarget && !hasOtherModifiers && !manager.modifierIsDown {
-            // 目标修饰键刚按下，无其他修饰键
-            manager.modifierIsDown = true
-            manager.hadKeyDownWhileModifierHeld = false
-        } else if !hasTarget && manager.modifierIsDown {
-            // 目标修饰键释放
-            if !manager.hadKeyDownWhileModifierHeld {
-                // 短按单独触发
-                CrashLogger.log("[HotkeyCallback] Modifier-only release — dispatching")
-                print("[VowKy][Hotkey] Modifier-only \(config.displayName) release — dispatching onHotkeyPressed")
+        if config.isHoldMode {
+            // ===== 长按模式：按下立即开始，松开立即停止 =====
+            if hasTarget && !hasOtherModifiers && !manager.modifierIsDown {
+                // 修饰键按下 → 开始录音
+                manager.modifierIsDown = true
+                CrashLogger.log("[HotkeyCallback] Hold mode modifier down — dispatching onHotkeyPressed")
+                print("[VowKy][Hotkey] Hold mode modifier \(config.displayName) down — dispatching onHotkeyPressed")
                 DispatchQueue.main.async {
                     manager.onHotkeyPressed?()
                 }
+            } else if !hasTarget && manager.modifierIsDown {
+                // 修饰键松开 → 停止识别
+                manager.modifierIsDown = false
+                CrashLogger.log("[HotkeyCallback] Hold mode modifier up — dispatching onHotkeyReleased")
+                print("[VowKy][Hotkey] Hold mode modifier \(config.displayName) up — dispatching onHotkeyReleased")
+                DispatchQueue.main.async {
+                    manager.onHotkeyReleased?()
+                }
+            } else if hasOtherModifiers && manager.modifierIsDown {
+                // 其他修饰键介入，取消
+                manager.modifierIsDown = false
+                DispatchQueue.main.async {
+                    manager.onCancelPressed?()
+                }
             }
-            manager.modifierIsDown = false
-            manager.hadKeyDownWhileModifierHeld = false
-        } else if hasOtherModifiers && manager.modifierIsDown {
-            // 其他修饰键介入，取消
-            manager.modifierIsDown = false
-            manager.hadKeyDownWhileModifierHeld = false
+        } else {
+            // ===== 切换模式：短按检测（现有逻辑） =====
+            if hasTarget && !hasOtherModifiers && !manager.modifierIsDown {
+                manager.modifierIsDown = true
+                manager.hadKeyDownWhileModifierHeld = false
+            } else if !hasTarget && manager.modifierIsDown {
+                if !manager.hadKeyDownWhileModifierHeld {
+                    CrashLogger.log("[HotkeyCallback] Modifier-only release — dispatching")
+                    print("[VowKy][Hotkey] Modifier-only \(config.displayName) release — dispatching onHotkeyPressed")
+                    DispatchQueue.main.async {
+                        manager.onHotkeyPressed?()
+                    }
+                }
+                manager.modifierIsDown = false
+                manager.hadKeyDownWhileModifierHeld = false
+            } else if hasOtherModifiers && manager.modifierIsDown {
+                manager.modifierIsDown = false
+                manager.hadKeyDownWhileModifierHeld = false
+            }
         }
         return Unmanaged.passRetained(event) // 不吞掉 flagsChanged
 
@@ -295,6 +326,19 @@ private func handleComboKeyMode(
     let flags = event.flags
     let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
     let isKeyUp = (type == .keyUp)
+    let config = HotkeyConfig.current
+
+    // 长按模式：松手时只匹配 keyCode，不匹配修饰键
+    // （解决 ⌘\ 先松 ⌘ 再松 \ 时修饰符不匹配的问题）
+    if config.isHoldMode && manager.isHoldRecording && isKeyUp && keyCode == config.keyCode && !isRepeat {
+        manager.isHoldRecording = false
+        CrashLogger.log("[HotkeyCallback] Hold mode keyUp — dispatching onHotkeyReleased")
+        print("[VowKy][Hotkey] Hold mode keyUp — dispatching onHotkeyReleased")
+        DispatchQueue.main.async {
+            manager.onHotkeyReleased?()
+        }
+        return nil
+    }
 
     let modifiers = HotkeyModifiers(
         option: flags.contains(.maskAlternate),
@@ -312,6 +356,9 @@ private func handleComboKeyMode(
 
     switch action {
     case .hotkeyDown:
+        if config.isHoldMode {
+            manager.isHoldRecording = true
+        }
         CrashLogger.log("[HotkeyCallback] Hotkey keyDown — dispatching")
         print("[VowKy][Hotkey] Hotkey keyDown — dispatching onHotkeyPressed")
         DispatchQueue.main.async {
@@ -320,7 +367,16 @@ private func handleComboKeyMode(
         return nil // Swallow the event
 
     case .hotkeyUp:
-        // Toggle mode: swallow keyUp but don't dispatch callback
+        // 切换模式：吞掉 keyUp 不做任何事
+        // 长按模式：正常情况已在上方处理，这里是修饰符完全匹配的 keyUp 兜底
+        if config.isHoldMode && manager.isHoldRecording {
+            manager.isHoldRecording = false
+            CrashLogger.log("[HotkeyCallback] Hold mode hotkeyUp — dispatching onHotkeyReleased")
+            print("[VowKy][Hotkey] Hold mode hotkeyUp — dispatching onHotkeyReleased")
+            DispatchQueue.main.async {
+                manager.onHotkeyReleased?()
+            }
+        }
         return nil
 
     case .cancelRecording:
@@ -337,6 +393,10 @@ private func handleComboKeyMode(
         if cancelAction == .cancelRecording {
             let shouldIntercept = manager.shouldInterceptCancel?() ?? false
             if shouldIntercept {
+                // 长按模式下取消时也要重置 hold 状态
+                if config.isHoldMode {
+                    manager.isHoldRecording = false
+                }
                 print("[VowKy][Hotkey] Escape keyDown — dispatching onCancelPressed")
                 DispatchQueue.main.async {
                     manager.onCancelPressed?()

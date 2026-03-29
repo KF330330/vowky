@@ -8,6 +8,7 @@ struct HotkeyConfig {
     var needsControl: Bool
     var needsShift: Bool
     var isModifierOnly: Bool  // true = 单修饰键短按触发模式
+    var isHoldMode: Bool      // true = 长按说话模式, false = 按键切换模式
 
     // MARK: - Defaults
 
@@ -17,6 +18,7 @@ struct HotkeyConfig {
     static let defaultControl = false
     static let defaultShift = false
     static let defaultIsModifierOnly = false
+    static let defaultIsHoldMode = false
 
     // MARK: - UserDefaults Keys
 
@@ -26,6 +28,7 @@ struct HotkeyConfig {
     private static let controlKey = "hotkey_control"
     private static let shiftKey = "hotkey_shift"
     private static let isModifierOnlyKey = "hotkey_isModifierOnly"
+    private static let isHoldModeKey = "hotkey_isHoldMode"
 
     // MARK: - Read / Write
 
@@ -39,7 +42,8 @@ struct HotkeyConfig {
                 needsCommand: defaultCommand,
                 needsControl: defaultControl,
                 needsShift: defaultShift,
-                isModifierOnly: defaultIsModifierOnly
+                isModifierOnly: defaultIsModifierOnly,
+                isHoldMode: defaultIsHoldMode
             )
         }
         return HotkeyConfig(
@@ -48,7 +52,8 @@ struct HotkeyConfig {
             needsCommand: defaults.bool(forKey: commandKey),
             needsControl: defaults.bool(forKey: controlKey),
             needsShift: defaults.bool(forKey: shiftKey),
-            isModifierOnly: defaults.bool(forKey: isModifierOnlyKey)
+            isModifierOnly: defaults.bool(forKey: isModifierOnlyKey),
+            isHoldMode: defaults.bool(forKey: isHoldModeKey)
         )
     }
 
@@ -59,7 +64,8 @@ struct HotkeyConfig {
             needsCommand: defaultCommand,
             needsControl: defaultControl,
             needsShift: defaultShift,
-            isModifierOnly: defaultIsModifierOnly
+            isModifierOnly: defaultIsModifierOnly,
+            isHoldMode: defaultIsHoldMode
         )
         config.save()
     }
@@ -72,6 +78,7 @@ struct HotkeyConfig {
         defaults.set(needsControl, forKey: Self.controlKey)
         defaults.set(needsShift, forKey: Self.shiftKey)
         defaults.set(isModifierOnly, forKey: Self.isModifierOnlyKey)
+        defaults.set(isHoldMode, forKey: Self.isHoldModeKey)
     }
 
     // MARK: - Display Name

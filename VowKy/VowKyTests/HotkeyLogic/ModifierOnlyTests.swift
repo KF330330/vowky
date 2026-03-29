@@ -8,7 +8,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierOnlyDisplayName_fn() {
         let config = HotkeyConfig(
             keyCode: 63, needsOption: false, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: true
+            needsControl: false, needsShift: false, isModifierOnly: true,
+            isHoldMode: false
         )
         XCTAssertEqual(config.displayName, "Fn")
     }
@@ -16,7 +17,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierOnlyDisplayName_control() {
         let config = HotkeyConfig(
             keyCode: 59, needsOption: false, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: true
+            needsControl: false, needsShift: false, isModifierOnly: true,
+            isHoldMode: false
         )
         XCTAssertEqual(config.displayName, "⌃")
     }
@@ -24,7 +26,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierOnlyDisplayName_option() {
         let config = HotkeyConfig(
             keyCode: 58, needsOption: false, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: true
+            needsControl: false, needsShift: false, isModifierOnly: true,
+            isHoldMode: false
         )
         XCTAssertEqual(config.displayName, "⌥")
     }
@@ -32,7 +35,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierOnlyDisplayName_command() {
         let config = HotkeyConfig(
             keyCode: 55, needsOption: false, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: true
+            needsControl: false, needsShift: false, isModifierOnly: true,
+            isHoldMode: false
         )
         XCTAssertEqual(config.displayName, "⌘")
     }
@@ -40,7 +44,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierOnlyDisplayName_shift() {
         let config = HotkeyConfig(
             keyCode: 56, needsOption: false, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: true
+            needsControl: false, needsShift: false, isModifierOnly: true,
+            isHoldMode: false
         )
         XCTAssertEqual(config.displayName, "⇧")
     }
@@ -50,7 +55,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierFlag_fn() {
         let config = HotkeyConfig(
             keyCode: 63, needsOption: false, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: true
+            needsControl: false, needsShift: false, isModifierOnly: true,
+            isHoldMode: false
         )
         XCTAssertEqual(config.modifierFlag, .maskSecondaryFn)
     }
@@ -58,7 +64,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierFlag_control() {
         let config = HotkeyConfig(
             keyCode: 59, needsOption: false, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: true
+            needsControl: false, needsShift: false, isModifierOnly: true,
+            isHoldMode: false
         )
         XCTAssertEqual(config.modifierFlag, .maskControl)
     }
@@ -66,7 +73,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierFlag_notModifierOnly_returnsNil() {
         let config = HotkeyConfig(
             keyCode: 49, needsOption: true, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: false
+            needsControl: false, needsShift: false, isModifierOnly: false,
+            isHoldMode: false
         )
         XCTAssertNil(config.modifierFlag)
     }
@@ -76,7 +84,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testComboMode_displayName_unchanged() {
         let config = HotkeyConfig(
             keyCode: 42, needsOption: false, needsCommand: true,
-            needsControl: false, needsShift: false, isModifierOnly: false
+            needsControl: false, needsShift: false, isModifierOnly: false,
+            isHoldMode: false
         )
         XCTAssertEqual(config.displayName, "⌘\\")
     }
@@ -86,7 +95,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testModifierOnlyConfig_saveAndLoad() {
         let config = HotkeyConfig(
             keyCode: 63, needsOption: false, needsCommand: false,
-            needsControl: false, needsShift: false, isModifierOnly: true
+            needsControl: false, needsShift: false, isModifierOnly: true,
+            isHoldMode: false
         )
         config.save()
 
@@ -101,7 +111,8 @@ final class ModifierOnlyTests: XCTestCase {
     func testComboConfig_saveAndLoad_isModifierOnlyFalse() {
         let config = HotkeyConfig(
             keyCode: 42, needsOption: false, needsCommand: true,
-            needsControl: false, needsShift: false, isModifierOnly: false
+            needsControl: false, needsShift: false, isModifierOnly: false,
+            isHoldMode: false
         )
         config.save()
 
