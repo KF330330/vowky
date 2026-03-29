@@ -18,7 +18,7 @@ struct VowKyApp: App {
     init() {
         updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         updaterController.updater.automaticallyChecksForUpdates = true
-        updaterController.updater.updateCheckInterval = 3600 // 每小时检查一次
+        updaterController.updater.updateCheckInterval = 14400 // 每4小时检查一次
     }
 
     var body: some Scene {
