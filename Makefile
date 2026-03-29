@@ -38,4 +38,5 @@ dev: ## 开发构建（Debug，带签名）
 run: dev ## 构建并启动 App
 	@pkill -x VowKy 2>/dev/null || true
 	@sleep 0.5
-	@open "$$(find ~/Library/Developer/Xcode/DerivedData -name 'VowKy.app' -path '*/Debug/*' -maxdepth 5 2>/dev/null | head -1)"
+	@APP_PATH=$$(xcodebuild -project VowKy/VowKy.xcodeproj -scheme VowKy -configuration Debug -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | awk '{print $$3}'); \
+	open "$$APP_PATH/VowKy.app"
