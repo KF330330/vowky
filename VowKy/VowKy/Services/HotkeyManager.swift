@@ -340,6 +340,11 @@ private func handleComboKeyMode(
         return nil
     }
 
+    // 长按模式录音中：吞掉目标键的所有 keyDown（包括 repeat），避免系统提示音
+    if config.isHoldMode && manager.isHoldRecording && !isKeyUp && keyCode == config.keyCode {
+        return nil
+    }
+
     let modifiers = HotkeyModifiers(
         option: flags.contains(.maskAlternate),
         command: flags.contains(.maskCommand),
