@@ -6,6 +6,8 @@ final class AudioBackupService: AudioBackupProtocol {
     private var fileHandle: FileHandle?
     private var sampleCount: Int = 0
     private let sampleRate: Int = 16000
+    /// 备份上限：1 小时（防止异常情况下文件无限增长导致启动卡死）
+    private let maxSampleCount: Int = 57_600_000 // 16000 * 3600
 
     init(backupDirectory: URL? = nil) {
         let dir = backupDirectory ?? FileManager.default.temporaryDirectory
@@ -32,6 +34,7 @@ final class AudioBackupService: AudioBackupProtocol {
 
     func appendSamples(_ samples: [Float]) {
         guard let handle = fileHandle, !samples.isEmpty else { return }
+        guard sampleCount < maxSampleCount else { return }
         let floatData = Data(bytes: samples, count: samples.count * MemoryLayout<Float>.size)
         handle.seekToEndOfFile()
         handle.write(floatData)
@@ -51,6 +54,14 @@ final class AudioBackupService: AudioBackupProtocol {
 
         guard let data = try? Data(contentsOf: backupURL) else { return nil }
         guard data.count > 44 else { return nil } // Must have header + data
+
+        // 备份文件超过上限（1小时 ≈ 230MB），直接删除不恢复
+        let maxDataSize = maxSampleCount * MemoryLayout<Float>.size + 44
+        if data.count > maxDataSize {
+            print("[VowKy][Backup] Backup too large (\(data.count) bytes), deleting")
+            deleteBackup()
+            return nil
+        }
 
         let pcmData = data.dropFirst(44) // Skip WAV header
         let floatCount = pcmData.count / MemoryLayout<Float>.size
