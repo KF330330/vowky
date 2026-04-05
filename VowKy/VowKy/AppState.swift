@@ -283,8 +283,8 @@ final class AppState: ObservableObject {
             // Valid result: insert text and return to idle
             lastResult = finalText
             addToRecentResults(finalText)
-            CrashLogger.log("[Recognize] Inserting text...")
             let autoCopy = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
+            CrashLogger.log("[Recognize] Inserting text, autoCopyToClipboard=\(autoCopy)")
             textOutputService?.insertText(finalText, copyToClipboard: autoCopy)
             backupService?.finalizeAndDelete()
             AnalyticsService.shared.trackRecognition()

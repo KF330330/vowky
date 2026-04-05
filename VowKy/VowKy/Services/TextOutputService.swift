@@ -8,8 +8,13 @@ final class TextOutputService {
     /// Uses clipboard paste for Electron apps (CGEvent causes duplication in Chromium),
     /// and CGEvent keyboard simulation for native macOS apps.
     func insertText(_ text: String, copyToClipboard: Bool = false) {
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        let appName = frontApp?.localizedName ?? "unknown"
+        let bundleId = frontApp?.bundleIdentifier ?? "unknown"
+        let isElectron = isFrontmostElectron()
+        CrashLogger.log("[TextOutput] insertText: copyToClipboard=\(copyToClipboard), app=\(appName)(\(bundleId)), isElectron=\(isElectron)")
         print("[VowKy][TextOutput] insertText() called with: \(text), copyToClipboard: \(copyToClipboard)")
-        if isFrontmostElectron() {
+        if isElectron {
             print("[VowKy][TextOutput] Electron app detected, using clipboard strategy")
             insertViaClipboard(text, keepInClipboard: copyToClipboard)
         } else {
@@ -18,6 +23,7 @@ final class TextOutputService {
                 let pb = NSPasteboard.general
                 pb.clearContents()
                 pb.setString(text, forType: .string)
+                CrashLogger.log("[TextOutput] Copied to clipboard (user setting ON)")
             }
         }
         print("[VowKy][TextOutput] Text inserted (\(text.utf16.count) chars)")
@@ -73,18 +79,25 @@ final class TextOutputService {
         vUp?.post(tap: .cghidEventTap)
 
         // If keepInClipboard is true, skip restoring — let user paste again elsewhere
-        guard !keepInClipboard else { return }
+        guard !keepInClipboard else {
+            CrashLogger.log("[TextOutput] Electron path: keepInClipboard=true, skip restore")
+            return
+        }
 
+        CrashLogger.log("[TextOutput] Electron path: keepInClipboard=false, will restore clipboard in 0.5s")
         // Restore original clipboard after delay (0.5s to ensure target app has processed paste)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             // Safety: if another app modified clipboard during the wait, don't overwrite
             guard pb.changeCount == changeCountAfterSet else {
-                CrashLogger.log("[TextOutput] Clipboard changed externally, skip restore")
+                CrashLogger.log("[TextOutput] Clipboard changed externally (expected=\(changeCountAfterSet) actual=\(pb.changeCount)), skip restore — text may remain in clipboard!")
                 return
             }
             if let saved = saved {
                 pb.clearContents()
                 pb.setString(saved, forType: .string)
+                CrashLogger.log("[TextOutput] Clipboard restored to original content")
+            } else {
+                CrashLogger.log("[TextOutput] No original clipboard to restore")
             }
         }
     }
