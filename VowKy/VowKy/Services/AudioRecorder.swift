@@ -43,7 +43,20 @@ final class AudioRecorder: AudioRecorderProtocol {
             throw AudioRecorderError.formatCreationFailed
         }
 
-        guard let conv = AVAudioConverter(from: inputFormat, to: targetFmt) else {
+        // 手动 downmix 多声道到单声道，再交给 AVAudioConverter 重采样。
+        // 原因：某些虚拟音频驱动（腾讯会议 / Omi / Loopback / BlackHole 等）会把默认麦克风的
+        // 声道数改成 3 或更多。AVAudioConverter 对这种非标准声道布局的自动 downmix 会输出全 0，
+        // 导致录音静音、识别出乱码。先手动求平均到 mono，转换器只做 mono→mono 重采样最稳定。
+        guard let monoInputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: inputFormat.sampleRate,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw AudioRecorderError.formatCreationFailed
+        }
+
+        guard let conv = AVAudioConverter(from: monoInputFormat, to: targetFmt) else {
             throw AudioRecorderError.converterCreationFailed(
                 sourceSampleRate: inputFormat.sampleRate,
                 sourceChannels: inputFormat.channelCount
@@ -57,7 +70,7 @@ final class AudioRecorder: AudioRecorderProtocol {
         lock.unlock()
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            self?.processBuffer(buffer, converter: conv, targetFormat: targetFmt)
+            self?.processBuffer(buffer, converter: conv, monoInputFormat: monoInputFormat, targetFormat: targetFmt)
         }
 
         do {
@@ -101,10 +114,38 @@ final class AudioRecorder: AudioRecorderProtocol {
     private func processBuffer(
         _ buffer: AVAudioPCMBuffer,
         converter: AVAudioConverter,
+        monoInputFormat: AVAudioFormat,
         targetFormat: AVAudioFormat
     ) {
+        // Step 1: 手动 downmix 多声道到 mono（求所有声道平均值）
+        guard let inputData = buffer.floatChannelData else { return }
+        let channelCount = Int(buffer.format.channelCount)
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
+
+        guard let monoBuffer = AVAudioPCMBuffer(
+            pcmFormat: monoInputFormat,
+            frameCapacity: AVAudioFrameCount(frameLength)
+        ) else { return }
+        monoBuffer.frameLength = AVAudioFrameCount(frameLength)
+        guard let monoOut = monoBuffer.floatChannelData else { return }
+
+        if channelCount == 1 {
+            memcpy(monoOut[0], inputData[0], frameLength * MemoryLayout<Float>.size)
+        } else {
+            let invChannels = 1.0 / Float(channelCount)
+            for i in 0..<frameLength {
+                var sum: Float = 0
+                for c in 0..<channelCount {
+                    sum += inputData[c][i]
+                }
+                monoOut[0][i] = sum * invChannels
+            }
+        }
+
+        // Step 2: 走 converter 做单声道→16kHz 单声道重采样
         let ratio = targetSampleRate / buffer.format.sampleRate
-        let outputFrameCount = UInt32(Double(buffer.frameLength) * ratio)
+        let outputFrameCount = UInt32(Double(frameLength) * ratio)
         guard let outputBuffer = AVAudioPCMBuffer(
             pcmFormat: targetFormat,
             frameCapacity: outputFrameCount
@@ -119,7 +160,7 @@ final class AudioRecorder: AudioRecorderProtocol {
             }
             hasProvided = true
             outStatus.pointee = .haveData
-            return buffer
+            return monoBuffer
         }
 
         if let error = error {

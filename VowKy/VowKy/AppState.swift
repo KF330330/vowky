@@ -256,6 +256,17 @@ final class AppState: ObservableObject {
         let samples = audioRecorder.stopRecording()
         CrashLogger.log("[Recognize] Stopped recording, \(samples.count) samples")
         print("[VowKy][AppState] Recording stopped, samples count: \(samples.count)")
+
+        // 静音检测：录音波形几乎为 0 时直接给出明确提示，避免把垃圾喂给识别引擎产生乱码
+        let maxAmp = samples.map { abs($0) }.max() ?? 0
+        if !samples.isEmpty && maxAmp < 0.0001 {
+            CrashLogger.log("[Recognize] Audio is silent (maxAmp=\(maxAmp)), aborting recognition")
+            backupService?.deleteBackup()
+            errorMessage = "未检测到声音，请检查麦克风权限或系统输入设备设置"
+            state = .idle
+            return
+        }
+
         state = .recognizing
 
         Task { @MainActor in
