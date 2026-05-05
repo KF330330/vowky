@@ -31,6 +31,30 @@ DMG_PATH="${DMG_DIR}/${DMG_NAME}"
 
 log_info "构建 VowKy v${VERSION} (${BUILD}) — 环境: ${ENV}"
 
+REQUIRED_ARCHS=("arm64" "x86_64")
+
+check_binary_archs() {
+    local binary="$1"
+    local label="$2"
+    local archs
+
+    if [ ! -f "$binary" ]; then
+        log_error "${label} 不存在: ${binary}"
+        exit 1
+    fi
+
+    archs="$(lipo -archs "$binary")"
+    for required_arch in "${REQUIRED_ARCHS[@]}"; do
+        if [[ " ${archs} " != *" ${required_arch} "* ]]; then
+            log_error "${label} 缺少 ${required_arch} 架构: ${archs}"
+            log_error "请确认 xcodebuild 使用 generic macOS destination 并构建 ${REQUIRED_ARCHS[*]}"
+            exit 1
+        fi
+    done
+
+    log_ok "${label} 架构: ${archs}"
+}
+
 # ============================================================
 # 清理 & 创建目录
 # ============================================================
@@ -55,9 +79,12 @@ xcodebuild archive \
     -project "${VOWKY_DIR}/VowKy.xcodeproj" \
     -scheme VowKy \
     -configuration Release \
+    -destination "generic/platform=macOS" \
     -archivePath "${ARCHIVE_PATH}" \
     CODE_SIGN_IDENTITY="${DEV_IDENTITY}" \
     DEVELOPMENT_TEAM="${TEAM_ID}" \
+    ARCHS="arm64 x86_64" \
+    ONLY_ACTIVE_ARCH=NO \
     OTHER_CODE_SIGN_FLAGS="--options=runtime" \
     | tail -5
 log_ok "Archive 完成"
@@ -68,6 +95,11 @@ log_ok "Archive 完成"
 log_info "从 Archive 导出 App..."
 cp -R "${ARCHIVE_PATH}/Products/Applications/VowKy.app" "${APP_PATH}"
 log_ok "App 导出到 ${APP_PATH}"
+
+# 防止在 Apple Silicon 构建机上误产出 arm64-only 包，导致 Intel Mac 无法打开。
+check_binary_archs "${APP_PATH}/Contents/MacOS/VowKy" "VowKy 主程序"
+check_binary_archs "${APP_PATH}/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" "Sparkle.framework"
+check_binary_archs "${APP_PATH}/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" "Sparkle Autoupdate"
 
 # ============================================================
 # 4. 代码签名 (hardened runtime)

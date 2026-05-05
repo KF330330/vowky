@@ -8,6 +8,8 @@ final class AnalyticsService {
 
     private let endpoint = URL(string: "https://analytics.vowky.com/api/app/event")!
     private let session: URLSession
+    private let stateQueue = DispatchQueue(label: "com.vowky.analytics.state")
+    private var dauDateInFlight: String?
 
     private init() {
         let config = URLSessionConfiguration.ephemeral
@@ -35,14 +37,9 @@ final class AnalyticsService {
         let key = "analytics_install_sent"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
 
-        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
-        let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
-
         send([
             "event": "install",
             "device_id": deviceId,
-            "app_version": appVersion,
-            "os_version": osVersion,
         ]) { success in
             if success {
                 UserDefaults.standard.set(true, forKey: key)
@@ -54,23 +51,32 @@ final class AnalyticsService {
     func trackDAU() {
         let key = "analytics_last_dau_date"
         let today = Self.todayString()
-        guard UserDefaults.standard.string(forKey: key) != today else { return }
-
-        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let shouldSend = stateQueue.sync { () -> Bool in
+            guard UserDefaults.standard.string(forKey: key) != today else { return false }
+            guard dauDateInFlight != today else { return false }
+            dauDateInFlight = today
+            return true
+        }
+        guard shouldSend else { return }
 
         send([
             "event": "dau",
             "device_id": deviceId,
-            "app_version": appVersion,
         ]) { success in
-            if success {
-                UserDefaults.standard.set(today, forKey: key)
+            self.stateQueue.async {
+                if success {
+                    UserDefaults.standard.set(today, forKey: key)
+                }
+                if self.dauDateInFlight == today {
+                    self.dauDateInFlight = nil
+                }
             }
         }
     }
 
     /// Call after each successful recognition.
     func trackRecognition() {
+        trackActiveUse()
         send([
             "event": "recognition",
             "device_id": deviceId,
@@ -80,7 +86,11 @@ final class AnalyticsService {
     // MARK: - Private
 
     private func send(_ body: [String: Any], completion: ((Bool) -> Void)? = nil) {
-        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+        var enrichedBody = body
+        enrichedBody["app_version"] = enrichedBody["app_version"] ?? appVersion
+        enrichedBody["os_version"] = enrichedBody["os_version"] ?? osVersion
+
+        guard let data = try? JSONSerialization.data(withJSONObject: enrichedBody) else {
             completion?(false)
             return
         }
@@ -103,16 +113,30 @@ final class AnalyticsService {
         fmt.timeZone = TimeZone.current
         return fmt.string(from: Date())
     }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+    }
+
+    private var osVersion: String {
+        ProcessInfo.processInfo.operatingSystemVersionString
+    }
+
+    private func trackActiveUse() {
+        trackDAU()
+    }
 }
 
 // MARK: - UsageTrackerProtocol
 
 extension AnalyticsService: UsageTrackerProtocol {
     func trackVoiceStart() {
+        trackActiveUse()
         send(["event": "voice_start", "device_id": deviceId])
     }
 
     func trackVoiceComplete(durationMs: Int, charCount: Int) {
+        trackActiveUse()
         send([
             "event": "voice_complete",
             "device_id": deviceId,
@@ -121,26 +145,32 @@ extension AnalyticsService: UsageTrackerProtocol {
     }
 
     func trackVoiceCancel() {
+        trackActiveUse()
         send(["event": "voice_cancel", "device_id": deviceId])
     }
 
     func trackVoiceFailure() {
+        trackActiveUse()
         send(["event": "voice_failure", "device_id": deviceId])
     }
 
     func trackRecovery() {
+        trackActiveUse()
         send(["event": "recovery", "device_id": deviceId])
     }
 
     func trackHotkeyChange() {
+        trackActiveUse()
         send(["event": "hotkey_change", "device_id": deviceId])
     }
 
     func trackHistorySearch() {
+        trackActiveUse()
         send(["event": "history_search", "device_id": deviceId])
     }
 
     func trackHistoryCopy() {
+        trackActiveUse()
         send(["event": "history_copy", "device_id": deviceId])
     }
 }
