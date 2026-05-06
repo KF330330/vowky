@@ -28,6 +28,14 @@ DMG_DIR="${BUILD_DIR}/dmg"
 ARCHIVE_PATH="${ARCHIVE_DIR}/VowKy.xcarchive"
 APP_PATH="${APP_DIR}/VowKy.app"
 DMG_PATH="${DMG_DIR}/${DMG_NAME}"
+NOTARY_UPLOAD_DIR=""
+
+cleanup_notary_upload_dir() {
+    if [ -n "${NOTARY_UPLOAD_DIR}" ] && [ -d "${NOTARY_UPLOAD_DIR}" ]; then
+        rm -rf "${NOTARY_UPLOAD_DIR}"
+    fi
+}
+trap cleanup_notary_upload_dir EXIT
 
 log_info "构建 VowKy v${VERSION} (${BUILD}) — 环境: ${ENV}"
 
@@ -90,6 +98,11 @@ verify_dmg_contents() {
 # ============================================================
 rm -rf "${BUILD_DIR}"
 mkdir -p "${ARCHIVE_DIR}" "${APP_DIR}" "${DMG_DIR}"
+if [ "$NOTARIZE" = true ]; then
+    # notarytool 从 Nutstore 同步目录直传大文件时容易 deadlineExceeded。
+    # 先复制到本机临时目录再提交，上传稳定性明显更好。
+    NOTARY_UPLOAD_DIR="$(mktemp -d "/private/tmp/vowky-notary.XXXXXX")"
+fi
 
 # ============================================================
 # 1. xcodegen generate
@@ -183,7 +196,7 @@ check_app_signature "${APP_PATH}" "VowKy.app"
 if [ "$NOTARIZE" = true ]; then
     log_info "公证 App..."
     # 创建临时 zip 用于公证
-    APP_ZIP="${BUILD_DIR}/VowKy-notarize.zip"
+    APP_ZIP="${NOTARY_UPLOAD_DIR}/VowKy-notarize.zip"
     ditto -c -k --keepParent "${APP_PATH}" "${APP_ZIP}"
 
     xcrun notarytool submit "${APP_ZIP}" \
@@ -239,7 +252,10 @@ log_ok "DMG 签名完成"
 # ============================================================
 if [ "$NOTARIZE" = true ]; then
     log_info "公证 DMG..."
-    xcrun notarytool submit "${DMG_PATH}" \
+    DMG_NOTARY_PATH="${NOTARY_UPLOAD_DIR}/${DMG_NAME}"
+    cp "${DMG_PATH}" "${DMG_NOTARY_PATH}"
+
+    xcrun notarytool submit "${DMG_NOTARY_PATH}" \
         --keychain-profile "${NOTARY_PROFILE}" \
         --wait
 
