@@ -55,6 +55,36 @@ check_binary_archs() {
     log_ok "${label} 架构: ${archs}"
 }
 
+check_app_signature() {
+    local app_path="$1"
+    local label="$2"
+    local entitlements
+
+    codesign --verify --deep --strict --verbose=4 "$app_path"
+    entitlements="$(codesign -d --entitlements - "$app_path" 2>/dev/null || true)"
+    if ! grep -q "com.apple.security.device.audio-input" <<< "$entitlements"; then
+        log_error "${label} 缺少麦克风 entitlement"
+        exit 1
+    fi
+    if ! grep -q "com.apple.security.cs.allow-unsigned-executable-memory" <<< "$entitlements"; then
+        log_error "${label} 缺少 ONNX runtime entitlement"
+        exit 1
+    fi
+
+    log_ok "${label} 签名和 entitlements 验证通过"
+}
+
+verify_dmg_contents() {
+    local mount_dir
+    mount_dir="$(mktemp -d "${TMPDIR:-/tmp}/vowky-dmg.XXXXXX")"
+
+    hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "$DMG_PATH" >/dev/null
+    check_binary_archs "${mount_dir}/VowKy.app/Contents/MacOS/VowKy" "DMG 内 VowKy 主程序"
+    check_app_signature "${mount_dir}/VowKy.app" "DMG 内 VowKy.app"
+    hdiutil detach "$mount_dir" >/dev/null
+    rmdir "$mount_dir"
+}
+
 # ============================================================
 # 清理 & 创建目录
 # ============================================================
@@ -120,6 +150,15 @@ codesign_with_retry() {
     return 1
 }
 
+sign_main_app() {
+    # 主 app 必须带 entitlements；否则麦克风权限会被 TCC 静默拒绝。
+    if [ "$NOTARIZE" = true ]; then
+        codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
+    else
+        codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
+    fi
+}
+
 if [ "$NOTARIZE" = true ]; then
     # prod: 从内到外递归签名所有二进制（公证要求每个二进制都有 Developer ID + timestamp）
     # 1. 签名 Sparkle 内嵌的 XPC 服务和辅助 app
@@ -131,16 +170,12 @@ if [ "$NOTARIZE" = true ]; then
         [ -d "$fw" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "$fw"
     done
     # 3. 签名主 app（必须传 --entitlements，否则重签会丢失 entitlements）
-    codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
-else
-    # 不公证：显式禁用 timestamp（Developer ID 会自动尝试）
-    codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
 fi
+sign_main_app
 log_ok "代码签名完成"
 
 # 验证签名
-codesign --verify --deep --strict "${APP_PATH}"
-log_ok "签名验证通过"
+check_app_signature "${APP_PATH}" "VowKy.app"
 
 # ============================================================
 # 5. 公证 App (仅 prod)
@@ -158,6 +193,13 @@ if [ "$NOTARIZE" = true ]; then
     xcrun stapler staple "${APP_PATH}"
     log_ok "App 公证完成"
     rm -f "${APP_ZIP}"
+
+    # 在部分同步目录或钥匙串状态下，staple 后 CMS 可能变成不可验证。
+    # 重新签主 app 不改变 CodeDirectory/CDHash，保留公证票据，但能恢复可验证证书链。
+    log_info "重新签名并验证 stapled App..."
+    sign_main_app
+    xcrun stapler validate "${APP_PATH}"
+    check_app_signature "${APP_PATH}" "stapled VowKy.app"
 fi
 
 # ============================================================
@@ -204,6 +246,8 @@ if [ "$NOTARIZE" = true ]; then
     xcrun stapler staple "${DMG_PATH}"
     log_ok "DMG 公证完成"
 fi
+
+verify_dmg_contents
 
 # ============================================================
 # 输出摘要
