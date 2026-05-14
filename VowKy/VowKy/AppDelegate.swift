@@ -1,8 +1,13 @@
 import AppKit
+import Combine
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let crashTimestampsKey = "crashLoop_launchTimestamps"
+
+    /// 等待 VM 退出终态的订阅；退出拦截流程中持有，避免被释放。
+    private var terminateObserver: AnyCancellable?
+    private var terminateTimeoutTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.register(defaults: ["autoCopyToClipboard": true])
@@ -22,6 +27,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if hasCompletedOnboarding {
             checkOptionSpaceConflict()
         }
+
+        // 扫描独立录音窗口的崩溃残留文件，修复 WAV header 后提示用户位置
+        Task { @MainActor in
+            let artifacts = RecordingCrashRecoveryService().scanAndRepair()
+            if !artifacts.isEmpty {
+                CrashLogger.log("[RecordingRecovery] Found \(artifacts.count) leftover recording(s)")
+                self.showRecordingRecoveryAlert(for: artifacts)
+            }
+        }
+    }
+
+    // MARK: - Recording Recovery Alert
+
+    @MainActor
+    private func showRecordingRecoveryAlert(for artifacts: [RecoveredRecordingArtifact]) {
+        let alert = NSAlert()
+        alert.messageText = "检测到未完成的录音"
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "MM-dd HH:mm"
+        let summary = artifacts
+            .prefix(3)
+            .map { formatter.string(from: $0.startedAt) }
+            .joined(separator: "、")
+        let extra = artifacts.count > 3 ? " 等 \(artifacts.count) 个" : ""
+        alert.informativeText = "VowKy 上次退出时还在录音，已为你保留 \(artifacts.count) 个音频（\(summary)\(extra)）。\n\n音频保存在「文稿/VowKy Recordings」。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "在 Finder 中显示")
+        alert.addButton(withTitle: "稍后处理")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting(artifacts.map { $0.audioURL })
+        }
+    }
+
+    // MARK: - Quit Interception
+
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let viewModel = RecordingTranscriptionWindowController.shared.activeViewModel,
+              viewModel.isActivelyRecording else {
+            return .terminateNow
+        }
+
+        CrashLogger.log("[Quit] Recording in progress, asking user confirmation")
+        let alert = NSAlert()
+        alert.messageText = "VowKy 正在录音中"
+        alert.informativeText = "退出前会先完成当前录音的转录并保存。是否继续？"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "完成并退出")
+        alert.addButton(withTitle: "继续录音")
+
+        let response = alert.runModal()
+        if response != .alertFirstButtonReturn {
+            CrashLogger.log("[Quit] User cancelled quit, continue recording")
+            return .terminateCancel
+        }
+
+        CrashLogger.log("[Quit] User confirmed, deferring termination to finalize")
+        viewModel.markFinalizingForQuit()
+        viewModel.stop()
+
+        terminateObserver = viewModel.$state
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                switch state {
+                case .completed, .cancelled, .failed:
+                    MainActor.assumeIsolated {
+                        self?.replyTerminateAfterFinalize(success: true)
+                    }
+                case .idle, .loadingModel, .recording, .finishing:
+                    break
+                }
+            }
+
+        // 30 秒兜底：即便识别 hang，wav header 已由 engine.run() 的 defer 写好，可放心退出。
+        terminateTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                CrashLogger.log("[Quit] Finalize timed out after 30s, forcing terminate")
+                self?.replyTerminateAfterFinalize(success: false)
+            }
+        }
+
+        return .terminateLater
+    }
+
+    @MainActor
+    private func replyTerminateAfterFinalize(success: Bool) {
+        guard terminateObserver != nil || terminateTimeoutTimer != nil else { return }
+        terminateObserver?.cancel()
+        terminateObserver = nil
+        terminateTimeoutTimer?.invalidate()
+        terminateTimeoutTimer = nil
+        CrashLogger.log("[Quit] Replying terminate(success: \(success))")
+        NSApp.reply(toApplicationShouldTerminate: true)
     }
 
     // MARK: - Crash Loop Detection
