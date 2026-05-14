@@ -99,3 +99,29 @@ echo ""
 echo "  CFBundleShortVersionString: ${NEW_VERSION}"
 echo "  CFBundleVersion:            ${NEW_BUILD}"
 echo "  文件: ${INFOPLIST}"
+
+# ============================================================
+# Release notes stub
+# deploy.sh / preflight.sh 都强制要求 {NEW_VERSION}.md 存在且非空，
+# 这里 bump 完顺手生成 stub，避免用户漏写 → 等到 preflight 才报错。
+# ============================================================
+RELEASE_NOTES_DIR="${VOWKY_DIR}/VowKy/Resources/ReleaseNotes"
+RELEASE_NOTES_PATH="${RELEASE_NOTES_DIR}/${NEW_VERSION}.md"
+
+mkdir -p "${RELEASE_NOTES_DIR}"
+
+if [ -f "${RELEASE_NOTES_PATH}" ]; then
+    echo ""
+    log_info "release notes 已存在，未覆盖：${RELEASE_NOTES_PATH}"
+else
+    cat > "${RELEASE_NOTES_PATH}" <<EOF
+VowKy ${NEW_VERSION} 更新内容
+
+- TODO：在此填写本次更新的用户可见变化（3-6 条要点）
+
+如有问题，欢迎到 https://github.com/KF330330/vowky/issues 反馈。
+EOF
+    echo ""
+    log_warn "已生成 release notes stub：${RELEASE_NOTES_PATH}"
+    log_warn "请编辑该文件填写本次更新内容（deploy/preflight 会校验非空）"
+fi
