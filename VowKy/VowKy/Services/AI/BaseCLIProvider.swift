@@ -28,19 +28,9 @@ class BaseCLIProvider {
 
     // MARK: - Path resolution
 
-    static let candidateBinaryDirectories: [String] = {
-        let home = NSHomeDirectory()
-        return [
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "\(home)/.local/bin",
-            "\(home)/.cargo/bin",
-            "\(home)/.npm-global/bin",
-            "\(home)/.bun/bin",
-            "/usr/bin",
-            "/bin",
-        ]
-    }()
+    static var candidateBinaryDirectories: [String] {
+        CLIPathResolver.candidateDirectories(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+    }
 
     /// 返回二进制绝对路径，找不到时抛 `.cliNotFound`。
     func resolveBinaryPath() throws -> String {

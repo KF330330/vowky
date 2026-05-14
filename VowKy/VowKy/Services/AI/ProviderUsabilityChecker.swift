@@ -65,17 +65,11 @@ struct ProviderUsabilityChecker {
         if !trimmed.isEmpty {
             return fileManager.isExecutableFile(atPath: trimmed) ? trimmed : nil
         }
-        let home = (environment["HOME"] ?? homeDirectory.path)
-        let candidateDirs = [
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "\(home)/.local/bin",
-            "\(home)/.cargo/bin",
-            "\(home)/.npm-global/bin",
-            "\(home)/.bun/bin",
-            "/usr/bin",
-            "/bin",
-        ]
+        let effectiveHome = URL(fileURLWithPath: environment["HOME"] ?? homeDirectory.path)
+        let candidateDirs = CLIPathResolver.candidateDirectories(
+            homeDirectory: effectiveHome,
+            fileManager: fileManager
+        )
         for dir in candidateDirs {
             let candidate = "\(dir)/\(commandName)"
             if fileManager.isExecutableFile(atPath: candidate) {

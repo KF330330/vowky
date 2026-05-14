@@ -326,19 +326,9 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
         }
     }
 
-    static let candidateBinaryDirectories: [String] = {
-        let home = NSHomeDirectory()
-        return [
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "\(home)/.local/bin",
-            "\(home)/.cargo/bin",
-            "\(home)/.npm-global/bin",
-            "\(home)/.bun/bin",
-            "/usr/bin",
-            "/bin",
-        ]
-    }()
+    static var candidateBinaryDirectories: [String] {
+        CLIPathResolver.candidateDirectories(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+    }
 
     private static func shellCommandV(_ name: String) throws -> String? {
         let process = Process()
