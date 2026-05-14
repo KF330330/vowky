@@ -6,13 +6,11 @@ struct MenuBarView: View {
     @ObservedObject var appState: AppState
     private let updater: SPUUpdater
     private let updateCoordinator: UpdateReminderCoordinator
-    @ObservedObject private var updateViewModel: CheckForUpdatesViewModel
 
     init(appState: AppState, updater: SPUUpdater, updateCoordinator: UpdateReminderCoordinator) {
         self.appState = appState
         self.updater = updater
         self.updateCoordinator = updateCoordinator
-        self.updateViewModel = CheckForUpdatesViewModel(updater: updater)
     }
 
     var body: some View {
@@ -113,23 +111,9 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
             .disabled(appState.state != .idle || appState.isFileTranscriptionInProgress || appState.isRecordingTranscriptionInProgress)
 
-            // Check for Updates
-            Button {
-                updateCoordinator.userInitiatedCheck(updater: updater)
-            } label: {
-                HStack {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                    Text("Check for Updates")
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .disabled(!updateViewModel.canCheckForUpdates)
-
             // Settings
             Button {
-                SettingsWindowController.shared.showWindow(updater: updater)
+                SettingsWindowController.shared.showWindow(updater: updater, updateCoordinator: updateCoordinator)
             } label: {
                 HStack {
                     Image(systemName: "gear")

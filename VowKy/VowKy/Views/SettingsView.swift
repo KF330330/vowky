@@ -10,11 +10,15 @@ final class SettingsWindowController {
 
     private var window: NSWindow?
     private weak var updater: SPUUpdater?
+    private weak var updateCoordinator: UpdateReminderCoordinator?
 
-    /// 由 MenuBarView 调用时传入 updater，让设置里的「自动检查更新」开关可以实时生效。
-    func showWindow(updater: SPUUpdater? = nil) {
+    /// 由 MenuBarView 调用时传入 updater 和 coordinator，让设置里的「自动检查更新」开关与「立即检查更新」按钮可用。
+    func showWindow(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil) {
         if let updater {
             self.updater = updater
+        }
+        if let updateCoordinator {
+            self.updateCoordinator = updateCoordinator
         }
         if let window = window {
             window.makeKeyAndOrderFront(nil)
@@ -22,7 +26,7 @@ final class SettingsWindowController {
             return
         }
 
-        let settingsView = SettingsView(updater: self.updater)
+        let settingsView = SettingsView(updater: self.updater, updateCoordinator: self.updateCoordinator)
         let hostingController = NSHostingController(rootView: settingsView)
 
         let window = NSWindow(contentViewController: hostingController)
@@ -62,9 +66,13 @@ struct SettingsView: View {
 
     private let skillInstaller = AISkillInstallerService()
     private weak var updater: SPUUpdater?
+    private weak var updateCoordinator: UpdateReminderCoordinator?
+    @ObservedObject private var updateViewModel: CheckForUpdatesViewModel
 
-    init(updater: SPUUpdater? = nil) {
+    init(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil) {
         self.updater = updater
+        self.updateCoordinator = updateCoordinator
+        self.updateViewModel = CheckForUpdatesViewModel(updater: updater)
     }
 
     var body: some View {
@@ -168,6 +176,17 @@ struct SettingsView: View {
                         UserDefaults.standard.set(newValue, forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
                         updater?.automaticallyChecksForUpdates = newValue
                     }
+                HStack {
+                    Text("立即检查更新")
+                    Spacer()
+                    Button("检查") {
+                        guard let updater else { return }
+                        updateCoordinator?.userInitiatedCheck(updater: updater)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(updater == nil || !updateViewModel.canCheckForUpdates)
+                }
             }
 
             Section("AI Skills") {
