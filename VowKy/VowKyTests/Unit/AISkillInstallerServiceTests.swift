@@ -297,6 +297,45 @@ final class AISkillInstallerServiceTests: XCTestCase {
         )
     }
 
+    func testInstallAdoptsUnmanagedEnhanceSkillWhenContentMatches() throws {
+        let service = makeService()
+        let target = service.skillDirectory(for: .claudeCode, kind: .enhance)
+        // 写一份与 bundledEnhanceURL 内容完全一致的副本，但不写 .vowky-managed
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: bundledEnhanceURL, to: target)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathComponent(".vowky-managed").path))
+        XCTAssertEqual(service.status(for: .claudeCode, kind: .enhance).state, .blockedByUnmanagedSkill)
+
+        XCTAssertNoThrow(try service.install(platforms: [.claudeCode]))
+
+        // marker 已写入，状态变为 installed
+        XCTAssertTrue(FileManager.default.fileExists(atPath: target.appendingPathComponent(".vowky-managed").path))
+        XCTAssertEqual(
+            service.status(for: .claudeCode, kind: .enhance).state,
+            .installed(version: AISkillInstallerService.enhanceSkillVersion)
+        )
+        // 内容仍然是 bundle 的内容
+        let skillContent = try String(contentsOf: target.appendingPathComponent("SKILL.md"), encoding: .utf8)
+        XCTAssertEqual(skillContent, "fake SKILL.md")
+    }
+
+    func testInstallStillBlocksUnmanagedEnhanceSkillWhenContentDiffers() throws {
+        let service = makeService()
+        let target = service.skillDirectory(for: .claudeCode, kind: .enhance)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try "completely different".write(
+            to: target.appendingPathComponent("SKILL.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertThrowsError(try service.install(platforms: [.claudeCode])) { error in
+            XCTAssertEqual(error as? AISkillInstallerError, .unmanagedSkillExists(target.path))
+        }
+        // marker 未被偷偷写入
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathComponent(".vowky-managed").path))
+    }
+
     func testInstallReportsMissingHelper() {
         let service = AISkillInstallerService(
             homeDirectory: homeDir,

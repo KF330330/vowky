@@ -263,6 +263,7 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         enhanceSkillWarning(for: .codex)
+                        skillStatusMessageView
                     } else {
                         TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
                             .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
@@ -270,6 +271,7 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         enhanceSkillWarning(for: .claudeCode)
+                        skillStatusMessageView
                     }
 
                     Stepper("调用超时：\(aiTimeoutSeconds) 秒", value: $aiTimeoutSeconds, in: 30...300, step: 10)
@@ -463,6 +465,16 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundColor(skillStatusColor(for: platform, kind: .enhance))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var skillStatusMessageView: some View {
+        if let skillStatusMessage {
+            Text(skillStatusMessage)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

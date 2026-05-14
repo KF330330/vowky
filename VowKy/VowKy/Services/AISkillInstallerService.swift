@@ -150,13 +150,26 @@ final class AISkillInstallerService {
             throw AISkillInstallerError.bundledSkillMissing(enhanceSourceURL.path)
         }
 
-        // pre-check blocked unmanaged across all (platform, kind)
+        // pre-check blocked unmanaged across all (platform, kind)。
+        // 对 enhance kind 特殊处理:如果 unmanaged 目录与 bundle 内容字节一致,
+        // 写 marker 接管它,避免用户手动维护的副本无谓被 block。
         for platform in platforms {
             for kind in AISkillKind.allCases {
                 let s = status(for: platform, kind: kind)
-                if s.state == .blockedByUnmanagedSkill {
-                    throw AISkillInstallerError.unmanagedSkillExists(s.skillDirectory.path)
+                guard s.state == .blockedByUnmanagedSkill else { continue }
+
+                if kind == .enhance,
+                   directoriesContentEqual(s.skillDirectory, enhanceSourceURL, ignoringFile: ".vowky-managed") {
+                    try writeMarker(
+                        at: s.skillDirectory,
+                        skillName: Self.enhanceSkillName,
+                        version: Self.enhanceSkillVersion,
+                        helperPath: nil
+                    )
+                    continue
                 }
+
+                throw AISkillInstallerError.unmanagedSkillExists(s.skillDirectory.path)
             }
         }
 
@@ -312,6 +325,51 @@ final class AISkillInstallerService {
                 .appendingPathComponent("Contents")
                 .appendingPathComponent("Helpers")
                 .appendingPathComponent("vowky-transcribe")
+    }
+
+    /// 递归比较两个目录是否内容完全一致(忽略指定文件名)。任一错误/缺失 → false。
+    private func directoriesContentEqual(_ a: URL, _ b: URL, ignoringFile ignoredName: String) -> Bool {
+        let aFiles: Set<String>
+        let bFiles: Set<String>
+        do {
+            aFiles = try relativeFilePaths(under: a, ignoring: ignoredName)
+            bFiles = try relativeFilePaths(under: b, ignoring: ignoredName)
+        } catch {
+            return false
+        }
+        guard aFiles == bFiles else { return false }
+        for relative in aFiles {
+            let aURL = a.appendingPathComponent(relative)
+            let bURL = b.appendingPathComponent(relative)
+            guard let aData = try? Data(contentsOf: aURL),
+                  let bData = try? Data(contentsOf: bURL),
+                  aData == bData else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func relativeFilePaths(under root: URL, ignoring ignoredName: String) throws -> Set<String> {
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: []
+        ) else {
+            return []
+        }
+        var result: Set<String> = []
+        let rootPath = root.standardizedFileURL.path
+        for case let url as URL in enumerator {
+            let resourceValues = try url.resourceValues(forKeys: [.isRegularFileKey])
+            guard resourceValues.isRegularFile == true else { continue }
+            if url.lastPathComponent == ignoredName { continue }
+            let absolute = url.standardizedFileURL.path
+            guard absolute.hasPrefix(rootPath + "/") else { continue }
+            let relative = String(absolute.dropFirst(rootPath.count + 1))
+            result.insert(relative)
+        }
+        return result
     }
 
     private func resolvedBundledEnhanceSkillURL() -> URL {
