@@ -10,6 +10,9 @@ final class RecordingTranscriptionWindowController {
     private var window: NSWindow?
     private var viewModel: RecordingTranscriptionViewModel?
 
+    /// 供 AppDelegate.applicationShouldTerminate 检查/驱动当前的录音流程。
+    var activeViewModel: RecordingTranscriptionViewModel? { viewModel }
+
     func showWindow(appState: AppState) {
         NSApp.setActivationPolicy(.regular)
 
@@ -47,7 +50,10 @@ final class RecordingTranscriptionWindowController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.viewModel?.cancel()
+                // 退出流程中由 AppDelegate 驱动 stop()，这里不能 cancel 否则会删除正在保存的文件
+                if self?.viewModel?.isFinalizingForQuit != true {
+                    self?.viewModel?.cancel()
+                }
                 self?.viewModel = nil
                 self?.window = nil
                 NSApp.setActivationPolicy(.prohibited)
@@ -76,6 +82,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     @Published private(set) var audioLevel: Float = 0
     @Published private(set) var waveformBands: [RecordingWaveformBand] = RecordingTranscriptionViewModel.silentWaveformBands
     @Published private(set) var elapsedSeconds: TimeInterval = 0
+    /// 失败但音频已落盘时的兜底地址，UI 据此显示「在 Finder 中显示音频」按钮。
+    @Published private(set) var recoveredAudioURL: URL?
+    /// 应用退出流程中：UI 显示遮罩，willClose 跳过 cancel，避免误删保存中的文件。
+    @Published private(set) var isFinalizingForQuit: Bool = false
 
     nonisolated private static let waveformBandCount = 64
     nonisolated private static var silentWaveformBands: [RecordingWaveformBand] {
@@ -148,7 +158,17 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     }
 
     var canOpenOutputFolder: Bool {
-        output != nil
+        output != nil || recoveredAudioURL != nil
+    }
+
+    /// 是否处于「正在录音 / 加载模型 / 生成最终稿」的状态，退出拦截时据此判断。
+    var isActivelyRecording: Bool {
+        switch state {
+        case .loadingModel, .recording, .finishing:
+            return true
+        case .idle, .completed, .cancelled, .failed:
+            return false
+        }
     }
 
     var durationText: String {
@@ -194,6 +214,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         statusMessage = nil
         transcriptText = ""
         output = nil
+        recoveredAudioURL = nil
         elapsedSeconds = 0
         audioLevel = 0
         waveformBands = Self.silentWaveformBands
@@ -221,6 +242,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     func cancel() {
         guard canCancel else { return }
 
+        recoveredAudioURL = nil
         let preparedOutput = activePreparedOutput
         activeOperationID = nil
         startupTask?.cancel()
@@ -255,8 +277,19 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     }
 
     func openOutputFolder() {
-        guard let output else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([output.textURL, output.audioURL])
+        if let output {
+            NSWorkspace.shared.activateFileViewerSelecting([output.textURL, output.audioURL])
+            return
+        }
+        if let recoveredAudioURL {
+            NSWorkspace.shared.activateFileViewerSelecting([recoveredAudioURL])
+        }
+    }
+
+    /// 由 AppDelegate.applicationShouldTerminate 调用，告知 ViewModel 当前正走退出流程。
+    /// View 据此显示遮罩；窗口的 willClose 据此跳过 cancel，避免误删保存中的文件。
+    func markFinalizingForQuit() {
+        isFinalizingForQuit = true
     }
 
     private func loadModelAndStartRecording(
@@ -393,7 +426,18 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         audioRecorder.onSamplesCaptured = nil
         sampleContinuation?.finish()
         sampleContinuation = nil
-        deletePreparedOutput(activePreparedOutput)
+        // 失败时保留音频，仅清理空的 txt；引擎的 defer 已经 finalize 过 wav header。
+        let prepared = activePreparedOutput
+        if let prepared {
+            try? FileManager.default.removeItem(at: prepared.textURL)
+            if let size = (try? FileManager.default.attributesOfItem(atPath: prepared.audioURL.path))?[.size] as? Int,
+               size > 44 {
+                recoveredAudioURL = prepared.audioURL
+            } else {
+                // 没有有效音频，wav 文件也清掉
+                try? FileManager.default.removeItem(at: prepared.audioURL)
+            }
+        }
         state = .failed(message)
         statusMessage = nil
         clearActiveOperation(operationID: operationID)
@@ -486,25 +530,56 @@ struct RecordingTranscriptionView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 8) {
-            header
-            recordingCard
-            transcriptCard
-            footer
-        }
-        .padding(12)
-        .frame(minWidth: 540, minHeight: 420)
-        .background(
-            LinearGradient(
-                colors: [
-                    RecordingTheme.background,
-                    RecordingTheme.secondaryBackground,
-                    RecordingTheme.elevatedBackground
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+        ZStack {
+            VStack(spacing: 8) {
+                header
+                recordingCard
+                transcriptCard
+                footer
+            }
+            .padding(12)
+            .frame(minWidth: 540, minHeight: 420)
+            .background(
+                LinearGradient(
+                    colors: [
+                        RecordingTheme.background,
+                        RecordingTheme.secondaryBackground,
+                        RecordingTheme.elevatedBackground
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             )
-        )
+
+            if viewModel.isFinalizingForQuit {
+                finalizingForQuitOverlay
+            }
+        }
+    }
+
+    private var finalizingForQuitOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+            VStack(spacing: 14) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+                Text("VowKy 正在保存录音并完成转录...")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                Text("请勿强制退出，正在生成最终稿")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 22)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.black.opacity(0.55))
+            )
+        }
+        .transition(.opacity)
     }
 
     private var header: some View {
@@ -844,7 +919,9 @@ struct RecordingTranscriptionView: View {
         case .completed:
             return "最终稿为空。"
         case .failed:
-            return "没有生成可保存的转写内容。"
+            return viewModel.recoveredAudioURL == nil
+                ? "没有生成可保存的转写内容。"
+                : "识别失败，但已录制的音频已保留。可通过下方「打开文件夹」找到。"
         case .cancelled:
             return "本次录音已取消。"
         case .idle:
@@ -855,6 +932,9 @@ struct RecordingTranscriptionView: View {
     private var outputPathText: String {
         if let output = viewModel.output {
             return output.textURL.deletingLastPathComponent().path
+        }
+        if let recovered = viewModel.recoveredAudioURL {
+            return recovered.deletingLastPathComponent().path
         }
         return "完成后自动保存到 文稿/VowKy Recordings"
     }

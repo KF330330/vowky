@@ -18,6 +18,9 @@ final class WAVSampleFileWriter {
         let handle = try FileHandle(forWritingTo: url)
         handle.write(Self.createWAVHeader(dataSize: 0, sampleRate: sampleRate))
         self.fileHandle = handle
+
+        // 写一个 sidecar 标记文件，正常 finalize 时会删除；崩溃留下来供启动扫描识别
+        FileManager.default.createFile(atPath: Self.inProgressSidecarURL(for: url).path, contents: nil)
     }
 
     deinit {
@@ -35,6 +38,40 @@ final class WAVSampleFileWriter {
     func finalize() {
         updateHeader()
         close()
+        try? FileManager.default.removeItem(at: Self.inProgressSidecarURL(for: url))
+    }
+
+    static func inProgressSidecarURL(for audioURL: URL) -> URL {
+        audioURL.appendingPathExtension("inprogress")
+    }
+
+    /// 启动恢复时调用：基于 wav 文件的真实字节数回写 header 中的 fileSize/dataSize，
+    /// 让外部播放器（QuickTime/Finder 预览）能正确识别长度。
+    @discardableResult
+    static func repairHeaderInPlace(at url: URL) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let totalSize = attributes[.size] as? Int,
+              totalSize > 44 else {
+            return false
+        }
+        guard let handle = try? FileHandle(forUpdating: url) else { return false }
+        defer { try? handle.close() }
+
+        let dataSize = UInt32(totalSize - 44)
+        let fileSize = UInt32(totalSize - 8)
+
+        do {
+            try handle.seek(toOffset: 4)
+            var fileSizeLE = fileSize.littleEndian
+            try handle.write(contentsOf: Data(bytes: &fileSizeLE, count: 4))
+
+            try handle.seek(toOffset: 40)
+            var dataSizeLE = dataSize.littleEndian
+            try handle.write(contentsOf: Data(bytes: &dataSizeLE, count: 4))
+            return true
+        } catch {
+            return false
+        }
     }
 
     func close() {

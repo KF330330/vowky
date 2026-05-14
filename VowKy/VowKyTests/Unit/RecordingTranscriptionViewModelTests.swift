@@ -168,8 +168,13 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.output)
         XCTAssertEqual(recordedResults, [])
         XCTAssertFalse(appState.isRecordingTranscriptionInProgress)
-        let contents = (try? FileManager.default.contentsOfDirectory(atPath: tempDir.path)) ?? []
-        XCTAssertTrue(contents.isEmpty)
+        // 兜底策略：失败时保留 wav（用户没有主动取消），只删除空 txt
+        XCTAssertNotNil(viewModel.recoveredAudioURL)
+        if let recovered = viewModel.recoveredAudioURL {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: recovered.path))
+            let txtURL = recovered.deletingPathExtension().appendingPathExtension("txt")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: txtURL.path))
+        }
     }
 
     func testWaveformBandsReflectPCMPositiveAndNegativePeaks() {
