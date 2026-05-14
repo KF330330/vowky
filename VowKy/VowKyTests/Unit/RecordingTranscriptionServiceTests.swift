@@ -18,7 +18,7 @@ final class RecordingTranscriptionServiceTests: XCTestCase {
 
         let second = try store.prepareOutput(startedAt: date)
         XCTAssertNotEqual(first.textURL.lastPathComponent, second.textURL.lastPathComponent)
-        XCTAssertTrue(second.textURL.lastPathComponent.hasSuffix("-2.txt"))
+        XCTAssertTrue(second.textURL.lastPathComponent.hasSuffix("-2.md"))
         XCTAssertTrue(second.audioURL.lastPathComponent.hasSuffix("-2.wav"))
     }
 

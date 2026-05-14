@@ -60,11 +60,34 @@ struct SettingsView: View {
     @State private var skillStatuses: [AISkillPlatform: AISkillPlatformStatus] = [:]
     @State private var skillStatusMessage: String?
 
+    // AI 后处理
+    @State private var aiEnabled: Bool
+    @State private var aiAutoTrigger: Bool
+    @State private var aiProviderKindRaw: String
+    @State private var openAIBaseURL: String
+    @State private var openAIApiKey: String
+    @State private var openAIModel: String
+    @State private var codexBinaryPath: String
+    @State private var claudeBinaryPath: String
+    @State private var aiTimeoutSeconds: Int
+    @State private var aiTestResult: String?
+    @State private var aiTestInProgress: Bool = false
+
     private let skillInstaller = AISkillInstallerService()
     private weak var updater: SPUUpdater?
 
     init(updater: SPUUpdater? = nil) {
         self.updater = updater
+        let config = AIProviderFactory.load()
+        _aiEnabled        = State(initialValue: config.enabled)
+        _aiAutoTrigger    = State(initialValue: config.autoTrigger)
+        _aiProviderKindRaw = State(initialValue: config.kind.rawValue)
+        _openAIBaseURL    = State(initialValue: config.openAI.baseURL)
+        _openAIApiKey     = State(initialValue: config.openAI.apiKey)
+        _openAIModel      = State(initialValue: config.openAI.model)
+        _codexBinaryPath  = State(initialValue: config.codex.binaryPath)
+        _claudeBinaryPath = State(initialValue: config.claude.binaryPath)
+        _aiTimeoutSeconds = State(initialValue: config.timeoutSeconds)
     }
 
     var body: some View {
@@ -212,9 +235,75 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section("AI 后处理") {
+                Toggle("启用 AI 后处理（标题 / 摘要 / 自动分段）", isOn: $aiEnabled)
+                    .onChange(of: aiEnabled) { _ in saveAIConfig() }
+
+                if aiEnabled {
+                    Toggle("转写完成后自动触发", isOn: $aiAutoTrigger)
+                        .onChange(of: aiAutoTrigger) { _ in saveAIConfig() }
+
+                    Picker("Provider", selection: $aiProviderKindRaw) {
+                        ForEach(AIProviderKind.allCases, id: \.rawValue) { kind in
+                            Text(kind.displayName).tag(kind.rawValue)
+                        }
+                    }
+                    .onChange(of: aiProviderKindRaw) { _ in
+                        aiTestResult = nil
+                        saveAIConfig()
+                    }
+
+                    if currentProviderKind == .openAICompatible {
+                        TextField("Base URL", text: $openAIBaseURL)
+                            .onChange(of: openAIBaseURL) { _ in saveAIConfig() }
+                        SecureField("API Key", text: $openAIApiKey)
+                            .onChange(of: openAIApiKey) { _ in saveAIConfig() }
+                        TextField("Model", text: $openAIModel)
+                            .onChange(of: openAIModel) { _ in saveAIConfig() }
+                    } else if currentProviderKind == .codex {
+                        TextField("codex 绝对路径（留空自动探测）", text: $codexBinaryPath)
+                            .onChange(of: codexBinaryPath) { _ in saveAIConfig() }
+                        Text("提示：常见路径包括 /opt/homebrew/bin/codex、~/.cargo/bin/codex。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
+                            .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
+                        Text("提示：常见路径包括 /opt/homebrew/bin/claude、~/.npm-global/bin/claude。")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Stepper("调用超时：\(aiTimeoutSeconds) 秒", value: $aiTimeoutSeconds, in: 30...300, step: 10)
+                        .onChange(of: aiTimeoutSeconds) { _ in saveAIConfig() }
+
+                    HStack {
+                        Button {
+                            Task { await testAIProvider() }
+                        } label: {
+                            if aiTestInProgress {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text("测试连接")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(aiTestInProgress)
+                        Spacer()
+                    }
+
+                    if let aiTestResult {
+                        Text(aiTestResult)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 560)
+        .frame(width: 420, height: 720)
         .onAppear {
             isAccessibilityGranted = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -402,6 +491,67 @@ struct SettingsView: View {
             return .green
         case .blockedByUnmanagedSkill:
             return .orange
+        }
+    }
+
+    // MARK: - AI 后处理
+
+    private var currentProviderKind: AIProviderKind {
+        AIProviderKind(rawValue: aiProviderKindRaw) ?? .openAICompatible
+    }
+
+    private func saveAIConfig() {
+        let config = AIProviderConfig(
+            enabled: aiEnabled,
+            autoTrigger: aiAutoTrigger,
+            kind: currentProviderKind,
+            openAI: OpenAICompatibleConfig(
+                baseURL: openAIBaseURL,
+                apiKey: openAIApiKey,
+                model: openAIModel
+            ),
+            codex: CLIConfig(binaryPath: codexBinaryPath),
+            claude: CLIConfig(binaryPath: claudeBinaryPath),
+            timeoutSeconds: aiTimeoutSeconds
+        )
+        AIProviderFactory.save(config)
+    }
+
+    @MainActor
+    private func testAIProvider() async {
+        aiTestInProgress = true
+        aiTestResult = nil
+        defer { aiTestInProgress = false }
+
+        let provider: AIProvider
+        do {
+            let config = AIProviderConfig(
+                enabled: aiEnabled,
+                autoTrigger: aiAutoTrigger,
+                kind: currentProviderKind,
+                openAI: OpenAICompatibleConfig(
+                    baseURL: openAIBaseURL,
+                    apiKey: openAIApiKey,
+                    model: openAIModel
+                ),
+                codex: CLIConfig(binaryPath: codexBinaryPath),
+                claude: CLIConfig(binaryPath: claudeBinaryPath),
+                timeoutSeconds: aiTimeoutSeconds
+            )
+            provider = try AIProviderFactory.make(config)
+        } catch {
+            aiTestResult = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return
+        }
+
+        do {
+            let probeStarted = Date()
+            let reply = try await provider.probe()
+            let elapsedMs = Int(Date().timeIntervalSince(probeStarted) * 1000)
+            let preview = reply.prefix(40)
+            aiTestResult = "✓ 连接成功（\(elapsedMs) ms）：\(preview)"
+        } catch {
+            aiTestResult = "✗ \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
         }
     }
 }

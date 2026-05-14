@@ -112,7 +112,6 @@ enum AIProviderFactory {
         defaults.set(config.timeoutSeconds, forKey: Keys.timeoutSeconds)
     }
 
-    /// 实例化当前选中的 provider。具体实现见后续阶段；本阶段先抛错以便单测 wire-up。
     static func make(_ config: AIProviderConfig) throws -> AIProvider {
         switch config.kind {
         case .openAICompatible:
@@ -121,9 +120,15 @@ enum AIProviderFactory {
                 timeoutSeconds: config.timeoutSeconds
             )
         case .codex:
-            throw AIProviderError.notConfigured("Codex CLI provider 尚未实现（Phase 3）")
+            return CodexCLIProvider(
+                config: config.codex,
+                timeoutSeconds: config.timeoutSeconds
+            )
         case .claudeCode:
-            throw AIProviderError.notConfigured("Claude Code CLI provider 尚未实现（Phase 3）")
+            return ClaudeCodeCLIProvider(
+                config: config.claude,
+                timeoutSeconds: config.timeoutSeconds
+            )
         }
     }
 }

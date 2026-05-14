@@ -77,6 +77,14 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     @Published private(set) var waveformBands: [RecordingWaveformBand] = RecordingTranscriptionViewModel.silentWaveformBands
     @Published private(set) var elapsedSeconds: TimeInterval = 0
 
+    // AI 后处理
+    @Published private(set) var enhancementInFlight: Bool = false
+    @Published private(set) var enhancementResult: EnhancementResult?
+    @Published private(set) var titleStatus: AIBadgeStatus = .idle
+    @Published private(set) var summaryStatus: AIBadgeStatus = .idle
+    @Published private(set) var outlineStatus: AIBadgeStatus = .idle
+    @Published private(set) var formattedMarkdown: String?
+
     nonisolated private static let waveformBandCount = 64
     nonisolated private static var silentWaveformBands: [RecordingWaveformBand] {
         Array(repeating: RecordingWaveformBand(positive: 0, negative: 0), count: waveformBandCount)
@@ -89,12 +97,15 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private let punctuationService: PunctuationServiceProtocol?
     private let outputStore: RecordingTranscriptionOutputStore
     private let resultRecorder: (String) -> Void
+    private let enhancementService: TranscriptionEnhancing
+    private let aiConfigLoader: () -> AIProviderConfig
 
     private var activeRecognizer: StreamingSpeechRecognizerProtocol?
     private var activePreparedOutput: PreparedRecordingTranscriptionOutput?
     private var sampleContinuation: AsyncStream<[Float]>.Continuation?
     private var startupTask: Task<Void, Never>?
     private var workerTask: Task<Void, Never>?
+    private var enhancementTask: Task<Void, Never>?
     private var timer: Timer?
     private var activeOperationID: UUID?
     private var recordingStartedAt: Date?
@@ -106,7 +117,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         finalRecognizer: SpeechRecognizerProtocol? = nil,
         punctuationService: PunctuationServiceProtocol? = nil,
         outputStore: RecordingTranscriptionOutputStore = RecordingTranscriptionOutputStore(),
-        resultRecorder: ((String) -> Void)? = nil
+        resultRecorder: ((String) -> Void)? = nil,
+        enhancementService: TranscriptionEnhancing = TranscriptionEnhancementService(),
+        aiConfigLoader: @escaping () -> AIProviderConfig = { AIProviderFactory.load() }
     ) {
         self.appState = appState
         self.audioRecorder = audioRecorder ?? appState.audioRecorder
@@ -119,6 +132,15 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         self.resultRecorder = resultRecorder ?? { text in
             appState.recordRecognitionResult(text: text, sourceType: "recording")
         }
+        self.enhancementService = enhancementService
+        self.aiConfigLoader = aiConfigLoader
+    }
+
+    enum AIBadgeStatus: Equatable {
+        case idle
+        case running
+        case succeeded
+        case failed(String)
     }
 
     var canStart: Bool {
@@ -149,6 +171,19 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
     var canOpenOutputFolder: Bool {
         output != nil
+    }
+
+    /// 是否可以手动触发 AI 美化：AI 已启用 + 转写已完成 + 当前没有进行中的增强 + 还没拿到结果。
+    var canRunEnhancement: Bool {
+        guard state == .completed, !transcriptText.isEmpty else { return false }
+        let cfg = aiConfigLoader()
+        guard cfg.enabled else { return false }
+        return !enhancementInFlight && enhancementResult == nil
+    }
+
+    /// 是否在 UI 中显示 AI 三任务徽章（已启用就显示）。
+    var aiBadgesVisible: Bool {
+        aiConfigLoader().enabled
     }
 
     var durationText: String {
@@ -198,6 +233,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         audioLevel = 0
         waveformBands = Self.silentWaveformBands
         state = .loadingModel
+        resetEnhancementState()
+        enhancementTask?.cancel()
+        enhancementTask = nil
 
         let recognizer = recognizerFactory()
         activeRecognizer = recognizer
@@ -225,8 +263,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         activeOperationID = nil
         startupTask?.cancel()
         workerTask?.cancel()
+        enhancementTask?.cancel()
         startupTask = nil
         workerTask = nil
+        enhancementTask = nil
 
         if state == .recording || state == .finishing {
             _ = audioRecorder.stopRecording()
@@ -245,6 +285,22 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         statusMessage = nil
         audioLevel = 0
         waveformBands = Self.silentWaveformBands
+        resetEnhancementState()
+    }
+
+    /// 手动触发 AI 美化（Settings 关闭自动触发时使用）。
+    func runEnhancement() {
+        guard canRunEnhancement else { return }
+        triggerEnhancement(rawText: transcriptText)
+    }
+
+    /// 复制 Markdown 文档（带 frontmatter）到剪贴板；若没有 AI 结果则复制原文。
+    func copyMarkdown() {
+        let toCopy = formattedMarkdown ?? transcriptText
+        guard !toCopy.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(toCopy, forType: .string)
+        AnalyticsService.shared.trackHistoryCopy()
     }
 
     func copyResult() {
@@ -370,11 +426,104 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
             state = .completed
             statusMessage = nil
+
+            // AI 后处理：仅在 enabled + autoTrigger 且有有效文本时自动触发
+            let cfg = aiConfigLoader()
+            if cfg.enabled && cfg.autoTrigger && !finalText.isEmpty {
+                triggerEnhancement(rawText: finalText)
+            }
         } catch {
             state = .failed("保存失败：\(error.localizedDescription)")
         }
 
         clearActiveOperation(operationID: operationID)
+    }
+
+    private func resetEnhancementState() {
+        enhancementInFlight = false
+        enhancementResult = nil
+        titleStatus = .idle
+        summaryStatus = .idle
+        outlineStatus = .idle
+        formattedMarkdown = nil
+    }
+
+    private func triggerEnhancement(rawText: String) {
+        guard let preparedOutput = activePreparedOutput ?? lastPreparedFromOutput() else { return }
+
+        let config = aiConfigLoader()
+        let provider: AIProvider
+        do {
+            provider = try AIProviderFactory.make(config)
+        } catch {
+            titleStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            summaryStatus = titleStatus
+            outlineStatus = titleStatus
+            return
+        }
+
+        enhancementInFlight = true
+        titleStatus = .running
+        summaryStatus = .running
+        outlineStatus = .running
+        enhancementResult = nil
+
+        let input = EnhancementInput(
+            rawText: rawText,
+            audioURL: preparedOutput.audioURL,
+            startedAt: preparedOutput.startedAt,
+            durationSeconds: output?.duration,
+            sourceType: "recording"
+        )
+        let markdownPath = preparedOutput.textURL.path
+        let textURL = preparedOutput.textURL
+        let service = enhancementService
+
+        enhancementTask = Task { @MainActor [weak self] in
+            let result = await service.enhance(
+                input: input,
+                provider: provider,
+                markdownPath: markdownPath
+            ) { progress in
+                Task { @MainActor in
+                    self?.apply(enhancementProgress: progress)
+                }
+            }
+            // 任务可能在 cancel 中已取消
+            guard let self else { return }
+            if Task.isCancelled { return }
+
+            self.enhancementInFlight = false
+            self.enhancementResult = result
+            self.formattedMarkdown = result.fullMarkdownDocument
+
+            // 覆盖写入带 frontmatter 的完整 markdown
+            try? result.fullMarkdownDocument.write(to: textURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func apply(enhancementProgress progress: EnhancementProgress) {
+        let status: AIBadgeStatus
+        switch progress.status {
+        case .running:   status = .running
+        case .succeeded: status = .succeeded
+        case .failed(let msg): status = .failed(msg)
+        }
+        switch progress.task {
+        case .title:   titleStatus = status
+        case .summary: summaryStatus = status
+        case .outline: outlineStatus = status
+        }
+    }
+
+    /// `activePreparedOutput` 在 `clearActiveOperation` 中会被清空；用 `output` 重建一个用于增强阶段。
+    private func lastPreparedFromOutput() -> PreparedRecordingTranscriptionOutput? {
+        guard let output else { return nil }
+        return PreparedRecordingTranscriptionOutput(
+            textURL: output.textURL,
+            audioURL: output.audioURL,
+            startedAt: output.startedAt
+        )
     }
 
     private func completeCancellation(operationID: UUID) {
@@ -645,6 +794,14 @@ struct RecordingTranscriptionView: View {
                         .tint(RecordingTheme.accentDeep)
                 }
 
+                if viewModel.aiBadgesVisible && viewModel.state == .completed {
+                    AIBadgesView(
+                        title: viewModel.titleStatus,
+                        summary: viewModel.summaryStatus,
+                        outline: viewModel.outlineStatus
+                    )
+                }
+
                 Spacer()
 
                 if !viewModel.transcriptText.isEmpty {
@@ -671,7 +828,7 @@ struct RecordingTranscriptionView: View {
                 }
 
                 TextEditor(text: Binding(
-                    get: { viewModel.transcriptText },
+                    get: { viewModel.formattedMarkdown ?? viewModel.transcriptText },
                     set: { _ in }
                 ))
                 .font(.system(size: 14))
@@ -734,6 +891,24 @@ struct RecordingTranscriptionView: View {
 
             Spacer()
 
+            if viewModel.canRunEnhancement {
+                Button {
+                    viewModel.runEnhancement()
+                } label: {
+                    Label("AI 美化", systemImage: "wand.and.stars")
+                }
+                .buttonStyle(RecordingSecondaryButtonStyle())
+            }
+
+            if viewModel.enhancementInFlight {
+                HStack(spacing: 4) {
+                    ProgressView().controlSize(.small)
+                    Text("AI 处理中…")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(RecordingTheme.textMuted)
+                }
+            }
+
             Button {
                 viewModel.copyResult()
             } label: {
@@ -741,6 +916,15 @@ struct RecordingTranscriptionView: View {
             }
             .buttonStyle(RecordingSecondaryButtonStyle())
             .disabled(!viewModel.canCopyResult)
+
+            if viewModel.enhancementResult != nil {
+                Button {
+                    viewModel.copyMarkdown()
+                } label: {
+                    Label("复制 Markdown", systemImage: "doc.richtext")
+                }
+                .buttonStyle(RecordingSecondaryButtonStyle())
+            }
 
             Button {
                 viewModel.openOutputFolder()
@@ -1117,5 +1301,47 @@ private enum RecordingTheme {
             blue: Double(hex & 0xFF) / 255.0,
             opacity: opacity
         )
+    }
+}
+
+// MARK: - AI 三任务徽章
+
+struct AIBadgesView: View {
+    let title: RecordingTranscriptionViewModel.AIBadgeStatus
+    let summary: RecordingTranscriptionViewModel.AIBadgeStatus
+    let outline: RecordingTranscriptionViewModel.AIBadgeStatus
+
+    var body: some View {
+        HStack(spacing: 4) {
+            badge(label: "标题", status: title)
+            badge(label: "摘要", status: summary)
+            badge(label: "结构", status: outline)
+        }
+    }
+
+    @ViewBuilder
+    private func badge(label: String, status: RecordingTranscriptionViewModel.AIBadgeStatus) -> some View {
+        let (symbol, color, tooltip): (String, Color, String?) = {
+            switch status {
+            case .idle:        return ("circle.dashed", .gray, nil)
+            case .running:     return ("ellipsis.circle", .orange, nil)
+            case .succeeded:   return ("checkmark.circle.fill", .green, nil)
+            case .failed(let msg): return ("xmark.octagon.fill", .red, msg)
+            }
+        }()
+        HStack(spacing: 3) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(color)
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            Capsule().fill(color.opacity(0.12))
+        )
+        .help(tooltip ?? label)
     }
 }

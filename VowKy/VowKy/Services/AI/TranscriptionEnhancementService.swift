@@ -185,15 +185,53 @@ final class TranscriptionEnhancementService: TranscriptionEnhancing {
         return try await provider.complete(req).text
     }
 
-    /// Phase 1 暂未启用分块；超长文本走 abridged 单次调用，Phase 4 再做真正的分块合并。
+    /// 短文本单次调用；超长文本按句子边界分块，每块独立调一次，
+    /// 客户端合并所有 operations 后由 OutlinePatchApplier 在全文上重新定位。
     private func runOutline(rawText: String, provider: AIProvider) async throws -> String {
-        let req = AIRequest(
-            systemPrompt: EnhancementPrompts.outlineSystemPrompt(),
-            userPrompt: EnhancementPrompts.outlineUserPrompt(rawText: rawText),
-            responseFormat: .json,
-            temperature: 0.2
-        )
-        return try await provider.complete(req).text
+        let chunks = EnhancementPrompts.chunkForOutline(rawText)
+        if chunks.count <= 1 {
+            let req = AIRequest(
+                systemPrompt: EnhancementPrompts.outlineSystemPrompt(),
+                userPrompt: EnhancementPrompts.outlineUserPrompt(rawText: rawText),
+                responseFormat: .json,
+                temperature: 0.2
+            )
+            return try await provider.complete(req).text
+        }
+
+        var mergedOps: [[String: Any]] = []
+        var anySuccess = false
+        var lastError: Error?
+
+        for chunk in chunks {
+            let req = AIRequest(
+                systemPrompt: EnhancementPrompts.outlineSystemPrompt(),
+                userPrompt: EnhancementPrompts.outlineUserPrompt(rawText: chunk),
+                responseFormat: .json,
+                temperature: 0.2
+            )
+            do {
+                let response = try await provider.complete(req).text
+                let stripped = OutlinePatchApplier.stripMarkdownFence(response)
+                if let data = stripped.data(using: .utf8),
+                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let ops = root["operations"] as? [[String: Any]] {
+                    mergedOps.append(contentsOf: ops)
+                    anySuccess = true
+                }
+            } catch {
+                lastError = error
+                // 单块失败：继续下一块；anchor 在全文上重新定位，丢失若干 ops 不影响其他
+            }
+        }
+
+        if !anySuccess, let err = lastError {
+            throw err
+        }
+
+        let mergedJSON: [String: Any] = ["version": 1, "operations": mergedOps]
+        let data = try JSONSerialization.data(withJSONObject: mergedJSON)
+        return String(data: data, encoding: .utf8) ?? "{\"version\":1,\"operations\":[]}"
     }
 
     // MARK: - Helpers

@@ -83,6 +83,13 @@ struct FileTranscriptionJob: Identifiable, Equatable {
     var currentSegment: Int = 0
     var totalSegments: Int = 0
 
+    // AI 后处理状态（单 job 维度）
+    var titleStatus: RecordingTranscriptionViewModel.AIBadgeStatus = .idle
+    var summaryStatus: RecordingTranscriptionViewModel.AIBadgeStatus = .idle
+    var outlineStatus: RecordingTranscriptionViewModel.AIBadgeStatus = .idle
+    var enhancedMarkdown: String?
+    var enhancementInFlight: Bool = false
+
     var isFinished: Bool {
         switch state {
         case .completed, .cancelled, .failed:
@@ -105,13 +112,17 @@ final class FileTranscriptionViewModel: ObservableObject {
     private let appState: AppState
     private let fileTranscriptionServiceFactory: () -> FileTranscribing
     private let resultRecorder: (String) -> Void
+    private let enhancementService: TranscriptionEnhancing
+    private let aiConfigLoader: () -> AIProviderConfig
     private var transcriptionTask: Task<Void, Never>?
     private var activeTargetJobIDs: Set<UUID>?
 
     init(
         appState: AppState,
         fileTranscriptionServiceFactory: (() -> FileTranscribing)? = nil,
-        resultRecorder: ((String) -> Void)? = nil
+        resultRecorder: ((String) -> Void)? = nil,
+        enhancementService: TranscriptionEnhancing = TranscriptionEnhancementService(),
+        aiConfigLoader: @escaping () -> AIProviderConfig = { AIProviderFactory.load() }
     ) {
         self.appState = appState
         self.fileTranscriptionServiceFactory = fileTranscriptionServiceFactory ?? {
@@ -120,6 +131,8 @@ final class FileTranscriptionViewModel: ObservableObject {
         self.resultRecorder = resultRecorder ?? { text in
             appState.recordRecognitionResult(text: text, sourceType: "file")
         }
+        self.enhancementService = enhancementService
+        self.aiConfigLoader = aiConfigLoader
         refreshInsertionTarget()
     }
 
@@ -451,6 +464,11 @@ final class FileTranscriptionViewModel: ObservableObject {
                         job.state = .completed
                     }
                     resultRecorder(finalText)
+
+                    let cfg = aiConfigLoader()
+                    if cfg.enabled && cfg.autoTrigger && !finalText.isEmpty {
+                        await runEnhancement(for: jobID, rawText: finalText, audioURL: jobURL)
+                    }
                 } catch is CancellationError {
                     updateJob(id: jobID) { job in
                         job.state = .cancelled
@@ -629,6 +647,101 @@ final class FileTranscriptionViewModel: ObservableObject {
     private func updateJob(id: UUID, mutate: (inout FileTranscriptionJob) -> Void) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         mutate(&jobs[index])
+    }
+
+    // MARK: - AI enhancement
+
+    /// 对单个已转写完成的 job 跑 AI 后处理。在 transcriptionTask 内串行调用。
+    func runEnhancement(for jobID: UUID, rawText: String, audioURL: URL) async {
+        let provider: AIProvider
+        do {
+            provider = try AIProviderFactory.make(aiConfigLoader())
+        } catch {
+            let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            updateJob(id: jobID) { job in
+                job.titleStatus = .failed(msg)
+                job.summaryStatus = .failed(msg)
+                job.outlineStatus = .failed(msg)
+            }
+            return
+        }
+
+        updateJob(id: jobID) { job in
+            job.enhancementInFlight = true
+            job.titleStatus = .running
+            job.summaryStatus = .running
+            job.outlineStatus = .running
+        }
+
+        let input = EnhancementInput(
+            rawText: rawText,
+            audioURL: audioURL,
+            startedAt: Date(),
+            durationSeconds: nil,
+            sourceType: "file"
+        )
+        let markdownPath = audioURL.deletingPathExtension().appendingPathExtension("md").path
+
+        let result = await enhancementService.enhance(
+            input: input,
+            provider: provider,
+            markdownPath: markdownPath
+        ) { [weak self] progress in
+            Task { @MainActor in
+                self?.apply(enhancementProgress: progress, to: jobID)
+            }
+        }
+
+        updateJob(id: jobID) { job in
+            job.enhancementInFlight = false
+            job.enhancedMarkdown = result.fullMarkdownDocument
+        }
+    }
+
+    /// 手动触发选中 job 的 AI 美化。
+    func runEnhancementForSelectedJob() {
+        guard let job = selectedJob,
+              job.state == .completed,
+              !job.resultText.isEmpty,
+              !job.enhancementInFlight,
+              job.enhancedMarkdown == nil else { return }
+        let id = job.id
+        let raw = job.resultText
+        let url = job.url
+        Task { await runEnhancement(for: id, rawText: raw, audioURL: url) }
+    }
+
+    var canRunEnhancementForSelectedJob: Bool {
+        guard let job = selectedJob else { return false }
+        guard aiConfigLoader().enabled else { return false }
+        return job.state == .completed
+            && !job.resultText.isEmpty
+            && !job.enhancementInFlight
+            && job.enhancedMarkdown == nil
+    }
+
+    var aiBadgesVisibleForSelectedJob: Bool {
+        guard let job = selectedJob else { return false }
+        return aiConfigLoader().enabled && job.state == .completed
+    }
+
+    private func apply(
+        enhancementProgress progress: EnhancementProgress,
+        to jobID: UUID
+    ) {
+        let status: RecordingTranscriptionViewModel.AIBadgeStatus
+        switch progress.status {
+        case .running:   status = .running
+        case .succeeded: status = .succeeded
+        case .failed(let msg): status = .failed(msg)
+        }
+        updateJob(id: jobID) { job in
+            switch progress.task {
+            case .title:   job.titleStatus = status
+            case .summary: job.summaryStatus = status
+            case .outline: job.outlineStatus = status
+            }
+        }
     }
 
     private func normalizedFileKey(_ url: URL) -> String {
@@ -1135,7 +1248,29 @@ struct FileTranscriptionView: View {
                             .fill(FileTranscriptionTheme.accentBright.opacity(0.30))
                     )
 
+                if viewModel.aiBadgesVisibleForSelectedJob, let job = viewModel.selectedJob {
+                    AIBadgesView(
+                        title: job.titleStatus,
+                        summary: job.summaryStatus,
+                        outline: job.outlineStatus
+                    )
+                }
+
+                if let job = viewModel.selectedJob, job.enhancementInFlight {
+                    ProgressView().controlSize(.small)
+                }
+
                 Spacer()
+
+                if viewModel.canRunEnhancementForSelectedJob {
+                    Button {
+                        viewModel.runEnhancementForSelectedJob()
+                    } label: {
+                        Label("AI 美化", systemImage: "wand.and.stars")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(FileSecondaryButtonStyle())
+                }
 
                 if !viewModel.resultText.isEmpty {
                     Text("\(viewModel.resultText.count) 字")
@@ -1161,7 +1296,9 @@ struct FileTranscriptionView: View {
                 }
 
                 TextEditor(text: Binding(
-                    get: { viewModel.resultText },
+                    get: {
+                        viewModel.selectedJob?.enhancedMarkdown ?? viewModel.resultText
+                    },
                     set: { viewModel.updateSelectedResultText($0) }
                 ))
                 .font(.system(size: 14))

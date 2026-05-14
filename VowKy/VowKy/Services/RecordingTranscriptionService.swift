@@ -57,7 +57,7 @@ struct RecordingTranscriptionOutputStore {
 
         let baseName = uniqueBaseName(for: startedAt)
         return PreparedRecordingTranscriptionOutput(
-            textURL: outputDirectory.appendingPathComponent("\(baseName).txt"),
+            textURL: outputDirectory.appendingPathComponent("\(baseName).md"),
             audioURL: outputDirectory.appendingPathComponent("\(baseName).wav"),
             startedAt: startedAt
         )
@@ -80,7 +80,9 @@ struct RecordingTranscriptionOutputStore {
         let baseName = "VowKy Recording \(formatter.string(from: date))"
         var candidate = baseName
         var suffix = 2
-        while fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).txt").path)
+        // 同时检测 .md（新格式）和 .txt（老格式，向后兼容用户已有的转写文件）
+        while fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).md").path)
+            || fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).txt").path)
             || fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).wav").path) {
             candidate = "\(baseName)-\(suffix)"
             suffix += 1
