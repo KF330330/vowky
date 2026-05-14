@@ -72,7 +72,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateNow
         }
 
-        CrashLogger.log("[Quit] Recording in progress, deferring termination to finalize")
+        CrashLogger.log("[Quit] Recording in progress, asking user confirmation")
+        let alert = NSAlert()
+        alert.messageText = "VowKy 正在录音中"
+        alert.informativeText = "退出前会先完成当前录音的转录并保存。是否继续？"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "完成并退出")
+        alert.addButton(withTitle: "继续录音")
+
+        let response = alert.runModal()
+        if response != .alertFirstButtonReturn {
+            CrashLogger.log("[Quit] User cancelled quit, continue recording")
+            return .terminateCancel
+        }
+
+        CrashLogger.log("[Quit] User confirmed, deferring termination to finalize")
         viewModel.markFinalizingForQuit()
         viewModel.stop()
 
