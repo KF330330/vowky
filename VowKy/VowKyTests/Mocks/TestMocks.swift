@@ -6,19 +6,27 @@ import Foundation
 final class MockSpeechRecognizer: SpeechRecognizerProtocol {
     var isReady: Bool = true
     var recognizeResult: String? = "测试结果"
+    var queuedRecognizeResults: [String?] = []
     var recognizeDelay: UInt64 = 0 // nanoseconds
     var recognizeCallCount = 0
     var lastReceivedSamples: [Float] = []
     var lastReceivedSampleRate: Int = 0
+    var receivedSamples: [[Float]] = []
+    var receivedSampleRates: [Int] = []
     var recognizeCalledOnThread: Thread?
 
     func recognize(samples: [Float], sampleRate: Int) async -> String? {
         recognizeCallCount += 1
         lastReceivedSamples = samples
         lastReceivedSampleRate = sampleRate
+        receivedSamples.append(samples)
+        receivedSampleRates.append(sampleRate)
         recognizeCalledOnThread = Thread.current
         if recognizeDelay > 0 {
             try? await Task.sleep(nanoseconds: recognizeDelay)
+        }
+        if !queuedRecognizeResults.isEmpty {
+            return queuedRecognizeResults.removeFirst()
         }
         return recognizeResult
     }
@@ -26,16 +34,21 @@ final class MockSpeechRecognizer: SpeechRecognizerProtocol {
 
 final class MockAudioRecorder: AudioRecorderProtocol {
     var audioLevel: Float = 0.5
+    var onSamplesCaptured: (([Float]) -> Void)?
     var shouldThrowOnStart = false
     var startError: Error = NSError(domain: "MockAudioRecorder", code: 1, userInfo: [NSLocalizedDescriptionKey: "录音启动失败"])
     var startCallCount = 0
     var stopCallCount = 0
     var samplesResult: [Float] = Array(repeating: 0.1, count: 16000)
+    var samplesToEmitOnStart: [[Float]] = []
 
     func startRecording() throws {
         startCallCount += 1
         if shouldThrowOnStart {
             throw startError
+        }
+        for samples in samplesToEmitOnStart {
+            onSamplesCaptured?(samples)
         }
     }
 
@@ -61,6 +74,48 @@ final class MockPunctuationService: PunctuationServiceProtocol {
     func addPunctuation(to text: String) -> String {
         addPunctuationCallCount += 1
         return text + punctuationSuffix
+    }
+}
+
+final class MockStreamingSpeechRecognizer: StreamingSpeechRecognizerProtocol {
+    var isReady: Bool = true
+    var loadModelCallCount = 0
+    var startSessionCallCount = 0
+    var acceptCallCount = 0
+    var finishCallCount = 0
+    var resetCallCount = 0
+    var queuedAcceptUpdates: [StreamingRecognitionUpdate?] = []
+    var finishUpdate: StreamingRecognitionUpdate? = StreamingRecognitionUpdate(
+        committedText: "最终文本",
+        partialText: "",
+        isFinal: true
+    )
+    var receivedSamples: [[Float]] = []
+
+    func loadModel() {
+        loadModelCallCount += 1
+    }
+
+    func startSession() {
+        startSessionCallCount += 1
+    }
+
+    func accept(samples: [Float], sampleRate: Int) -> StreamingRecognitionUpdate? {
+        acceptCallCount += 1
+        receivedSamples.append(samples)
+        if !queuedAcceptUpdates.isEmpty {
+            return queuedAcceptUpdates.removeFirst()
+        }
+        return nil
+    }
+
+    func finish() -> StreamingRecognitionUpdate? {
+        finishCallCount += 1
+        return finishUpdate
+    }
+
+    func reset() {
+        resetCallCount += 1
     }
 }
 

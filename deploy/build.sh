@@ -27,6 +27,7 @@ APP_DIR="${BUILD_DIR}/app"
 DMG_DIR="${BUILD_DIR}/dmg"
 ARCHIVE_PATH="${ARCHIVE_DIR}/VowKy.xcarchive"
 APP_PATH="${APP_DIR}/VowKy.app"
+HELPER_PATH="${APP_PATH}/Contents/Helpers/vowky-transcribe"
 DMG_PATH="${DMG_DIR}/${DMG_NAME}"
 NOTARY_UPLOAD_DIR=""
 
@@ -82,12 +83,33 @@ check_app_signature() {
     log_ok "${label} 签名和 entitlements 验证通过"
 }
 
+check_helper_signature() {
+    local helper_path="$1"
+    local label="$2"
+    local entitlements
+
+    codesign --verify --strict --verbose=4 "$helper_path"
+    entitlements="$(codesign -d --entitlements - "$helper_path" 2>/dev/null || true)"
+    if ! grep -q "com.apple.security.cs.allow-unsigned-executable-memory" <<< "$entitlements"; then
+        log_error "${label} 缺少 ONNX runtime entitlement"
+        exit 1
+    fi
+    if grep -q "com.apple.security.device.audio-input" <<< "$entitlements"; then
+        log_error "${label} 不应包含麦克风 entitlement"
+        exit 1
+    fi
+
+    log_ok "${label} 签名和 entitlements 验证通过"
+}
+
 verify_dmg_contents() {
     local mount_dir
     mount_dir="$(mktemp -d "${TMPDIR:-/tmp}/vowky-dmg.XXXXXX")"
 
     hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "$DMG_PATH" >/dev/null
     check_binary_archs "${mount_dir}/VowKy.app/Contents/MacOS/VowKy" "DMG 内 VowKy 主程序"
+    check_binary_archs "${mount_dir}/VowKy.app/Contents/Helpers/vowky-transcribe" "DMG 内 vowky-transcribe helper"
+    check_helper_signature "${mount_dir}/VowKy.app/Contents/Helpers/vowky-transcribe" "DMG 内 vowky-transcribe helper"
     check_app_signature "${mount_dir}/VowKy.app" "DMG 内 VowKy.app"
     hdiutil detach "$mount_dir" >/dev/null
     rmdir "$mount_dir"
@@ -141,6 +163,7 @@ log_ok "App 导出到 ${APP_PATH}"
 
 # 防止在 Apple Silicon 构建机上误产出 arm64-only 包，导致 Intel Mac 无法打开。
 check_binary_archs "${APP_PATH}/Contents/MacOS/VowKy" "VowKy 主程序"
+check_binary_archs "${HELPER_PATH}" "vowky-transcribe helper"
 check_binary_archs "${APP_PATH}/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" "Sparkle.framework"
 check_binary_archs "${APP_PATH}/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" "Sparkle Autoupdate"
 
@@ -168,7 +191,16 @@ sign_main_app() {
     if [ "$NOTARIZE" = true ]; then
         codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
     else
-        codesign --force --deep --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
+        codesign --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
+    fi
+}
+
+sign_transcribe_helper() {
+    # helper 不需要麦克风权限，只需要 ONNX runtime entitlement。
+    if [ "$NOTARIZE" = true ]; then
+        codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKyTranscribe.entitlements" "${HELPER_PATH}"
+    else
+        codesign --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKyTranscribe.entitlements" "${HELPER_PATH}"
     fi
 }
 
@@ -182,12 +214,15 @@ if [ "$NOTARIZE" = true ]; then
     for fw in "${APP_PATH}/Contents/Frameworks/"*.framework; do
         [ -d "$fw" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "$fw"
     done
-    # 3. 签名主 app（必须传 --entitlements，否则重签会丢失 entitlements）
+    # 3. 签名 helper
 fi
+sign_transcribe_helper
+# 4. 签名主 app（必须传 --entitlements，否则重签会丢失 entitlements）
 sign_main_app
 log_ok "代码签名完成"
 
 # 验证签名
+check_helper_signature "${HELPER_PATH}" "vowky-transcribe helper"
 check_app_signature "${APP_PATH}" "VowKy.app"
 
 # ============================================================
@@ -210,8 +245,10 @@ if [ "$NOTARIZE" = true ]; then
     # 在部分同步目录或钥匙串状态下，staple 后 CMS 可能变成不可验证。
     # 重新签主 app 不改变 CodeDirectory/CDHash，保留公证票据，但能恢复可验证证书链。
     log_info "重新签名并验证 stapled App..."
+    sign_transcribe_helper
     sign_main_app
     xcrun stapler validate "${APP_PATH}"
+    check_helper_signature "${HELPER_PATH}" "stapled vowky-transcribe helper"
     check_app_signature "${APP_PATH}" "stapled VowKy.app"
 fi
 

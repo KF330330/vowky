@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 
@@ -20,6 +21,8 @@ final class AppState: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastResult: String?
     @Published var recentResults: [String] = [] // 最近 3 次识别结果
+    @Published var isFileTranscriptionInProgress = false
+    @Published var isRecordingTranscriptionInProgress = false
 
     // MARK: - Dependencies
 
@@ -36,6 +39,8 @@ final class AppState: ObservableObject {
 
     /// Timestamp when recording started (for duration tracking)
     private var recordingStartTime: Date?
+    private var workspaceActivationObserver: NSObjectProtocol?
+    private var lastTextInsertionTarget: NSRunningApplication?
 
     // MARK: - Init
 
@@ -62,6 +67,7 @@ final class AppState: ObservableObject {
         // 0. Open history database
         HistoryStore.shared.open()
         CrashLogger.log("[AppState] HistoryStore opened")
+        startApplicationFocusTracking()
 
         // 1. Load speech model + punctuation model in background
         state = .loading
@@ -180,6 +186,17 @@ final class AppState: ObservableObject {
         // Clear previous error
         errorMessage = nil
 
+        if isFileTranscriptionInProgress {
+            errorMessage = "文件转录中，请稍后或取消转录"
+            CrashLogger.log("[Hotkey] Ignored while file transcription is running")
+            return
+        }
+        if isRecordingTranscriptionInProgress {
+            errorMessage = "录音中，请稍后或完成录音"
+            CrashLogger.log("[Hotkey] Ignored while recording transcription is running")
+            return
+        }
+
         switch state {
         case .idle:
             startRecordingFromIdle()
@@ -292,8 +309,7 @@ final class AppState: ObservableObject {
             print("[VowKy][AppState] Final text: \(finalText)")
 
             // Valid result: insert text and return to idle
-            lastResult = finalText
-            addToRecentResults(finalText)
+            recordRecognitionResult(text: finalText, sourceType: "voice")
             let autoCopy = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
             CrashLogger.log("[Recognize] Inserting text, autoCopyToClipboard=\(autoCopy)")
             textOutputService?.insertText(finalText, copyToClipboard: autoCopy)
@@ -309,12 +325,121 @@ final class AppState: ObservableObject {
 
     // MARK: - Recent Results
 
-    private func addToRecentResults(_ text: String) {
+    func recordRecognitionResult(text: String, sourceType: String = "voice") {
+        lastResult = text
+        addToRecentResults(text, sourceType: sourceType)
+    }
+
+    private func addToRecentResults(_ text: String, sourceType: String) {
         recentResults.insert(text, at: 0)
         if recentResults.count > 3 {
             recentResults.removeLast()
         }
-        HistoryStore.shared.insert(content: text)
+        HistoryStore.shared.insert(content: text, sourceType: sourceType)
+    }
+
+    // MARK: - File Transcription
+
+    func beginFileTranscription() -> String? {
+        if isFileTranscriptionInProgress {
+            return "已有文件转录任务正在进行"
+        }
+        if isRecordingTranscriptionInProgress {
+            return "录音中，请稍后或完成录音"
+        }
+        if state == .loading || !speechRecognizer.isReady {
+            return "语音模型加载中..."
+        }
+        guard state == .idle else {
+            return "语音输入正在进行中，请稍后再试"
+        }
+        isFileTranscriptionInProgress = true
+        return nil
+    }
+
+    func endFileTranscription() {
+        isFileTranscriptionInProgress = false
+    }
+
+    func makeFileTranscriptionService() -> FileTranscriptionService {
+        FileTranscriptionService(
+            speechRecognizer: speechRecognizer,
+            punctuationService: punctuationService
+        )
+    }
+
+    // MARK: - Recording Transcription
+
+    func beginRecordingTranscription() -> String? {
+        if isRecordingTranscriptionInProgress {
+            return "已有录音任务正在进行"
+        }
+        if isFileTranscriptionInProgress {
+            return "文件转录中，请稍后或取消转录"
+        }
+        if state == .loading {
+            return "语音模型加载中..."
+        }
+        guard state == .idle else {
+            return "语音输入正在进行中，请稍后再试"
+        }
+        isRecordingTranscriptionInProgress = true
+        return nil
+    }
+
+    func endRecordingTranscription() {
+        isRecordingTranscriptionInProgress = false
+    }
+
+    func makeRecordingStreamingRecognizer() -> StreamingSpeechRecognizerProtocol {
+        LocalStreamingSpeechRecognizer()
+    }
+
+    func finalSpeechRecognizerForRecordingTranscription() -> SpeechRecognizerProtocol {
+        speechRecognizer
+    }
+
+    func punctuationServiceForRecordingTranscription() -> PunctuationServiceProtocol? {
+        punctuationService
+    }
+
+    var hasTextInsertionTarget: Bool {
+        guard let app = lastTextInsertionTarget else { return false }
+        return !app.isTerminated
+    }
+
+    func captureCurrentTextInsertionTarget() {
+        rememberTextInsertionTarget(NSWorkspace.shared.frontmostApplication)
+    }
+
+    func activateTextInsertionTarget() -> Bool {
+        guard hasTextInsertionTarget, let app = lastTextInsertionTarget else {
+            return false
+        }
+        return app.activate(options: [.activateIgnoringOtherApps])
+    }
+
+    private func startApplicationFocusTracking() {
+        captureCurrentTextInsertionTarget()
+        guard workspaceActivationObserver == nil else { return }
+
+        workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else {
+                return
+            }
+            Task { @MainActor in
+                self?.rememberTextInsertionTarget(app)
+            }
+        }
+    }
+
+    private func rememberTextInsertionTarget(_ app: NSRunningApplication?) {
+        guard let app, app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        lastTextInsertionTarget = app
     }
 
     // MARK: - Recovery
@@ -347,8 +472,7 @@ final class AppState: ObservableObject {
             CrashLogger.log("[Recovery] Adding punctuation to: \(text)")
             let finalText = punctuationService?.addPunctuation(to: text) ?? text
             CrashLogger.log("[Recovery] Punctuation done: \(finalText)")
-            lastResult = finalText
-            addToRecentResults(finalText)
+            recordRecognitionResult(text: finalText, sourceType: "voice")
             let autoCopy = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
             textOutputService?.insertText(finalText, copyToClipboard: autoCopy)
             backup.deleteBackup()

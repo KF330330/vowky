@@ -40,8 +40,16 @@ final class PunctuationService: PunctuationServiceProtocol {
 
     func addPunctuation(to text: String) -> String {
         guard let wrapper = wrapper else { return text }
+        guard !Self.hasSentencePunctuation(text) else {
+            NSLog("[VowKy][Punctuation] skip existing punctuation: '\(text)'")
+            return text
+        }
         let result = wrapper.addPunct(text: text)
         NSLog("[VowKy][Punctuation] '\(text)' → '\(result)'")
         return result
+    }
+
+    private static func hasSentencePunctuation(_ text: String) -> Bool {
+        text.range(of: #"[，。！？；：,.!?;:]"#, options: .regularExpression) != nil
     }
 }

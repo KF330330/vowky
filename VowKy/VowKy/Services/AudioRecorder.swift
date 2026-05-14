@@ -12,6 +12,7 @@ final class AudioRecorder: AudioRecorderProtocol {
     var backupService: AudioBackupProtocol?
 
     private(set) var audioLevel: Float = 0
+    var onSamplesCaptured: (([Float]) -> Void)?
 
     private let targetSampleRate: Double = 16000
 
@@ -184,6 +185,7 @@ final class AudioRecorder: AudioRecorderProtocol {
 
         // Write to backup file for content protection
         backupService?.appendSamples(samples)
+        onSamplesCaptured?(samples)
 
         audioLevel = rms
     }

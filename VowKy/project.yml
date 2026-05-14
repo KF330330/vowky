@@ -47,6 +47,11 @@ targets:
         com.apple.security.cs.allow-unsigned-executable-memory: true
         com.apple.security.device.audio-input: true
     dependencies:
+      - target: VowKyTranscribe
+        embed: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
       - framework: Libraries/sherpa-onnx.xcframework
         embed: false
       - sdk: Accelerate.framework
@@ -67,3 +72,45 @@ targets:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/VowKy.app/Contents/MacOS/VowKy"
         GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: "M7T6PJ8YJZ"
+
+  VowKyTranscribe:
+    type: tool
+    platform: macOS
+    sources:
+      - path: VowKyTranscribe
+      - path: VowKy/SherpaOnnx/SherpaOnnx.swift
+      - path: VowKy/Services/CrashLogger.swift
+      - path: VowKy/Services/Protocols.swift
+      - path: VowKy/Services/SpeechRecognizer.swift
+      - path: VowKy/Services/PunctuationService.swift
+      - path: VowKy/Services/MediaAudioDecoder.swift
+      - path: VowKy/Services/FileTranscriptionService.swift
+      - path: VowKy/Services/TranscriptionOutputNamer.swift
+      - path: VowKy/Services/VowKyTranscribeCLI.swift
+    settings:
+      base:
+        PRODUCT_NAME: vowky-transcribe
+        SWIFT_OBJC_BRIDGING_HEADER: VowKy/SherpaOnnx/SherpaOnnx-Bridging-Header.h
+        OTHER_LDFLAGS:
+          - "-lc++"
+          - "-L$(PROJECT_DIR)/Libraries"
+          - "-lonnxruntime"
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/Libraries/sherpa-onnx.xcframework/macos-arm64_x86_64/Headers"
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: "M7T6PJ8YJZ"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: VowKyTranscribe.entitlements
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+    entitlements:
+      path: VowKyTranscribe.entitlements
+      properties:
+        com.apple.security.cs.allow-unsigned-executable-memory: true
+    dependencies:
+      - framework: Libraries/sherpa-onnx.xcframework
+        embed: false
+      - sdk: Accelerate.framework
+      - sdk: Foundation.framework
+      - sdk: AVFoundation.framework

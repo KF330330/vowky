@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
+import Sparkle
 
 // MARK: - Settings Window Controller
 
@@ -8,15 +9,20 @@ final class SettingsWindowController {
     static let shared = SettingsWindowController()
 
     private var window: NSWindow?
+    private weak var updater: SPUUpdater?
 
-    func showWindow() {
+    /// 由 MenuBarView 调用时传入 updater，让设置里的「自动检查更新」开关可以实时生效。
+    func showWindow(updater: SPUUpdater? = nil) {
+        if let updater {
+            self.updater = updater
+        }
         if let window = window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let settingsView = SettingsView()
+        let settingsView = SettingsView(updater: self.updater)
         let hostingController = NSHostingController(rootView: settingsView)
 
         let window = NSWindow(contentViewController: hostingController)
@@ -41,7 +47,25 @@ struct SettingsView: View {
     @State private var eventMonitor: Any?
     @State private var pendingModifierKeyCode: Int64?
     @State private var autoCopyToClipboard = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
+    @State private var automaticUpdateChecks: Bool = {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: VowKyApp.automaticUpdateChecksDefaultsKey) == nil {
+            return true
+        }
+        return defaults.bool(forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
+    }()
     @State private var permissionRefreshTimer: Timer?
+    @State private var installCodexSkill = true
+    @State private var installClaudeSkill = true
+    @State private var skillStatuses: [AISkillPlatform: AISkillPlatformStatus] = [:]
+    @State private var skillStatusMessage: String?
+
+    private let skillInstaller = AISkillInstallerService()
+    private weak var updater: SPUUpdater?
+
+    init(updater: SPUUpdater? = nil) {
+        self.updater = updater
+    }
 
     var body: some View {
         Form {
@@ -139,15 +163,64 @@ struct SettingsView: View {
                     .onChange(of: autoCopyToClipboard) { newValue in
                         UserDefaults.standard.set(newValue, forKey: "autoCopyToClipboard")
                     }
+                Toggle("自动检查更新（每天一次）", isOn: $automaticUpdateChecks)
+                    .onChange(of: automaticUpdateChecks) { newValue in
+                        UserDefaults.standard.set(newValue, forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
+                        updater?.automaticallyChecksForUpdates = newValue
+                    }
+            }
+
+            Section("AI Skills") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $installCodexSkill) {
+                        HStack {
+                            Text("Codex")
+                            Spacer()
+                            Text(skillStatusText(for: .codex))
+                                .foregroundColor(skillStatusColor(for: .codex))
+                        }
+                    }
+
+                    Toggle(isOn: $installClaudeSkill) {
+                        HStack {
+                            Text("Claude Code")
+                            Spacer()
+                            Text(skillStatusText(for: .claudeCode))
+                                .foregroundColor(skillStatusColor(for: .claudeCode))
+                        }
+                    }
+
+                    HStack {
+                        Button("安装/更新") {
+                            installSelectedSkills()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(selectedSkillPlatforms.isEmpty)
+
+                        Button("卸载") {
+                            uninstallSelectedSkills()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(selectedSkillPlatforms.isEmpty)
+                    }
+
+                    if let skillStatusMessage {
+                        Text(skillStatusMessage)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 380, height: 420)
+        .frame(width: 420, height: 560)
         .onAppear {
             isAccessibilityGranted = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
             hotkeyDisplay = HotkeyConfig.current.displayName
             isHoldMode = HotkeyConfig.current.isHoldMode
+            refreshSkillStatuses()
         }
         .onDisappear {
             stopRecordingHotkey()
@@ -260,6 +333,75 @@ struct SettingsView: View {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
+        }
+    }
+
+    // MARK: - AI Skills
+
+    private var selectedSkillPlatforms: Set<AISkillPlatform> {
+        var platforms = Set<AISkillPlatform>()
+        if installCodexSkill {
+            platforms.insert(.codex)
+        }
+        if installClaudeSkill {
+            platforms.insert(.claudeCode)
+        }
+        return platforms
+    }
+
+    private func refreshSkillStatuses() {
+        skillStatuses = Dictionary(
+            uniqueKeysWithValues: skillInstaller.statuses().map { ($0.platform, $0) }
+        )
+    }
+
+    private func installSelectedSkills() {
+        do {
+            let installed = try skillInstaller.install(platforms: selectedSkillPlatforms)
+            refreshSkillStatuses()
+            skillStatusMessage = "已安装/更新：\(installed.map(\.path).joined(separator: "，"))"
+        } catch {
+            refreshSkillStatuses()
+            skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func uninstallSelectedSkills() {
+        do {
+            let result = try skillInstaller.uninstall(platforms: selectedSkillPlatforms)
+            refreshSkillStatuses()
+            if result.removedCompletedJobCaches > 0 {
+                skillStatusMessage = "已卸载所选 AI Skills，已清理 \(result.removedCompletedJobCaches) 个已完成任务缓存"
+            } else {
+                skillStatusMessage = "已卸载所选 AI Skills"
+            }
+        } catch {
+            refreshSkillStatuses()
+            skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func skillStatusText(for platform: AISkillPlatform) -> String {
+        guard let status = skillStatuses[platform] else { return "检查中" }
+        switch status.state {
+        case .notInstalled:
+            return "未安装"
+        case .installed(let version):
+            return version.map { "已安装 \($0)" } ?? "已安装"
+        case .blockedByUnmanagedSkill:
+            return "存在同名 skill"
+        }
+    }
+
+    private func skillStatusColor(for platform: AISkillPlatform) -> Color {
+        guard let status = skillStatuses[platform] else { return .secondary }
+        switch status.state {
+        case .notInstalled:
+            return .secondary
+        case .installed:
+            return .green
+        case .blockedByUnmanagedSkill:
+            return .orange
         }
     }
 }

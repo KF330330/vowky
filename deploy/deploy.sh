@@ -20,11 +20,24 @@ VERSION="$(get_version)"
 BUILD="$(get_build)"
 DMG_NAME="VowKy-${VERSION}.dmg"
 DMG_PATH="${BUILD_DIR}/dmg/${DMG_NAME}"
+RELEASE_NOTES_PATH="${VOWKY_DIR}/VowKy/Resources/ReleaseNotes/${VERSION}.md"
 
 if [ ! -f "${DMG_PATH}" ]; then
     log_error "DMG 不存在: ${DMG_PATH}"
     exit 1
 fi
+
+# 版本说明强制要求存在且非空：appcast 与 GitHub Release 都需要它
+if [ ! -f "${RELEASE_NOTES_PATH}" ]; then
+    log_error "缺少版本说明文件: ${RELEASE_NOTES_PATH}"
+    log_error "每个版本都必须有对应的 release notes（用户在 Sparkle 弹窗里能看到）"
+    exit 1
+fi
+if [ ! -s "${RELEASE_NOTES_PATH}" ]; then
+    log_error "版本说明文件为空: ${RELEASE_NOTES_PATH}"
+    exit 1
+fi
+log_ok "Release notes: ${RELEASE_NOTES_PATH}"
 
 # ============================================================
 # 2. 上传网站（替换下载链接为带版本号的文件名）
@@ -115,6 +128,9 @@ if [ -n "$SPARKLE_SIGNATURE" ]; then
     EDDSA_ATTR=" ${EDDSA_SIG}"
 fi
 
+# 把 release notes 原文嵌入 appcast description（CDATA 包裹避免 XML 实体转义问题）
+RELEASE_NOTES_CONTENT="$(cat "${RELEASE_NOTES_PATH}")"
+
 # 生成 appcast.xml
 APPCAST_PATH="${BUILD_DIR}/appcast.xml"
 cat > "${APPCAST_PATH}" <<APPCAST_EOF
@@ -131,6 +147,9 @@ cat > "${APPCAST_PATH}" <<APPCAST_EOF
       <sparkle:version>${BUILD}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+${RELEASE_NOTES_CONTENT}
+]]></description>
       <enclosure url="${DOWNLOAD_URL}" length="${DMG_SIZE_BYTES}" type="application/octet-stream"${EDDSA_ATTR} />
     </item>
   </channel>
@@ -185,7 +204,7 @@ if gh release view "v${VERSION}" &>/dev/null; then
 else
     gh release create "v${VERSION}" "${DMG_PATH}" "${DMG_LATEST}" \
         --title "VowKy ${VERSION}" \
-        --notes "VowKy ${VERSION} (build ${BUILD})" \
+        --notes-file "${RELEASE_NOTES_PATH}" \
         --latest
 fi
 log_ok "GitHub Release 完成"

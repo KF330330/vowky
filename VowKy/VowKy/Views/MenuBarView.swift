@@ -5,11 +5,13 @@ import Sparkle
 struct MenuBarView: View {
     @ObservedObject var appState: AppState
     private let updater: SPUUpdater
+    private let updateCoordinator: UpdateReminderCoordinator
     @ObservedObject private var updateViewModel: CheckForUpdatesViewModel
 
-    init(appState: AppState, updater: SPUUpdater) {
+    init(appState: AppState, updater: SPUUpdater, updateCoordinator: UpdateReminderCoordinator) {
         self.appState = appState
         self.updater = updater
+        self.updateCoordinator = updateCoordinator
         self.updateViewModel = CheckForUpdatesViewModel(updater: updater)
     }
 
@@ -83,9 +85,37 @@ struct MenuBarView: View {
 
             Divider()
 
+            // Recording
+            Button {
+                RecordingTranscriptionWindowController.shared.showWindow(appState: appState)
+            } label: {
+                HStack {
+                    Image(systemName: "record.circle")
+                    Text("录音")
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .disabled(appState.state != .idle || appState.isFileTranscriptionInProgress || appState.isRecordingTranscriptionInProgress)
+
+            // File transcription
+            Button {
+                FileTranscriptionWindowController.shared.showWindow(appState: appState)
+            } label: {
+                HStack {
+                    Image(systemName: "waveform")
+                    Text("转录文件...")
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .disabled(appState.state != .idle || appState.isFileTranscriptionInProgress || appState.isRecordingTranscriptionInProgress)
+
             // Check for Updates
             Button {
-                updater.checkForUpdates()
+                updateCoordinator.userInitiatedCheck(updater: updater)
             } label: {
                 HStack {
                     Image(systemName: "arrow.triangle.2.circlepath")
@@ -97,9 +127,22 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
             .disabled(!updateViewModel.canCheckForUpdates)
 
+            // What's New
+            Button {
+                WhatsNewWindowController.shared.showWindow()
+            } label: {
+                HStack {
+                    Image(systemName: "sparkles")
+                    Text("What's New")
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+
             // Settings
             Button {
-                SettingsWindowController.shared.showWindow()
+                SettingsWindowController.shared.showWindow(updater: updater)
             } label: {
                 HStack {
                     Image(systemName: "gear")
@@ -130,6 +173,12 @@ struct MenuBarView: View {
     // MARK: - Computed Properties
 
     private var statusText: String {
+        if appState.isRecordingTranscriptionInProgress {
+            return "Recording..."
+        }
+        if appState.isFileTranscriptionInProgress {
+            return "Transcribing file..."
+        }
         switch appState.state {
         case .loading:
             return "Loading model..."
@@ -148,6 +197,12 @@ struct MenuBarView: View {
     }
 
     private var statusColor: Color {
+        if appState.isRecordingTranscriptionInProgress {
+            return .red
+        }
+        if appState.isFileTranscriptionInProgress {
+            return .yellow
+        }
         switch appState.state {
         case .loading:
             return .orange

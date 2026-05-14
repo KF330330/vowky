@@ -5,6 +5,9 @@ import Sparkle
 struct VowKyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    static let automaticUpdateChecksDefaultsKey = "automaticUpdateChecksEnabled"
+
+    private let updateCoordinator = UpdateReminderCoordinator()
     private let updaterController: SPUStandardUpdaterController
 
     @StateObject private var appState = AppState(
@@ -16,14 +19,31 @@ struct VowKyApp: App {
     )
 
     init() {
-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
-        updaterController.updater.automaticallyChecksForUpdates = true
-        updaterController.updater.updateCheckInterval = 14400 // 每4小时检查一次
+        let coordinator = updateCoordinator
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: coordinator,
+            userDriverDelegate: nil
+        )
+
+        // 默认开启自动检查；用户在 Settings 关闭后从 UserDefaults 读取
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Self.automaticUpdateChecksDefaultsKey) == nil {
+            defaults.set(true, forKey: Self.automaticUpdateChecksDefaultsKey)
+        }
+        let autoEnabled = defaults.bool(forKey: Self.automaticUpdateChecksDefaultsKey)
+
+        updaterController.updater.automaticallyChecksForUpdates = autoEnabled
+        updaterController.updater.updateCheckInterval = 86400 // 每天检查一次
     }
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView(appState: appState, updater: updaterController.updater)
+            MenuBarView(
+                appState: appState,
+                updater: updaterController.updater,
+                updateCoordinator: updateCoordinator
+            )
         } label: {
             Image(systemName: menuBarIconName)
                 .task {
@@ -34,6 +54,9 @@ struct VowKyApp: App {
                     }
                     if needsOnboarding {
                         checkOnboarding()
+                    } else {
+                        // 仅在已完成 onboarding 的用户上触发新版功能弹窗，避免新用户被两个窗口同时打扰
+                        WhatsNewWindowController.presentIfNeeded()
                     }
                     AnalyticsService.shared.trackInstall()
                     AnalyticsService.shared.trackDAU()
@@ -51,6 +74,9 @@ struct VowKyApp: App {
     }
 
     private var menuBarIconName: String {
+        if appState.isRecordingTranscriptionInProgress {
+            return "mic.fill"
+        }
         switch appState.state {
         case .recording:
             return "mic.fill"

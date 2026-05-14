@@ -280,4 +280,39 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(mockRecorder.startCallCount, 2)
         XCTAssertEqual(mockRecorder.stopCallCount, 2)
     }
+
+    // MARK: - File transcription blocks hotkey recognition
+
+    func test17_fileTranscriptionInProgressBlocksHotkeyRecording() {
+        XCTAssertNil(appState.beginFileTranscription())
+
+        appState.handleHotkeyToggle()
+
+        XCTAssertEqual(appState.state, .idle)
+        XCTAssertEqual(appState.errorMessage, "文件转录中，请稍后或取消转录")
+        XCTAssertEqual(mockRecorder.startCallCount, 0)
+
+        appState.endFileTranscription()
+        appState.handleHotkeyToggle()
+
+        XCTAssertEqual(appState.state, .recording)
+        XCTAssertEqual(mockRecorder.startCallCount, 1)
+    }
+
+    func test18_recordingTranscriptionInProgressBlocksHotkeyAndFileTranscription() {
+        XCTAssertNil(appState.beginRecordingTranscription())
+
+        appState.handleHotkeyToggle()
+
+        XCTAssertEqual(appState.state, .idle)
+        XCTAssertEqual(appState.errorMessage, "录音中，请稍后或完成录音")
+        XCTAssertEqual(mockRecorder.startCallCount, 0)
+        XCTAssertEqual(appState.beginFileTranscription(), "录音中，请稍后或完成录音")
+
+        appState.endRecordingTranscription()
+        appState.handleHotkeyToggle()
+
+        XCTAssertEqual(appState.state, .recording)
+        XCTAssertEqual(mockRecorder.startCallCount, 1)
+    }
 }
