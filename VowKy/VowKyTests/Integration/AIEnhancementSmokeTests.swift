@@ -18,16 +18,11 @@ final class AIEnhancementSmokeTests: XCTestCase {
         var config = AIProviderFactory.load()
         // CLI 启动 + LLM 生成偶尔超 60s，拉到 180s 兜底
         config.timeoutSeconds = max(config.timeoutSeconds, 180)
-        print("[smoke] provider=\(config.kind.rawValue), timeout=\(config.timeoutSeconds)s")
+        let firstKind = config.enabledKindsInPriorityOrder.first ?? .openAICompatible
+        print("[smoke] firstEnabledProvider=\(firstKind.rawValue), timeout=\(config.timeoutSeconds)s")
 
-        let provider: AIProvider
-        do {
-            provider = try AIProviderFactory.make(config)
-        } catch {
-            throw XCTSkip("无法构造 provider：\(error.localizedDescription)")
-        }
-
-        let service = TranscriptionEnhancementService()
+        let provider = AIProviderFactory.makeProvider(kind: firstKind, config: config)
+        let service = TranscriptionEnhancementService(provider: provider)
         let input = EnhancementInput(
             rawText: rawText,
             audioURL: nil,
@@ -39,7 +34,6 @@ final class AIEnhancementSmokeTests: XCTestCase {
         let started = Date()
         let result = await service.enhance(
             input: input,
-            provider: provider,
             markdownPath: outputURL.path
         ) { progress in
             print("[smoke] \(progress.task.rawValue) → \(progress.status)")

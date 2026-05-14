@@ -681,19 +681,6 @@ final class FileTranscriptionViewModel: ObservableObject {
 
     /// 对单个已转写完成的 job 跑 AI 后处理。在 transcriptionTask 内串行调用。
     func runEnhancement(for jobID: UUID, rawText: String, audioURL: URL) async {
-        let provider: AIProvider
-        do {
-            provider = try AIProviderFactory.make(aiConfigLoader())
-        } catch {
-            let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            updateJob(id: jobID) { job in
-                job.titleStatus = .failed(msg)
-                job.summaryStatus = .failed(msg)
-                job.outlineStatus = .failed(msg)
-            }
-            return
-        }
-
         updateJob(id: jobID) { job in
             job.enhancementInFlight = true
             job.titleStatus = .running
@@ -718,7 +705,6 @@ final class FileTranscriptionViewModel: ObservableObject {
 
         let result = await enhancementService.enhance(
             input: input,
-            provider: provider,
             markdownPath: markdownPath,
             logFilePath: logFilePath
         ) { [weak self] progress in

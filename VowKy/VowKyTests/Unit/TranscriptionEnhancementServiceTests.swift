@@ -116,10 +116,9 @@ final class TranscriptionEnhancementServiceTests: XCTestCase {
         ))
 
         let collector = await ProgressCollector()
-        let service = TranscriptionEnhancementService()
+        let service = TranscriptionEnhancementService(provider: mock)
         let result = await service.enhance(
             input: makeInput(),
-            provider: mock,
             markdownPath: "/tmp/doc.md",
             progress: { p in collector.append(p) }
         )
@@ -142,10 +141,9 @@ final class TranscriptionEnhancementServiceTests: XCTestCase {
         ))
 
         let collector = await ProgressCollector()
-        let service = TranscriptionEnhancementService()
+        let service = TranscriptionEnhancementService(provider: mock)
         let result = await service.enhance(
             input: makeInput("短文。"),
-            provider: mock,
             markdownPath: "/tmp/x.md",
             progress: { p in collector.append(p) }
         )
@@ -167,10 +165,9 @@ final class TranscriptionEnhancementServiceTests: XCTestCase {
         ))
 
         let collector = await ProgressCollector()
-        let service = TranscriptionEnhancementService()
+        let service = TranscriptionEnhancementService(provider: mock)
         let result = await service.enhance(
             input: makeInput("正文。"),
-            provider: mock,
             markdownPath: "/tmp/x.md",
             progress: { p in collector.append(p) }
         )
@@ -193,10 +190,9 @@ final class TranscriptionEnhancementServiceTests: XCTestCase {
         ))
 
         let collector = await ProgressCollector()
-        let service = TranscriptionEnhancementService()
+        let service = TranscriptionEnhancementService(provider: mock)
         let result = await service.enhance(
             input: makeInput(),
-            provider: mock,
             markdownPath: "/tmp/x.md",
             progress: { p in collector.append(p) }
         )
@@ -219,12 +215,11 @@ final class TranscriptionEnhancementServiceTests: XCTestCase {
             outlineDelayMs: 150
         ))
 
-        let service = TranscriptionEnhancementService()
+        let service = TranscriptionEnhancementService(provider: mock)
         let collector = await ProgressCollector()
         let start = Date()
         _ = await service.enhance(
             input: makeInput(),
-            provider: mock,
             markdownPath: "/tmp/x.md",
             progress: { p in collector.append(p) }
         )
@@ -246,10 +241,9 @@ final class TranscriptionEnhancementServiceTests: XCTestCase {
         ))
 
         let collector = await ProgressCollector()
-        let service = TranscriptionEnhancementService()
+        let service = TranscriptionEnhancementService(provider: mock)
         _ = await service.enhance(
             input: makeInput(),
-            provider: mock,
             markdownPath: "/tmp/x.md",
             progress: { p in collector.append(p) }
         )

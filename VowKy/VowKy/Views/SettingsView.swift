@@ -68,7 +68,8 @@ struct SettingsView: View {
     // AI 后处理
     @State private var aiEnabled: Bool
     @State private var aiAutoTrigger: Bool
-    @State private var aiProviderKindRaw: String
+    @State private var providerEntries: [ProviderPriorityEntry]
+    @State private var selectedProviderIndex: Int = 0
     @State private var openAIBaseURL: String
     @State private var openAIApiKey: String
     @State private var openAIModel: String
@@ -86,7 +87,7 @@ struct SettingsView: View {
         let config = AIProviderFactory.load()
         _aiEnabled        = State(initialValue: config.enabled)
         _aiAutoTrigger    = State(initialValue: config.autoTrigger)
-        _aiProviderKindRaw = State(initialValue: config.kind.rawValue)
+        _providerEntries  = State(initialValue: config.providers)
         _openAIBaseURL    = State(initialValue: config.openAI.baseURL)
         _openAIApiKey     = State(initialValue: config.openAI.apiKey)
         _openAIModel      = State(initialValue: config.openAI.model)
@@ -239,39 +240,19 @@ struct SettingsView: View {
                     Toggle("转写完成后自动触发", isOn: $aiAutoTrigger)
                         .onChange(of: aiAutoTrigger) { _ in saveAIConfig() }
 
-                    Picker("Provider", selection: $aiProviderKindRaw) {
-                        ForEach(AIProviderKind.allCases, id: \.rawValue) { kind in
-                            Text(kind.displayName).tag(kind.rawValue)
+                    Text("Provider 优先级（前面的不可用时自动尝试后面的）")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    VStack(spacing: 4) {
+                        ForEach(providerEntries.indices, id: \.self) { idx in
+                            providerPriorityRow(index: idx)
                         }
                     }
-                    .onChange(of: aiProviderKindRaw) { _ in
-                        aiTestResult = nil
-                        saveAIConfig()
-                    }
 
-                    if currentProviderKind == .openAICompatible {
-                        TextField("Base URL", text: $openAIBaseURL)
-                            .onChange(of: openAIBaseURL) { _ in saveAIConfig() }
-                        SecureField("API Key", text: $openAIApiKey)
-                            .onChange(of: openAIApiKey) { _ in saveAIConfig() }
-                        TextField("Model", text: $openAIModel)
-                            .onChange(of: openAIModel) { _ in saveAIConfig() }
-                    } else if currentProviderKind == .codex {
-                        TextField("codex 绝对路径（留空自动探测）", text: $codexBinaryPath)
-                            .onChange(of: codexBinaryPath) { _ in saveAIConfig() }
-                        Text("提示：常见路径包括 /opt/homebrew/bin/codex、~/.cargo/bin/codex。")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        enhanceSkillWarning(for: .codex)
-                        skillStatusMessageView
-                    } else {
-                        TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
-                            .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
-                        Text("提示：常见路径包括 /opt/homebrew/bin/claude、~/.npm-global/bin/claude。")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        enhanceSkillWarning(for: .claudeCode)
-                        skillStatusMessageView
+                    if let kind = currentSelectedProviderKind {
+                        Divider()
+                        providerConfigForm(for: kind)
                     }
 
                     Stepper("调用超时：\(aiTimeoutSeconds) 秒", value: $aiTimeoutSeconds, in: 30...300, step: 10)
@@ -570,15 +551,16 @@ struct SettingsView: View {
 
     // MARK: - AI 后处理
 
-    private var currentProviderKind: AIProviderKind {
-        AIProviderKind(rawValue: aiProviderKindRaw) ?? .openAICompatible
+    private var currentSelectedProviderKind: AIProviderKind? {
+        guard providerEntries.indices.contains(selectedProviderIndex) else { return nil }
+        return providerEntries[selectedProviderIndex].kind
     }
 
-    private func saveAIConfig() {
-        let config = AIProviderConfig(
+    private func buildAIConfig() -> AIProviderConfig {
+        AIProviderConfig(
             enabled: aiEnabled,
             autoTrigger: aiAutoTrigger,
-            kind: currentProviderKind,
+            providers: providerEntries,
             openAI: OpenAICompatibleConfig(
                 baseURL: openAIBaseURL,
                 apiKey: openAIApiKey,
@@ -588,7 +570,103 @@ struct SettingsView: View {
             claude: CLIConfig(binaryPath: claudeBinaryPath),
             timeoutSeconds: aiTimeoutSeconds
         )
-        AIProviderFactory.save(config)
+    }
+
+    private func saveAIConfig() {
+        AIProviderFactory.save(buildAIConfig())
+    }
+
+    private func moveProvider(at idx: Int, delta: Int) {
+        let newIdx = idx + delta
+        guard providerEntries.indices.contains(idx),
+              providerEntries.indices.contains(newIdx) else { return }
+        providerEntries.swapAt(idx, newIdx)
+        if selectedProviderIndex == idx {
+            selectedProviderIndex = newIdx
+        } else if selectedProviderIndex == newIdx {
+            selectedProviderIndex = idx
+        }
+        aiTestResult = nil
+        saveAIConfig()
+    }
+
+    @ViewBuilder
+    private func providerPriorityRow(index idx: Int) -> some View {
+        let entry = providerEntries[idx]
+        let isSelected = idx == selectedProviderIndex
+        HStack(spacing: 8) {
+            Toggle("", isOn: Binding(
+                get: { providerEntries[idx].enabled },
+                set: { newValue in
+                    providerEntries[idx].enabled = newValue
+                    saveAIConfig()
+                }
+            ))
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+
+            Text("\(idx + 1).")
+                .font(.caption.monospacedDigit())
+                .foregroundColor(.secondary)
+            Text(entry.kind.displayName)
+                .foregroundColor(entry.enabled ? .primary : .secondary)
+            Spacer()
+            Button {
+                moveProvider(at: idx, delta: -1)
+            } label: {
+                Image(systemName: "arrow.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(idx == 0)
+
+            Button {
+                moveProvider(at: idx, delta: 1)
+            } label: {
+                Image(systemName: "arrow.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(idx == providerEntries.count - 1)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedProviderIndex = idx
+            aiTestResult = nil
+        }
+    }
+
+    @ViewBuilder
+    private func providerConfigForm(for kind: AIProviderKind) -> some View {
+        switch kind {
+        case .openAICompatible:
+            TextField("Base URL", text: $openAIBaseURL)
+                .onChange(of: openAIBaseURL) { _ in saveAIConfig() }
+            SecureField("API Key", text: $openAIApiKey)
+                .onChange(of: openAIApiKey) { _ in saveAIConfig() }
+            TextField("Model", text: $openAIModel)
+                .onChange(of: openAIModel) { _ in saveAIConfig() }
+        case .codex:
+            TextField("codex 绝对路径（留空自动探测）", text: $codexBinaryPath)
+                .onChange(of: codexBinaryPath) { _ in saveAIConfig() }
+            Text("提示：常见路径包括 /opt/homebrew/bin/codex、~/.cargo/bin/codex。")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            enhanceSkillWarning(for: .codex)
+            skillStatusMessageView
+        case .claudeCode:
+            TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
+                .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
+            Text("提示：常见路径包括 /opt/homebrew/bin/claude、~/.npm-global/bin/claude。")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            enhanceSkillWarning(for: .claudeCode)
+            skillStatusMessageView
+        }
     }
 
     @MainActor
@@ -597,35 +675,32 @@ struct SettingsView: View {
         aiTestResult = nil
         defer { aiTestInProgress = false }
 
-        let provider: AIProvider
-        do {
-            let config = AIProviderConfig(
-                enabled: aiEnabled,
-                autoTrigger: aiAutoTrigger,
-                kind: currentProviderKind,
-                openAI: OpenAICompatibleConfig(
-                    baseURL: openAIBaseURL,
-                    apiKey: openAIApiKey,
-                    model: openAIModel
-                ),
-                codex: CLIConfig(binaryPath: codexBinaryPath),
-                claude: CLIConfig(binaryPath: claudeBinaryPath),
-                timeoutSeconds: aiTimeoutSeconds
-            )
-            provider = try AIProviderFactory.make(config)
-        } catch {
-            aiTestResult = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            return
+        let config = buildAIConfig()
+        let checker = ProviderUsabilityChecker()
+
+        var lines: [String] = []
+        for entry in config.providers where entry.enabled {
+            if let reason = checker.unusableReason(for: entry.kind, config: config) {
+                lines.append("✗ \(entry.kind.displayName)：\(reason.errorDescription ?? "不可用")")
+                continue
+            }
+            let provider = AIProviderFactory.makeProvider(kind: entry.kind, config: config)
+            do {
+                let probeStarted = Date()
+                let reply = try await provider.probe()
+                let elapsedMs = Int(Date().timeIntervalSince(probeStarted) * 1000)
+                let preview = reply.prefix(40)
+                lines.append("✓ \(entry.kind.displayName)（\(elapsedMs) ms）：\(preview)")
+            } catch {
+                let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                lines.append("✗ \(entry.kind.displayName)：\(msg)")
+            }
         }
 
-        do {
-            let probeStarted = Date()
-            let reply = try await provider.probe()
-            let elapsedMs = Int(Date().timeIntervalSince(probeStarted) * 1000)
-            let preview = reply.prefix(40)
-            aiTestResult = "✓ 连接成功（\(elapsedMs) ms）：\(preview)"
-        } catch {
-            aiTestResult = "✗ \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+        if config.providers.allSatisfy({ !$0.enabled }) {
+            lines.append("未启用任何 provider")
         }
+
+        aiTestResult = lines.joined(separator: "\n")
     }
 }

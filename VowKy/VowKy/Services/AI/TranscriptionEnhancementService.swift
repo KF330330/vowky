@@ -35,24 +35,21 @@ struct EnhancementResult: Equatable {
 protocol TranscriptionEnhancing {
     func enhance(
         input: EnhancementInput,
-        provider: AIProvider,
         markdownPath: String,
         logFilePath: String?,
         progress: @escaping @MainActor (EnhancementProgress) -> Void
     ) async -> EnhancementResult
 }
 
-// 旧调用方（不传 logFilePath）的默认实现：转发到 4 参数版本，logFilePath=nil。
+// 旧调用方（不传 logFilePath）的默认实现：转发到带 logFilePath 的版本，传 nil。
 extension TranscriptionEnhancing {
     func enhance(
         input: EnhancementInput,
-        provider: AIProvider,
         markdownPath: String,
         progress: @escaping @MainActor (EnhancementProgress) -> Void
     ) async -> EnhancementResult {
         await enhance(
             input: input,
-            provider: provider,
             markdownPath: markdownPath,
             logFilePath: nil,
             progress: progress
@@ -64,15 +61,19 @@ extension TranscriptionEnhancing {
 
 final class TranscriptionEnhancementService: TranscriptionEnhancing {
 
-    init() {}
+    private let provider: AIProvider
+
+    init(provider: AIProvider) {
+        self.provider = provider
+    }
 
     func enhance(
         input: EnhancementInput,
-        provider: AIProvider,
         markdownPath: String,
         logFilePath: String?,
         progress: @escaping @MainActor (EnhancementProgress) -> Void
     ) async -> EnhancementResult {
+        let provider = self.provider
 
         let logger: AIEnhancementLogger?
         if let path = logFilePath, !path.isEmpty {

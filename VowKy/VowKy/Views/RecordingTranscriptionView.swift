@@ -451,17 +451,6 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private func triggerEnhancement(rawText: String) {
         guard let preparedOutput = activePreparedOutput ?? lastPreparedFromOutput() else { return }
 
-        let config = aiConfigLoader()
-        let provider: AIProvider
-        do {
-            provider = try AIProviderFactory.make(config)
-        } catch {
-            titleStatus = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
-            summaryStatus = titleStatus
-            outlineStatus = titleStatus
-            return
-        }
-
         enhancementInFlight = true
         titleStatus = .running
         summaryStatus = .running
@@ -486,7 +475,6 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         enhancementTask = Task { @MainActor [weak self] in
             let result = await service.enhance(
                 input: input,
-                provider: provider,
                 markdownPath: markdownPath,
                 logFilePath: logURL.path
             ) { progress in

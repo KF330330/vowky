@@ -6,6 +6,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
 
     private let platform: AISkillPlatform
     private let userBinaryPath: String
+    private let providerLabel: String
     private let timeoutSeconds: Int
     private let fileManager: FileManager
     private let homeDirectory: URL
@@ -15,6 +16,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
     init(
         platform: AISkillPlatform,
         userBinaryPath: String,
+        providerLabel: String,
         timeoutSeconds: Int = 600,
         fileManager: FileManager = .default,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
@@ -23,6 +25,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
     ) {
         self.platform = platform
         self.userBinaryPath = userBinaryPath
+        self.providerLabel = providerLabel
         self.timeoutSeconds = max(60, timeoutSeconds)
         self.fileManager = fileManager
         self.homeDirectory = homeDirectory
@@ -32,7 +35,6 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
 
     func enhance(
         input: EnhancementInput,
-        provider: AIProvider,
         markdownPath: String,
         logFilePath: String?,
         progress: @escaping @MainActor (EnhancementProgress) -> Void
@@ -47,7 +49,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
         let skillFile = skillRoot.appendingPathComponent("SKILL.md")
         guard fileManager.fileExists(atPath: skillFile.path) else {
             let msg = "transcript-enhance skill 未安装（\(skillFile.path)），请到设置安装。"
-            return await failAll(input: input, provider: provider, markdownPath: markdownPath, message: msg, progress: progress)
+            return await failAll(input: input, markdownPath: markdownPath, message: msg, progress: progress)
         }
 
         // 写 raw text 到 /tmp/vowky-input-<uuid>.txt
@@ -56,7 +58,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             try input.rawText.write(to: inputFile, atomically: true, encoding: .utf8)
         } catch {
             let msg = "写入 skill 输入文件失败：\(error.localizedDescription)"
-            return await failAll(input: input, provider: provider, markdownPath: markdownPath, message: msg, progress: progress)
+            return await failAll(input: input, markdownPath: markdownPath, message: msg, progress: progress)
         }
         defer { try? fileManager.removeItem(at: inputFile) }
 
@@ -73,7 +75,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             binary = try resolveBinaryPath()
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            return await failAll(input: input, provider: provider, markdownPath: markdownPath, message: msg, progress: progress)
+            return await failAll(input: input, markdownPath: markdownPath, message: msg, progress: progress)
         }
 
         let prompt = buildPrompt(
@@ -94,14 +96,14 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
 
         // 写 log 头（CLI 调用结果记录）
         let logger: AIEnhancementLogger? = (logFilePath.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }).map { AIEnhancementLogger(url: $0) }
-        logger?.appendHeader(input: input, provider: provider.displayName, markdownPath: markdownPath)
+        logger?.appendHeader(input: input, provider: providerLabel, markdownPath: markdownPath)
         let cliElapsed = Date().timeIntervalSince(cliStarted)
         let logRequest = AIRequest(systemPrompt: "", userPrompt: prompt, responseFormat: .text, temperature: 0)
         switch runResult {
         case .success(let stdout):
             logger?.append(
                 task: "skill.transcript-enhance",
-                provider: provider.displayName,
+                provider: providerLabel,
                 request: logRequest,
                 response: stdout,
                 error: nil,
@@ -111,21 +113,21 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             let msg = (err as? LocalizedError)?.errorDescription ?? err.localizedDescription
             logger?.append(
                 task: "skill.transcript-enhance",
-                provider: provider.displayName,
+                provider: providerLabel,
                 request: logRequest,
                 response: nil,
                 error: msg,
                 elapsed: cliElapsed
             )
             logger?.appendFooter(titleOK: false, summaryOK: false, outlineOK: false, warnings: [msg])
-            return await failAll(input: input, provider: provider, markdownPath: markdownPath, message: "skill 调用失败：\(msg)", progress: progress)
+            return await failAll(input: input, markdownPath: markdownPath, message: "skill 调用失败：\(msg)", progress: progress)
         }
 
         // 读最终 .md
         guard let markdownContent = try? String(contentsOf: outputURL, encoding: .utf8), !markdownContent.isEmpty else {
             let msg = "skill 调用结束但未生成 .md 输出（\(outputURL.path)）"
             logger?.appendFooter(titleOK: false, summaryOK: false, outlineOK: false, warnings: [msg])
-            return await failAll(input: input, provider: provider, markdownPath: markdownPath, message: msg, progress: progress)
+            return await failAll(input: input, markdownPath: markdownPath, message: msg, progress: progress)
         }
 
         let parsed = parseFrontmatter(markdownContent)
@@ -144,7 +146,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             markdownPath: markdownPath,
             generatedAt: input.startedAt,
             durationSeconds: input.durationSeconds,
-            provider: "skill+\(provider.displayName)",
+            provider: "skill+\(providerLabel)",
             sourceType: input.sourceType,
             aiEnhancementSucceeded: true,
             warnings: []
@@ -359,7 +361,6 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
     @MainActor
     private func failAll(
         input: EnhancementInput,
-        provider: AIProvider,
         markdownPath: String,
         message: String,
         progress: @escaping @MainActor (EnhancementProgress) -> Void
@@ -377,7 +378,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             markdownPath: markdownPath,
             generatedAt: input.startedAt,
             durationSeconds: input.durationSeconds,
-            provider: "skill+\(provider.displayName)",
+            provider: "skill+\(providerLabel)",
             sourceType: input.sourceType,
             aiEnhancementSucceeded: false,
             warnings: [message]
