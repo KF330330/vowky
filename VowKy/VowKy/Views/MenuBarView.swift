@@ -127,19 +127,6 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
             .disabled(!updateViewModel.canCheckForUpdates)
 
-            // What's New
-            Button {
-                WhatsNewWindowController.shared.showWindow()
-            } label: {
-                HStack {
-                    Image(systemName: "sparkles")
-                    Text("What's New")
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-
             // Settings
             Button {
                 SettingsWindowController.shared.showWindow(updater: updater)

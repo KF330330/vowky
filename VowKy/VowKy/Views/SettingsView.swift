@@ -163,7 +163,7 @@ struct SettingsView: View {
                     .onChange(of: autoCopyToClipboard) { newValue in
                         UserDefaults.standard.set(newValue, forKey: "autoCopyToClipboard")
                     }
-                Toggle("自动检查更新（每天一次）", isOn: $automaticUpdateChecks)
+                Toggle("自动检查更新", isOn: $automaticUpdateChecks)
                     .onChange(of: automaticUpdateChecks) { newValue in
                         UserDefaults.standard.set(newValue, forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
                         updater?.automaticallyChecksForUpdates = newValue
