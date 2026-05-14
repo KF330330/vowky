@@ -179,9 +179,9 @@ final class TranscriptionEnhancementServiceTests: XCTestCase {
         XCTAssertFalse(result.summarySucceeded)
         XCTAssertFalse(result.outlineSucceeded)
         XCTAssertFalse(result.metadata.aiEnhancementSucceeded)
-        // 仍然产出 markdown，body 是原文
+        // 仍然产出 markdown，body 是原文。ai_enhancement 字段已从 frontmatter 移除。
         XCTAssertTrue(result.fullMarkdownDocument.contains("正文。"))
-        XCTAssertTrue(result.fullMarkdownDocument.contains("ai_enhancement: false"))
+        XCTAssertFalse(result.fullMarkdownDocument.contains("ai_enhancement"))
         XCTAssertGreaterThanOrEqual(result.warnings.count, 3)
     }
 

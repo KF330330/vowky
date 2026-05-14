@@ -711,11 +711,16 @@ final class FileTranscriptionViewModel: ObservableObject {
         // frontmatter 里的 markdown_path 用实际写盘路径；尚未写盘时退到空字符串
         let mdURL = jobs.first(where: { $0.id == jobID })?.markdownURL
         let markdownPath = mdURL?.path ?? ""
+        // 同目录写 .ai-log.txt（与 .md 同 basename）
+        let logFilePath = mdURL.map {
+            $0.deletingPathExtension().appendingPathExtension("ai-log.txt").path
+        }
 
         let result = await enhancementService.enhance(
             input: input,
             provider: provider,
-            markdownPath: markdownPath
+            markdownPath: markdownPath,
+            logFilePath: logFilePath
         ) { [weak self] progress in
             Task { @MainActor in
                 self?.apply(enhancementProgress: progress, to: jobID)

@@ -477,13 +477,18 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         )
         let markdownPath = preparedOutput.textURL.path
         let textURL = preparedOutput.textURL
+        // 同目录写 .ai-log.txt，方便排查 AI prompt / response
+        let logURL = preparedOutput.textURL
+            .deletingPathExtension()
+            .appendingPathExtension("ai-log.txt")
         let service = enhancementService
 
         enhancementTask = Task { @MainActor [weak self] in
             let result = await service.enhance(
                 input: input,
                 provider: provider,
-                markdownPath: markdownPath
+                markdownPath: markdownPath,
+                logFilePath: logURL.path
             ) { progress in
                 Task { @MainActor in
                     self?.apply(enhancementProgress: progress)

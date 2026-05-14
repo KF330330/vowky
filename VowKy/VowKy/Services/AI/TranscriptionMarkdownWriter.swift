@@ -29,7 +29,6 @@ enum TranscriptionMarkdownWriter {
 
     static func frontmatterString(from metadata: TranscriptionMetadata) -> String {
         var lines: [String] = ["---"]
-        lines.append("id: \(metadata.id.uuidString)")
         lines.append("title: \(yamlScalar(metadata.title))")
         lines.append("summary: \(yamlScalar(metadata.summary))")
         if let audio = metadata.audioPath {
@@ -39,17 +38,6 @@ enum TranscriptionMarkdownWriter {
         lines.append("generated_at: \(isoFormatter.string(from: metadata.generatedAt))")
         if let dur = metadata.durationSeconds {
             lines.append("duration_seconds: \(Int(dur.rounded()))")
-        }
-        lines.append("source_type: \(yamlScalar(metadata.sourceType))")
-        lines.append("provider: \(yamlScalar(metadata.provider))")
-        lines.append("ai_enhancement: \(metadata.aiEnhancementSucceeded ? "true" : "false")")
-        if metadata.warnings.isEmpty {
-            lines.append("warnings: []")
-        } else {
-            lines.append("warnings:")
-            for w in metadata.warnings {
-                lines.append("  - \(yamlScalar(w))")
-            }
         }
         lines.append("---")
         return lines.joined(separator: "\n")

@@ -42,10 +42,14 @@ final class TranscriptionMarkdownWriterTests: XCTestCase {
         XCTAssertTrue(fm.hasSuffix("---"))
         XCTAssertTrue(fm.contains("title: T"))
         XCTAssertTrue(fm.contains("summary: S"))
-        XCTAssertTrue(fm.contains("provider: codex"))
-        XCTAssertTrue(fm.contains("ai_enhancement: false"))
-        XCTAssertTrue(fm.contains("warnings: []"))
-        // 缺省字段不应出现
+        XCTAssertTrue(fm.contains("markdown_path: /tmp/x.md"))
+        // 用户反馈：删除冗余字段
+        XCTAssertFalse(fm.contains("id:"))
+        XCTAssertFalse(fm.contains("source_type:"))
+        XCTAssertFalse(fm.contains("provider:"))
+        XCTAssertFalse(fm.contains("ai_enhancement:"))
+        XCTAssertFalse(fm.contains("warnings:"))
+        // 可选字段缺省不应出现
         XCTAssertFalse(fm.contains("audio_path:"))
         XCTAssertFalse(fm.contains("duration_seconds:"))
     }
@@ -66,12 +70,12 @@ final class TranscriptionMarkdownWriterTests: XCTestCase {
         XCTAssertFalse(summaryLine.contains("\n"))
     }
 
-    func testFrontmatterListsWarnings() {
+    func testFrontmatterDoesNotIncludeWarningsAnymore() {
+        // 用户反馈：warnings 字段不再写入 frontmatter（保留在 metadata 内部 / 日志里）
         let md = makeMetadata(warnings: ["anchor 未找到", "JSON 解析失败"])
         let fm = TranscriptionMarkdownWriter.frontmatterString(from: md)
-        XCTAssertTrue(fm.contains("warnings:"))
-        XCTAssertTrue(fm.contains("- anchor 未找到"))
-        XCTAssertTrue(fm.contains("- JSON 解析失败"))
+        XCTAssertFalse(fm.contains("warnings:"))
+        XCTAssertFalse(fm.contains("- anchor 未找到"))
     }
 
     func testComposeJoinsFrontmatterAndBody() {

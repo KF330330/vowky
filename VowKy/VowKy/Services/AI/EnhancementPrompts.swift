@@ -23,9 +23,10 @@ enum EnhancementPrompts {
         2. Output INSERT operations only. No replace, no delete, no rewrite.
         3. Heading text must be NEW words you invent to summarize the following section. Do not quote the transcript verbatim if doing so changes meaning.
         4. Use at most 3 heading levels.
-        5. Insert a heading roughly every 200-500 characters of substantive content. Skip headings for very short transcripts (< 300 chars).
-        6. Each insertion has an `anchor.before` = the LAST 20-40 characters of the segment that should appear BEFORE the insertion. Use literal substring of the transcript, INCLUDING punctuation and whitespace.
-        7. Output JSON only. No prose, no markdown code fence.
+        5. **The VERY FIRST operation in the output MUST be a level-2 heading with `anchor.before: ""` (empty string) that summarizes the opening section. The transcript MUST NOT start with un-headed body text.**
+        6. After the opening heading, insert further headings roughly every 200-500 characters of substantive content. Skip extra headings for very short transcripts (< 300 chars), but rule 5 still applies (always one opening heading).
+        7. Each insertion (except the opening heading at start) has an `anchor.before` = the LAST 20-40 characters of the segment that should appear BEFORE the insertion. Use literal substring of the transcript, INCLUDING punctuation and whitespace.
+        8. Output JSON only. No prose, no markdown code fence.
 
         Schema:
         {
@@ -70,8 +71,9 @@ enum EnhancementPrompts {
 
     static func summarySystemPrompt() -> String {
         """
-        Write a 1-3 sentence summary (≤ 120 characters in the source language) of the transcript's main points. \
-        Output the summary text ONLY. No prefixes like "Summary:".
+        Write a thorough 3-6 sentence summary (200-500 characters in the source language) of the transcript. \
+        Cover the main topics, key arguments / facts presented, and any conclusions or action items. \
+        Output the summary text ONLY. No prefixes like "Summary:". No line breaks.
         """
     }
 
