@@ -7,6 +7,7 @@ final class AISkillInstallerServiceTests: XCTestCase {
     private var homeDir: URL!
     private var helperURL: URL!
     private var jobRoot: URL!
+    private var bundledEnhanceURL: URL!
 
     override func setUpWithError() throws {
         tempDir = FileManager.default.temporaryDirectory
@@ -18,6 +19,17 @@ final class AISkillInstallerServiceTests: XCTestCase {
             .appendingPathComponent("Contents")
             .appendingPathComponent("Helpers")
             .appendingPathComponent("vowky-transcribe")
+        bundledEnhanceURL = tempDir
+            .appendingPathComponent("VowKy.app")
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("Skills")
+            .appendingPathComponent("transcript-enhance")
+
+        let scriptsDir = bundledEnhanceURL.appendingPathComponent("scripts")
+        try FileManager.default.createDirectory(at: scriptsDir, withIntermediateDirectories: true)
+        try "fake SKILL.md".write(to: bundledEnhanceURL.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        try "print('chunk')".write(to: scriptsDir.appendingPathComponent("chunk.py"), atomically: true, encoding: .utf8)
 
         try FileManager.default.createDirectory(at: helperURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try """
@@ -60,6 +72,7 @@ final class AISkillInstallerServiceTests: XCTestCase {
         homeDir = nil
         helperURL = nil
         jobRoot = nil
+        bundledEnhanceURL = nil
     }
 
     func testInstallCreatesCodexAndClaudeSkills() throws {
@@ -68,29 +81,40 @@ final class AISkillInstallerServiceTests: XCTestCase {
 
         let installed = try service.install(platforms: [.codex, .claudeCode])
 
-        XCTAssertEqual(Set(installed.map(\.standardizedFileURL.path)), [
+        let expectedDirs: Set<String> = [
             codexHome.appendingPathComponent("skills").appendingPathComponent("vowky-transcribe").standardizedFileURL.path,
-            homeDir.appendingPathComponent(".claude").appendingPathComponent("skills").appendingPathComponent("vowky-transcribe").standardizedFileURL.path
-        ])
+            codexHome.appendingPathComponent("skills").appendingPathComponent("transcript-enhance").standardizedFileURL.path,
+            homeDir.appendingPathComponent(".claude").appendingPathComponent("skills").appendingPathComponent("vowky-transcribe").standardizedFileURL.path,
+            homeDir.appendingPathComponent(".claude").appendingPathComponent("skills").appendingPathComponent("transcript-enhance").standardizedFileURL.path
+        ]
+        XCTAssertEqual(Set(installed.map(\.standardizedFileURL.path)), expectedDirs)
 
-        for directory in installed {
-            XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("SKILL.md").path))
-            XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent(".vowky-managed").path))
-            XCTAssertTrue(FileManager.default.isExecutableFile(atPath: directory.appendingPathComponent("scripts/vowky-transcribe.sh").path))
-            let skill = try String(contentsOf: directory.appendingPathComponent("SKILL.md"), encoding: .utf8)
+        for platform in [AISkillPlatform.codex, .claudeCode] {
+            let transcribeDir = service.skillDirectory(for: platform, kind: .transcribe)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: transcribeDir.appendingPathComponent("SKILL.md").path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: transcribeDir.appendingPathComponent(".vowky-managed").path))
+            XCTAssertTrue(FileManager.default.isExecutableFile(atPath: transcribeDir.appendingPathComponent("scripts/vowky-transcribe.sh").path))
+            let skill = try String(contentsOf: transcribeDir.appendingPathComponent("SKILL.md"), encoding: .utf8)
             XCTAssertTrue(skill.contains("name: vowky-transcribe"))
             XCTAssertTrue(skill.contains("--background --output-dir \"$PWD\""))
             XCTAssertTrue(skill.contains("--output-dir \"$PWD\""))
+
+            let enhanceDir = service.skillDirectory(for: platform, kind: .enhance)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: enhanceDir.appendingPathComponent("SKILL.md").path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: enhanceDir.appendingPathComponent(".vowky-managed").path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: enhanceDir.appendingPathComponent("scripts/chunk.py").path))
         }
 
-        XCTAssertEqual(service.status(for: .codex).state, .installed(version: AISkillInstallerService.skillVersion))
-        XCTAssertEqual(service.status(for: .claudeCode).state, .installed(version: AISkillInstallerService.skillVersion))
+        XCTAssertEqual(service.status(for: .codex, kind: .transcribe).state, .installed(version: AISkillInstallerService.transcribeSkillVersion))
+        XCTAssertEqual(service.status(for: .claudeCode, kind: .transcribe).state, .installed(version: AISkillInstallerService.transcribeSkillVersion))
+        XCTAssertEqual(service.status(for: .codex, kind: .enhance).state, .installed(version: AISkillInstallerService.enhanceSkillVersion))
+        XCTAssertEqual(service.status(for: .claudeCode, kind: .enhance).state, .installed(version: AISkillInstallerService.enhanceSkillVersion))
     }
 
     func testInstallOverwritesExistingManagedSkill() throws {
         let service = makeService()
         _ = try service.install(platforms: [.codex])
-        let directory = service.skillDirectory(for: .codex)
+        let directory = service.skillDirectory(for: .codex, kind: .transcribe)
         try "stale".write(to: directory.appendingPathComponent("stale.txt"), atomically: true, encoding: .utf8)
 
         _ = try service.install(platforms: [.codex])
@@ -101,7 +125,7 @@ final class AISkillInstallerServiceTests: XCTestCase {
 
     func testInstallRefusesUnmanagedSameNameSkill() throws {
         let service = makeService()
-        let directory = service.skillDirectory(for: .codex)
+        let directory = service.skillDirectory(for: .codex, kind: .transcribe)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let existingSkill = directory.appendingPathComponent("SKILL.md")
         try "user skill".write(to: existingSkill, atomically: true, encoding: .utf8)
@@ -110,12 +134,12 @@ final class AISkillInstallerServiceTests: XCTestCase {
             XCTAssertEqual(error as? AISkillInstallerError, .unmanagedSkillExists(directory.path))
         }
         XCTAssertEqual(try String(contentsOf: existingSkill, encoding: .utf8), "user skill")
-        XCTAssertEqual(service.status(for: .codex).state, .blockedByUnmanagedSkill)
+        XCTAssertEqual(service.status(for: .codex, kind: .transcribe).state, .blockedByUnmanagedSkill)
     }
 
     func testInstallRefusesUnmanagedSameNameDirectoryWithoutSkillFile() throws {
         let service = makeService()
-        let directory = service.skillDirectory(for: .codex)
+        let directory = service.skillDirectory(for: .codex, kind: .transcribe)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let existingFile = directory.appendingPathComponent("notes.txt")
         try "do not overwrite".write(to: existingFile, atomically: true, encoding: .utf8)
@@ -124,20 +148,26 @@ final class AISkillInstallerServiceTests: XCTestCase {
             XCTAssertEqual(error as? AISkillInstallerError, .unmanagedSkillExists(directory.path))
         }
         XCTAssertEqual(try String(contentsOf: existingFile, encoding: .utf8), "do not overwrite")
-        XCTAssertEqual(service.status(for: .codex).state, .blockedByUnmanagedSkill)
+        XCTAssertEqual(service.status(for: .codex, kind: .transcribe).state, .blockedByUnmanagedSkill)
     }
 
     func testUninstallRemovesOnlyManagedSkill() throws {
         let service = makeService()
         _ = try service.install(platforms: [.claudeCode])
-        let directory = service.skillDirectory(for: .claudeCode)
+        let transcribeDir = service.skillDirectory(for: .claudeCode, kind: .transcribe)
+        let enhanceDir = service.skillDirectory(for: .claudeCode, kind: .enhance)
 
         let result = try service.uninstall(platforms: [.claudeCode])
 
-        XCTAssertEqual(result.removedSkillDirectories.map(\.standardizedFileURL.path), [directory.standardizedFileURL.path])
+        XCTAssertEqual(
+            Set(result.removedSkillDirectories.map(\.standardizedFileURL.path)),
+            [transcribeDir.standardizedFileURL.path, enhanceDir.standardizedFileURL.path]
+        )
         XCTAssertEqual(result.removedCompletedJobCaches, 0)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
-        XCTAssertEqual(service.status(for: .claudeCode).state, .notInstalled)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: transcribeDir.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: enhanceDir.path))
+        XCTAssertEqual(service.status(for: .claudeCode, kind: .transcribe).state, .notInstalled)
+        XCTAssertEqual(service.status(for: .claudeCode, kind: .enhance).state, .notInstalled)
     }
 
     func testUninstallRemovesFinishedJobCachesAndPreservesActiveOrUnknownCaches() throws {
@@ -194,8 +224,8 @@ final class AISkillInstallerServiceTests: XCTestCase {
     func testUninstallRefusesUnmanagedSkillWithoutCleaningJobCaches() throws {
         let service = makeService()
         _ = try service.install(platforms: [.claudeCode])
-        let managedDirectory = service.skillDirectory(for: .claudeCode)
-        let unmanagedDirectory = service.skillDirectory(for: .codex)
+        let managedDirectory = service.skillDirectory(for: .claudeCode, kind: .transcribe)
+        let unmanagedDirectory = service.skillDirectory(for: .codex, kind: .transcribe)
         try FileManager.default.createDirectory(at: unmanagedDirectory, withIntermediateDirectories: true)
         try "user skill".write(
             to: unmanagedDirectory.appendingPathComponent("SKILL.md"),
@@ -221,7 +251,7 @@ final class AISkillInstallerServiceTests: XCTestCase {
     func testInstalledLauncherRunsTranscriptionInBackgroundAndReportsStatus() throws {
         let service = makeService()
         _ = try service.install(platforms: [.codex])
-        let directory = service.skillDirectory(for: .codex)
+        let directory = service.skillDirectory(for: .codex, kind: .transcribe)
         let launcher = directory.appendingPathComponent("scripts/vowky-transcribe.sh")
         let outputDir = tempDir.appendingPathComponent("Project With Spaces")
 
@@ -272,7 +302,8 @@ final class AISkillInstallerServiceTests: XCTestCase {
             homeDirectory: homeDir,
             environment: [:],
             appBundleURL: tempDir,
-            helperURLOverride: missingHelperURL
+            helperURLOverride: missingHelperURL,
+            bundledEnhanceSkillURLOverride: bundledEnhanceURL
         )
 
         XCTAssertThrowsError(try service.install(platforms: [.codex])) { error in
@@ -283,12 +314,32 @@ final class AISkillInstallerServiceTests: XCTestCase {
         }
     }
 
+    func testInstallReportsMissingBundledEnhanceSkill() {
+        let missingEnhance = tempDir.appendingPathComponent("missing-enhance-skill")
+        let service = AISkillInstallerService(
+            homeDirectory: homeDir,
+            environment: [:],
+            appBundleURL: tempDir.appendingPathComponent("VowKy.app"),
+            helperURLOverride: helperURL,
+            bundledEnhanceSkillURLOverride: missingEnhance,
+            transcriptionJobsRootOverride: jobRoot
+        )
+
+        XCTAssertThrowsError(try service.install(platforms: [.codex])) { error in
+            XCTAssertEqual(
+                error as? AISkillInstallerError,
+                .bundledSkillMissing(missingEnhance.path)
+            )
+        }
+    }
+
     private func makeService(environment: [String: String] = [:]) -> AISkillInstallerService {
         AISkillInstallerService(
             homeDirectory: homeDir,
             environment: environment,
             appBundleURL: tempDir.appendingPathComponent("VowKy.app"),
             helperURLOverride: helperURL,
+            bundledEnhanceSkillURLOverride: bundledEnhanceURL,
             transcriptionJobsRootOverride: jobRoot
         )
     }

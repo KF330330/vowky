@@ -16,6 +16,27 @@ enum AISkillPlatform: String, CaseIterable, Identifiable {
     }
 }
 
+enum AISkillKind: String, CaseIterable, Identifiable {
+    case transcribe
+    case enhance
+
+    var id: String { rawValue }
+
+    var skillName: String {
+        switch self {
+        case .transcribe: return AISkillInstallerService.transcribeSkillName
+        case .enhance:    return AISkillInstallerService.enhanceSkillName
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .transcribe: return "vowky-transcribe"
+        case .enhance:    return "transcript-enhance"
+        }
+    }
+}
+
 enum AISkillInstallState: Equatable {
     case notInstalled
     case installed(version: String?)
@@ -24,6 +45,7 @@ enum AISkillInstallState: Equatable {
 
 struct AISkillPlatformStatus: Equatable {
     let platform: AISkillPlatform
+    let kind: AISkillKind
     let skillDirectory: URL
     let state: AISkillInstallState
 }
@@ -36,6 +58,7 @@ struct AISkillUninstallResult: Equatable {
 enum AISkillInstallerError: LocalizedError, Equatable {
     case noPlatformsSelected
     case helperMissing(String)
+    case bundledSkillMissing(String)
     case unmanagedSkillExists(String)
 
     var errorDescription: String? {
@@ -44,6 +67,8 @@ enum AISkillInstallerError: LocalizedError, Equatable {
             return "请选择至少一个要安装的 AI 工具"
         case .helperMissing(let path):
             return "未找到 VowKy 转录 helper：\(path)"
+        case .bundledSkillMissing(let path):
+            return "未在 App 内找到 transcript-enhance skill 资源：\(path)"
         case .unmanagedSkillExists(let path):
             return "已存在同名但不是 VowKy 管理的 skill，未覆盖：\(path)"
         }
@@ -51,14 +76,18 @@ enum AISkillInstallerError: LocalizedError, Equatable {
 }
 
 final class AISkillInstallerService {
-    static let skillName = "vowky-transcribe"
-    static let skillVersion = "1.0.1"
+    static let transcribeSkillName = "vowky-transcribe"
+    static let transcribeSkillVersion = "1.0.1"
+    static let enhanceSkillName = "transcript-enhance"
+    static let enhanceSkillVersion = "1.0.0"
 
     private let fileManager: FileManager
     private let homeDirectory: URL
     private let environment: [String: String]
     private let appBundleURL: URL
+    private let bundle: Bundle
     private let helperURLOverride: URL?
+    private let bundledEnhanceSkillURLOverride: URL?
     private let transcriptionJobsRootOverride: URL?
 
     init(
@@ -66,33 +95,43 @@ final class AISkillInstallerService {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         appBundleURL: URL = Bundle.main.bundleURL,
+        bundle: Bundle = .main,
         helperURLOverride: URL? = nil,
+        bundledEnhanceSkillURLOverride: URL? = nil,
         transcriptionJobsRootOverride: URL? = nil
     ) {
         self.fileManager = fileManager
         self.homeDirectory = homeDirectory
         self.environment = environment
         self.appBundleURL = appBundleURL
+        self.bundle = bundle
         self.helperURLOverride = helperURLOverride
+        self.bundledEnhanceSkillURLOverride = bundledEnhanceSkillURLOverride
         self.transcriptionJobsRootOverride = transcriptionJobsRootOverride
     }
 
     func statuses() -> [AISkillPlatformStatus] {
-        AISkillPlatform.allCases.map { status(for: $0) }
+        var result: [AISkillPlatformStatus] = []
+        for platform in AISkillPlatform.allCases {
+            for kind in AISkillKind.allCases {
+                result.append(status(for: platform, kind: kind))
+            }
+        }
+        return result
     }
 
-    func status(for platform: AISkillPlatform) -> AISkillPlatformStatus {
-        let directory = skillDirectory(for: platform)
+    func status(for platform: AISkillPlatform, kind: AISkillKind) -> AISkillPlatformStatus {
+        let directory = skillDirectory(for: platform, kind: kind)
 
         guard fileManager.fileExists(atPath: directory.path) else {
-            return AISkillPlatformStatus(platform: platform, skillDirectory: directory, state: .notInstalled)
+            return AISkillPlatformStatus(platform: platform, kind: kind, skillDirectory: directory, state: .notInstalled)
         }
 
         guard let marker = readMarker(in: directory), marker.managedBy == "VowKy" else {
-            return AISkillPlatformStatus(platform: platform, skillDirectory: directory, state: .blockedByUnmanagedSkill)
+            return AISkillPlatformStatus(platform: platform, kind: kind, skillDirectory: directory, state: .blockedByUnmanagedSkill)
         }
 
-        return AISkillPlatformStatus(platform: platform, skillDirectory: directory, state: .installed(version: marker.version))
+        return AISkillPlatformStatus(platform: platform, kind: kind, skillDirectory: directory, state: .installed(version: marker.version))
     }
 
     @discardableResult
@@ -106,16 +145,30 @@ final class AISkillInstallerService {
             throw AISkillInstallerError.helperMissing(helperURL.path)
         }
 
+        let enhanceSourceURL = resolvedBundledEnhanceSkillURL()
+        guard fileManager.fileExists(atPath: enhanceSourceURL.appendingPathComponent("SKILL.md").path) else {
+            throw AISkillInstallerError.bundledSkillMissing(enhanceSourceURL.path)
+        }
+
+        // pre-check blocked unmanaged across all (platform, kind)
+        for platform in platforms {
+            for kind in AISkillKind.allCases {
+                let s = status(for: platform, kind: kind)
+                if s.state == .blockedByUnmanagedSkill {
+                    throw AISkillInstallerError.unmanagedSkillExists(s.skillDirectory.path)
+                }
+            }
+        }
+
         var installedDirectories: [URL] = []
         for platform in platforms {
-            let directory = skillDirectory(for: platform)
-            let status = status(for: platform)
-            if status.state == .blockedByUnmanagedSkill {
-                throw AISkillInstallerError.unmanagedSkillExists(directory.path)
-            }
+            let transcribeDir = skillDirectory(for: platform, kind: .transcribe)
+            try replaceManagedTranscribeSkill(at: transcribeDir, helperURL: helperURL)
+            installedDirectories.append(transcribeDir)
 
-            try replaceManagedSkill(at: directory, helperURL: helperURL)
-            installedDirectories.append(directory)
+            let enhanceDir = skillDirectory(for: platform, kind: .enhance)
+            try replaceManagedEnhanceSkill(at: enhanceDir, source: enhanceSourceURL)
+            installedDirectories.append(enhanceDir)
         }
         return installedDirectories
     }
@@ -128,14 +181,16 @@ final class AISkillInstallerService {
 
         var directoriesToRemove: [URL] = []
         for platform in platforms {
-            let directory = skillDirectory(for: platform)
-            guard fileManager.fileExists(atPath: directory.path) else { continue }
+            for kind in AISkillKind.allCases {
+                let directory = skillDirectory(for: platform, kind: kind)
+                guard fileManager.fileExists(atPath: directory.path) else { continue }
 
-            guard readMarker(in: directory)?.managedBy == "VowKy" else {
-                throw AISkillInstallerError.unmanagedSkillExists(directory.path)
+                guard readMarker(in: directory)?.managedBy == "VowKy" else {
+                    throw AISkillInstallerError.unmanagedSkillExists(directory.path)
+                }
+
+                directoriesToRemove.append(directory)
             }
-
-            directoriesToRemove.append(directory)
         }
 
         var removedDirectories: [URL] = []
@@ -151,23 +206,25 @@ final class AISkillInstallerService {
         )
     }
 
-    func skillDirectory(for platform: AISkillPlatform) -> URL {
+    func skillDirectory(for platform: AISkillPlatform, kind: AISkillKind) -> URL {
+        skillHomeDirectory(for: platform)
+            .appendingPathComponent("skills")
+            .appendingPathComponent(kind.skillName)
+    }
+
+    func skillHomeDirectory(for platform: AISkillPlatform) -> URL {
         switch platform {
         case .codex:
-            let codexHome = environment["CODEX_HOME"].map(expandHomePath)
+            return environment["CODEX_HOME"].map(expandHomePath)
                 ?? homeDirectory.appendingPathComponent(".codex")
-            return codexHome
-                .appendingPathComponent("skills")
-                .appendingPathComponent(Self.skillName)
         case .claudeCode:
-            return homeDirectory
-                .appendingPathComponent(".claude")
-                .appendingPathComponent("skills")
-                .appendingPathComponent(Self.skillName)
+            return homeDirectory.appendingPathComponent(".claude")
         }
     }
 
-    private func replaceManagedSkill(at directory: URL, helperURL: URL) throws {
+    // MARK: - vowky-transcribe (programmatic)
+
+    private func replaceManagedTranscribeSkill(at directory: URL, helperURL: URL) throws {
         if fileManager.fileExists(atPath: directory.path) {
             try fileManager.removeItem(at: directory)
         }
@@ -177,7 +234,7 @@ final class AISkillInstallerService {
         try fileManager.createDirectory(at: scriptsDirectory, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: agentsDirectory, withIntermediateDirectories: true)
 
-        try skillMarkdown()
+        try transcribeSkillMarkdown()
             .write(to: directory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
         try launcherScript(helperURL: helperURL)
             .write(to: scriptsDirectory.appendingPathComponent("vowky-transcribe.sh"), atomically: true, encoding: .utf8)
@@ -189,11 +246,54 @@ final class AISkillInstallerService {
             ofItemAtPath: scriptsDirectory.appendingPathComponent("vowky-transcribe.sh").path
         )
 
+        try writeMarker(
+            at: directory,
+            skillName: Self.transcribeSkillName,
+            version: Self.transcribeSkillVersion,
+            helperPath: helperURL.path
+        )
+    }
+
+    // MARK: - transcript-enhance (bundled copy)
+
+    private func replaceManagedEnhanceSkill(at directory: URL, source: URL) throws {
+        if fileManager.fileExists(atPath: directory.path) {
+            try fileManager.removeItem(at: directory)
+        }
+
+        try fileManager.createDirectory(
+            at: directory.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try fileManager.copyItem(at: source, to: directory)
+
+        // chmod +x for scripts
+        let scriptsDir = directory.appendingPathComponent("scripts")
+        if let entries = try? fileManager.contentsOfDirectory(at: scriptsDir, includingPropertiesForKeys: nil) {
+            for entry in entries where entry.pathExtension == "py" || entry.pathExtension == "sh" {
+                try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: entry.path)
+            }
+        }
+
+        try writeMarker(
+            at: directory,
+            skillName: Self.enhanceSkillName,
+            version: Self.enhanceSkillVersion,
+            helperPath: nil
+        )
+    }
+
+    private func writeMarker(
+        at directory: URL,
+        skillName: String,
+        version: String,
+        helperPath: String?
+    ) throws {
         let marker = AISkillManagedMarker(
             managedBy: "VowKy",
-            skillName: Self.skillName,
-            version: Self.skillVersion,
-            helperPath: helperURL.path,
+            skillName: skillName,
+            version: version,
+            helperPath: helperPath,
             installedAt: ISO8601DateFormatter().string(from: Date())
         )
         let data = try JSONEncoder().encode(marker)
@@ -212,6 +312,23 @@ final class AISkillInstallerService {
                 .appendingPathComponent("Contents")
                 .appendingPathComponent("Helpers")
                 .appendingPathComponent("vowky-transcribe")
+    }
+
+    private func resolvedBundledEnhanceSkillURL() -> URL {
+        if let override = bundledEnhanceSkillURLOverride {
+            return override
+        }
+        if let resourceURL = bundle.resourceURL {
+            return resourceURL
+                .appendingPathComponent("Skills")
+                .appendingPathComponent(Self.enhanceSkillName)
+        }
+        // Fallback: app bundle Contents/Resources
+        return appBundleURL
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("Skills")
+            .appendingPathComponent(Self.enhanceSkillName)
     }
 
     func cleanupFinishedTranscriptionJobs() throws -> Int {
@@ -281,7 +398,7 @@ final class AISkillInstallerService {
         return homeDirectory.appendingPathComponent(expandedPath)
     }
 
-    private func skillMarkdown() -> String {
+    private func transcribeSkillMarkdown() -> String {
         """
         ---
         name: vowky-transcribe
@@ -599,6 +716,6 @@ private struct AISkillManagedMarker: Codable, Equatable {
     let managedBy: String
     let skillName: String
     let version: String
-    let helperPath: String
+    let helperPath: String?
     let installedAt: String
 }

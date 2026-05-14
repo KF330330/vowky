@@ -124,7 +124,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         appState: AppState,
         fileTranscriptionServiceFactory: (() -> FileTranscribing)? = nil,
         resultRecorder: ((String) -> Void)? = nil,
-        enhancementService: TranscriptionEnhancing = TranscriptionEnhancementService(),
+        enhancementService: TranscriptionEnhancing = EnhancementRouter(),
         aiConfigLoader: @escaping () -> AIProviderConfig = { AIProviderFactory.load() }
     ) {
         self.appState = appState

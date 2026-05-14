@@ -38,6 +38,11 @@ final class SettingsWindowController {
 
 // MARK: - Settings View
 
+private struct SkillStatusKey: Hashable {
+    let platform: AISkillPlatform
+    let kind: AISkillKind
+}
+
 struct SettingsView: View {
     @State private var isAccessibilityGranted = AXIsProcessTrusted()
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -57,7 +62,7 @@ struct SettingsView: View {
     @State private var permissionRefreshTimer: Timer?
     @State private var installCodexSkill = true
     @State private var installClaudeSkill = true
-    @State private var skillStatuses: [AISkillPlatform: AISkillPlatformStatus] = [:]
+    @State private var skillStatuses: [SkillStatusKey: AISkillPlatformStatus] = [:]
     @State private var skillStatusMessage: String?
 
     // AI 后处理
@@ -196,21 +201,11 @@ struct SettingsView: View {
             Section("AI Skills") {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle(isOn: $installCodexSkill) {
-                        HStack {
-                            Text("Codex")
-                            Spacer()
-                            Text(skillStatusText(for: .codex))
-                                .foregroundColor(skillStatusColor(for: .codex))
-                        }
+                        skillPlatformRow(platform: .codex, title: "Codex")
                     }
 
                     Toggle(isOn: $installClaudeSkill) {
-                        HStack {
-                            Text("Claude Code")
-                            Spacer()
-                            Text(skillStatusText(for: .claudeCode))
-                                .foregroundColor(skillStatusColor(for: .claudeCode))
-                        }
+                        skillPlatformRow(platform: .claudeCode, title: "Claude Code")
                     }
 
                     HStack {
@@ -267,12 +262,14 @@ struct SettingsView: View {
                         Text("提示：常见路径包括 /opt/homebrew/bin/codex、~/.cargo/bin/codex。")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                        enhanceSkillWarning(for: .codex)
                     } else {
                         TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
                             .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
                         Text("提示：常见路径包括 /opt/homebrew/bin/claude、~/.npm-global/bin/claude。")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                        enhanceSkillWarning(for: .claudeCode)
                     }
 
                     Stepper("调用超时：\(aiTimeoutSeconds) 秒", value: $aiTimeoutSeconds, in: 30...300, step: 10)
@@ -440,8 +437,69 @@ struct SettingsView: View {
 
     private func refreshSkillStatuses() {
         skillStatuses = Dictionary(
-            uniqueKeysWithValues: skillInstaller.statuses().map { ($0.platform, $0) }
+            uniqueKeysWithValues: skillInstaller.statuses().map {
+                (SkillStatusKey(platform: $0.platform, kind: $0.kind), $0)
+            }
         )
+    }
+
+    @ViewBuilder
+    private func skillPlatformRow(platform: AISkillPlatform, title: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+            HStack(spacing: 6) {
+                Text("vowky-transcribe:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(skillStatusText(for: platform, kind: .transcribe))
+                    .font(.caption)
+                    .foregroundColor(skillStatusColor(for: platform, kind: .transcribe))
+            }
+            HStack(spacing: 6) {
+                Text("transcript-enhance:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(skillStatusText(for: platform, kind: .enhance))
+                    .font(.caption)
+                    .foregroundColor(skillStatusColor(for: platform, kind: .enhance))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func enhanceSkillWarning(for platform: AISkillPlatform) -> some View {
+        let installed: Bool = {
+            guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: .enhance)] else {
+                return false
+            }
+            if case .installed = status.state { return true }
+            return false
+        }()
+        if !installed {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.red)
+                Text("需要先安装 transcript-enhance（AI Skills 区域）")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                Button("一键安装") {
+                    installSkill(for: platform)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func installSkill(for platform: AISkillPlatform) {
+        do {
+            _ = try skillInstaller.install(platforms: [platform])
+            refreshSkillStatuses()
+            skillStatusMessage = "已安装/更新 \(platform.displayName) 平台 AI Skills"
+        } catch {
+            refreshSkillStatuses()
+            skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
     }
 
     private func installSelectedSkills() {
@@ -470,8 +528,10 @@ struct SettingsView: View {
         }
     }
 
-    private func skillStatusText(for platform: AISkillPlatform) -> String {
-        guard let status = skillStatuses[platform] else { return "检查中" }
+    private func skillStatusText(for platform: AISkillPlatform, kind: AISkillKind) -> String {
+        guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)] else {
+            return "检查中"
+        }
         switch status.state {
         case .notInstalled:
             return "未安装"
@@ -482,8 +542,10 @@ struct SettingsView: View {
         }
     }
 
-    private func skillStatusColor(for platform: AISkillPlatform) -> Color {
-        guard let status = skillStatuses[platform] else { return .secondary }
+    private func skillStatusColor(for platform: AISkillPlatform, kind: AISkillKind) -> Color {
+        guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)] else {
+            return .secondary
+        }
         switch status.state {
         case .notInstalled:
             return .secondary

@@ -118,7 +118,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         punctuationService: PunctuationServiceProtocol? = nil,
         outputStore: RecordingTranscriptionOutputStore = RecordingTranscriptionOutputStore(),
         resultRecorder: ((String) -> Void)? = nil,
-        enhancementService: TranscriptionEnhancing = TranscriptionEnhancementService(),
+        enhancementService: TranscriptionEnhancing = EnhancementRouter(),
         aiConfigLoader: @escaping () -> AIProviderConfig = { AIProviderFactory.load() }
     ) {
         self.appState = appState
