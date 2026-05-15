@@ -213,8 +213,13 @@ struct SettingsView: View {
                     platformInstallCard(.codex)
 
                     if anyEnhanceInstalled {
-                        Text("设置 agent 优先级")
-                            .font(.headline)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("设置 agent 优先级")
+                                .font(.headline)
+                            Text("排在前面的优先使用，不可用时自动尝试后面的")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
 
                         VStack(spacing: 4) {
                             ForEach(providerEntries.indices, id: \.self) { idx in
@@ -499,7 +504,7 @@ struct SettingsView: View {
     private func buildAIConfig() -> AIProviderConfig {
         AIProviderConfig(
             enabled: aiEnabled,
-            providers: providerEntries,
+            providers: providerEntries.map { ProviderPriorityEntry(kind: $0.kind, enabled: true) },
             codex: CLIConfig(binaryPath: codexBinaryPath),
             claude: CLIConfig(binaryPath: claudeBinaryPath),
             timeoutSeconds: aiTimeoutSeconds
@@ -534,21 +539,10 @@ struct SettingsView: View {
     private func providerPriorityRow(index idx: Int) -> some View {
         let entry = providerEntries[idx]
         HStack(spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { providerEntries[idx].enabled },
-                set: { newValue in
-                    providerEntries[idx].enabled = newValue
-                    saveAIConfig()
-                }
-            ))
-            .toggleStyle(.checkbox)
-            .labelsHidden()
-
             Text("\(idx + 1).")
                 .font(.caption.monospacedDigit())
                 .foregroundColor(.secondary)
             Text(entry.kind.displayName)
-                .foregroundColor(entry.enabled ? .primary : .secondary)
             Spacer()
             Button {
                 moveProvider(at: idx, delta: -1)
