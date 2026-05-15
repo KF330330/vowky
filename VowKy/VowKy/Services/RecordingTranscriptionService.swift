@@ -29,6 +29,12 @@ struct RecordingTranscriptionResult: Equatable {
     let finalText: String
 }
 
+struct RecordingFinalizationProgress: Equatable {
+    let completed: Int
+    let total: Int
+    let inputClosed: Bool
+}
+
 enum RecordingTranscriptionError: LocalizedError, Equatable {
     case noFinalRecognitionText
 
@@ -57,7 +63,7 @@ struct RecordingTranscriptionOutputStore {
 
         let baseName = uniqueBaseName(for: startedAt)
         return PreparedRecordingTranscriptionOutput(
-            textURL: outputDirectory.appendingPathComponent("\(baseName).txt"),
+            textURL: outputDirectory.appendingPathComponent("\(baseName).md"),
             audioURL: outputDirectory.appendingPathComponent("\(baseName).wav"),
             startedAt: startedAt
         )
@@ -80,7 +86,9 @@ struct RecordingTranscriptionOutputStore {
         let baseName = "VowKy Recording \(formatter.string(from: date))"
         var candidate = baseName
         var suffix = 2
-        while fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).txt").path)
+        // 同时检测 .md（新格式）和 .txt（老格式，向后兼容用户已有的转写文件）
+        while fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).md").path)
+            || fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).txt").path)
             || fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).wav").path) {
             candidate = "\(baseName)-\(suffix)"
             suffix += 1
@@ -115,14 +123,24 @@ struct RecordingTranscriptionEngine {
 
     func run(
         audioChunks: AsyncStream<[Float]>,
-        progress: @escaping @MainActor (StreamingRecognitionUpdate) -> Void
+        progress: @escaping @MainActor (StreamingRecognitionUpdate) -> Void,
+        finalizationProgress: @escaping @MainActor (RecordingFinalizationProgress) -> Void = { _ in }
     ) async throws -> RecordingTranscriptionResult {
         var finalContinuation: AsyncStream<DecodedAudioChunk>.Continuation?
         let finalStream = AsyncStream<DecodedAudioChunk> { continuation in
             finalContinuation = continuation
         }
+        let counter = FinalizationCounter()
+        let recognizer = finalRecognizer
+        let rate = sampleRate
         let finalTask = Task.detached(priority: .userInitiated) {
-            try await transcribeFinalSegments(from: finalStream)
+            try await Self.transcribeFinalSegments(
+                from: finalStream,
+                recognizer: recognizer,
+                sampleRate: rate,
+                counter: counter,
+                onProgress: finalizationProgress
+            )
         }
 
         defer {
@@ -145,11 +163,15 @@ struct RecordingTranscriptionEngine {
             try Task.checkCancellation()
             writer.appendSamples(samples)
             pendingFinalSamples.append(contentsOf: samples)
-            enqueueReadyFinalSegments(
+            let enqueued = enqueueReadyFinalSegments(
                 pendingSamples: &pendingFinalSamples,
                 segmentStartTime: &finalSegmentStartTime,
                 continuation: finalContinuation
             )
+            for _ in 0..<enqueued {
+                let snapshot = await counter.incTotal()
+                await finalizationProgress(snapshot)
+            }
 
             if let update = previewRecognizer.accept(samples: samples, sampleRate: sampleRate) {
                 latestUpdate = update
@@ -170,8 +192,12 @@ struct RecordingTranscriptionEngine {
                 duration: Double(pendingFinalSamples.count) / Double(sampleRate)
             ))
             pendingFinalSamples.removeAll(keepingCapacity: false)
+            let snapshot = await counter.incTotal()
+            await finalizationProgress(snapshot)
         }
         finalContinuation?.finish()
+        let closedSnapshot = await counter.markClosed()
+        await finalizationProgress(closedSnapshot)
 
         let finalSegments = try await finalTask.value
         let finalText = finalSegments
@@ -192,8 +218,9 @@ struct RecordingTranscriptionEngine {
         pendingSamples: inout [Float],
         segmentStartTime: inout TimeInterval,
         continuation: AsyncStream<DecodedAudioChunk>.Continuation?
-    ) {
+    ) -> Int {
         let minimumReadySamples = max(1, Int((finalSegmentDuration + finalBoundarySearchWindow) * Double(sampleRate)))
+        var enqueued = 0
 
         while pendingSamples.count >= minimumReadySamples {
             let chunk = FileTranscriptionService.makeChunkFromWindow(
@@ -206,22 +233,57 @@ struct RecordingTranscriptionEngine {
             guard !chunk.samples.isEmpty else { break }
 
             continuation?.yield(chunk)
+            enqueued += 1
             let consumedCount = min(chunk.samples.count, pendingSamples.count)
             pendingSamples = Array(pendingSamples.dropFirst(consumedCount))
             segmentStartTime += chunk.duration
         }
+        return enqueued
     }
 
-    private func transcribeFinalSegments(from stream: AsyncStream<DecodedAudioChunk>) async throws -> [String] {
+    private static func transcribeFinalSegments(
+        from stream: AsyncStream<DecodedAudioChunk>,
+        recognizer: SpeechRecognizerProtocol,
+        sampleRate: Int,
+        counter: FinalizationCounter,
+        onProgress: @escaping @MainActor (RecordingFinalizationProgress) -> Void
+    ) async throws -> [String] {
         var finalSegments: [String] = []
         for await chunk in stream {
             try Task.checkCancellation()
-            let text = await finalRecognizer.recognize(samples: chunk.samples, sampleRate: sampleRate)?
+            let text = await recognizer.recognize(samples: chunk.samples, sampleRate: sampleRate)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if let text, !text.isEmpty {
                 finalSegments.append(text)
             }
+            let snapshot = await counter.incCompleted()
+            await onProgress(snapshot)
         }
         return finalSegments
+    }
+}
+
+private actor FinalizationCounter {
+    private var total = 0
+    private var completed = 0
+    private var inputClosed = false
+
+    func incTotal() -> RecordingFinalizationProgress {
+        total += 1
+        return snapshot()
+    }
+
+    func incCompleted() -> RecordingFinalizationProgress {
+        completed += 1
+        return snapshot()
+    }
+
+    func markClosed() -> RecordingFinalizationProgress {
+        inputClosed = true
+        return snapshot()
+    }
+
+    private func snapshot() -> RecordingFinalizationProgress {
+        RecordingFinalizationProgress(completed: completed, total: total, inputClosed: inputClosed)
     }
 }

@@ -18,7 +18,7 @@ final class RecordingTranscriptionServiceTests: XCTestCase {
 
         let second = try store.prepareOutput(startedAt: date)
         XCTAssertNotEqual(first.textURL.lastPathComponent, second.textURL.lastPathComponent)
-        XCTAssertTrue(second.textURL.lastPathComponent.hasSuffix("-2.txt"))
+        XCTAssertTrue(second.textURL.lastPathComponent.hasSuffix("-2.md"))
         XCTAssertTrue(second.audioURL.lastPathComponent.hasSuffix("-2.wav"))
     }
 
@@ -101,6 +101,62 @@ final class RecordingTranscriptionServiceTests: XCTestCase {
             XCTFail("Expected no final recognition text error")
         } catch let error as RecordingTranscriptionError {
             XCTAssertEqual(error, .noFinalRecognitionText)
+        }
+    }
+
+    func testEngineEmitsFinalizationProgress() async throws {
+        let audioURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vowky_engine_progress_\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+
+        let previewRecognizer = MockStreamingSpeechRecognizer()
+        previewRecognizer.finishUpdate = StreamingRecognitionUpdate(
+            committedText: "preview",
+            partialText: "",
+            isFinal: true
+        )
+        let finalRecognizer = MockSpeechRecognizer()
+        finalRecognizer.queuedRecognizeResults = ["seg1", "seg2", "seg3"]
+
+        let writer = try WAVSampleFileWriter(url: audioURL)
+        let engine = RecordingTranscriptionEngine(
+            previewRecognizer: previewRecognizer,
+            finalRecognizer: finalRecognizer,
+            writer: writer,
+            sampleRate: 10,
+            finalSegmentDuration: 0.2,
+            finalBoundarySearchWindow: 0
+        )
+
+        let stream = AsyncStream<[Float]> { continuation in
+            continuation.yield([0.1, 0.2])
+            continuation.yield([0.3, 0.4])
+            continuation.yield([0.5])
+            continuation.finish()
+        }
+
+        var progressEvents: [RecordingFinalizationProgress] = []
+        let result = try await engine.run(audioChunks: stream) { _ in
+        } finalizationProgress: { progress in
+            progressEvents.append(progress)
+        }
+
+        XCTAssertEqual(result.finalText, "seg1\nseg2\nseg3")
+        XCTAssertFalse(progressEvents.isEmpty)
+        XCTAssertEqual(progressEvents.last?.total, 3)
+        XCTAssertEqual(progressEvents.last?.completed, 3)
+        XCTAssertEqual(progressEvents.last?.inputClosed, true)
+
+        XCTAssertTrue(progressEvents.contains { $0.inputClosed }, "Expected at least one inputClosed event")
+
+        var lastCompleted = -1
+        var lastTotal = -1
+        for event in progressEvents {
+            XCTAssertGreaterThanOrEqual(event.completed, lastCompleted)
+            XCTAssertGreaterThanOrEqual(event.total, lastTotal)
+            XCTAssertLessThanOrEqual(event.completed, event.total)
+            lastCompleted = event.completed
+            lastTotal = event.total
         }
     }
 }

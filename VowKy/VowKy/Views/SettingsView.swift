@@ -42,6 +42,11 @@ final class SettingsWindowController {
 
 // MARK: - Settings View
 
+private struct SkillStatusKey: Hashable {
+    let platform: AISkillPlatform
+    let kind: AISkillKind
+}
+
 struct SettingsView: View {
     @State private var isAccessibilityGranted = AXIsProcessTrusted()
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -59,10 +64,17 @@ struct SettingsView: View {
         return defaults.bool(forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
     }()
     @State private var permissionRefreshTimer: Timer?
-    @State private var installCodexSkill = true
-    @State private var installClaudeSkill = true
-    @State private var skillStatuses: [AISkillPlatform: AISkillPlatformStatus] = [:]
+    @State private var skillStatuses: [SkillStatusKey: AISkillPlatformStatus] = [:]
     @State private var skillStatusMessage: String?
+
+    // AI 助手
+    @State private var aiEnabled: Bool
+    @State private var providerEntries: [ProviderPriorityEntry]
+    @State private var codexBinaryPath: String
+    @State private var claudeBinaryPath: String
+    @State private var aiTimeoutSeconds: Int
+    @State private var aiTestResult: String?
+    @State private var aiTestInProgress: Bool = false
 
     private let skillInstaller = AISkillInstallerService()
     private weak var updater: SPUUpdater?
@@ -73,6 +85,12 @@ struct SettingsView: View {
         self.updater = updater
         self.updateCoordinator = updateCoordinator
         self.updateViewModel = CheckForUpdatesViewModel(updater: updater)
+        let config = AIProviderFactory.load()
+        _aiEnabled        = State(initialValue: config.enabled)
+        _providerEntries  = State(initialValue: config.providers)
+        _codexBinaryPath  = State(initialValue: config.codex.binaryPath)
+        _claudeBinaryPath = State(initialValue: config.claude.binaryPath)
+        _aiTimeoutSeconds = State(initialValue: config.timeoutSeconds)
     }
 
     var body: some View {
@@ -189,51 +207,79 @@ struct SettingsView: View {
                 }
             }
 
-            Section("AI Skills") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle(isOn: $installCodexSkill) {
-                        HStack {
-                            Text("Codex")
-                            Spacer()
-                            Text(skillStatusText(for: .codex))
-                                .foregroundColor(skillStatusColor(for: .codex))
-                        }
-                    }
-
-                    Toggle(isOn: $installClaudeSkill) {
-                        HStack {
-                            Text("Claude Code")
-                            Spacer()
-                            Text(skillStatusText(for: .claudeCode))
-                                .foregroundColor(skillStatusColor(for: .claudeCode))
-                        }
-                    }
-
-                    HStack {
-                        Button("安装/更新") {
-                            installSelectedSkills()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(selectedSkillPlatforms.isEmpty)
-
-                        Button("卸载") {
-                            uninstallSelectedSkills()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(selectedSkillPlatforms.isEmpty)
-                    }
-
-                    if let skillStatusMessage {
-                        Text(skillStatusMessage)
+            Section("AI 助手（仅限 Claude code/codex 用户）") {
+                Toggle(isOn: $aiEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("启用 AI 处理")
+                        Text("转写完成后自动给转写稿生成标题、摘要和段落结构")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .onChange(of: aiEnabled) { _ in saveAIConfig() }
+
+                if aiEnabled {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("安装 skill")
+                            .font(.headline)
+                        Text("将安装 vowky-transcribe 和 transcript-enhance 两个 skill")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    platformInstallCard(.claudeCode)
+                    platformInstallCard(.codex)
+
+                    if anyEnhanceInstalled {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("设置 agent 优先级")
+                                .font(.headline)
+                            Text("排在前面的优先使用，不可用时自动尝试后面的")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        VStack(spacing: 4) {
+                            ForEach(providerEntries.indices, id: \.self) { idx in
+                                providerPriorityRow(index: idx)
+                            }
+                        }
+
+                        Stepper("调用超时：\(aiTimeoutSeconds) 秒", value: $aiTimeoutSeconds, in: 30...300, step: 10)
+                            .onChange(of: aiTimeoutSeconds) { _ in saveAIConfig() }
+
+                        HStack {
+                            Button {
+                                Task { await testAIProvider() }
+                            } label: {
+                                if aiTestInProgress {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Text("测试连接")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(aiTestInProgress)
+                            Spacer()
+                        }
+
+                        if let aiTestResult {
+                            Text(aiTestResult)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else {
+                        Text("⚠ 请至少安装一个 AI 工具的 skill 才能继续")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 560)
+        .frame(width: 420, height: 720)
         .onAppear {
             isAccessibilityGranted = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -355,72 +401,295 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - AI Skills
-
-    private var selectedSkillPlatforms: Set<AISkillPlatform> {
-        var platforms = Set<AISkillPlatform>()
-        if installCodexSkill {
-            platforms.insert(.codex)
-        }
-        if installClaudeSkill {
-            platforms.insert(.claudeCode)
-        }
-        return platforms
-    }
+    // MARK: - AI Skills helpers
 
     private func refreshSkillStatuses() {
         skillStatuses = Dictionary(
-            uniqueKeysWithValues: skillInstaller.statuses().map { ($0.platform, $0) }
+            uniqueKeysWithValues: skillInstaller.statuses().map {
+                (SkillStatusKey(platform: $0.platform, kind: $0.kind), $0)
+            }
         )
     }
 
-    private func installSelectedSkills() {
+    /// Provider kind → 对应平台。
+    private func skillPlatform(for kind: AIProviderKind) -> AISkillPlatform? {
+        switch kind {
+        case .codex:      return .codex
+        case .claudeCode: return .claudeCode
+        }
+    }
+
+    private func installSkill(for platform: AISkillPlatform) {
         do {
-            let installed = try skillInstaller.install(platforms: selectedSkillPlatforms)
+            _ = try skillInstaller.install(platforms: [platform])
             refreshSkillStatuses()
-            skillStatusMessage = "已安装/更新：\(installed.map(\.path).joined(separator: "，"))"
+            skillStatusMessage = nil
         } catch {
             refreshSkillStatuses()
             skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    private func uninstallSelectedSkills() {
+    private func uninstallSkill(for platform: AISkillPlatform) {
         do {
-            let result = try skillInstaller.uninstall(platforms: selectedSkillPlatforms)
+            _ = try skillInstaller.uninstall(platforms: [platform])
             refreshSkillStatuses()
-            if result.removedCompletedJobCaches > 0 {
-                skillStatusMessage = "已卸载所选 AI Skills，已清理 \(result.removedCompletedJobCaches) 个已完成任务缓存"
-            } else {
-                skillStatusMessage = "已卸载所选 AI Skills"
-            }
+            skillStatusMessage = nil
         } catch {
             refreshSkillStatuses()
             skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    private func skillStatusText(for platform: AISkillPlatform) -> String {
-        guard let status = skillStatuses[platform] else { return "检查中" }
+    private func expectedSkillVersion(for kind: AISkillKind) -> String {
+        switch kind {
+        case .transcribe: return AISkillInstallerService.transcribeSkillVersion
+        case .enhance:    return AISkillInstallerService.enhanceSkillVersion
+        }
+    }
+
+    private func skillGridStatusText(for platform: AISkillPlatform, kind: AISkillKind) -> String {
+        guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)] else {
+            return "检查中"
+        }
+        let expected = expectedSkillVersion(for: kind)
         switch status.state {
         case .notInstalled:
             return "未安装"
-        case .installed(let version):
-            return version.map { "已安装 \($0)" } ?? "已安装"
+        case .installed(let installed):
+            if let installed, installed != expected {
+                return "可更新"
+            }
+            return "已安装"
         case .blockedByUnmanagedSkill:
-            return "存在同名 skill"
+            return "冲突"
         }
     }
 
-    private func skillStatusColor(for platform: AISkillPlatform) -> Color {
-        guard let status = skillStatuses[platform] else { return .secondary }
+    private func skillGridStatusColor(for platform: AISkillPlatform, kind: AISkillKind) -> Color {
+        guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)] else {
+            return .secondary
+        }
+        let expected = expectedSkillVersion(for: kind)
         switch status.state {
         case .notInstalled:
             return .secondary
-        case .installed:
+        case .installed(let installed):
+            if let installed, installed != expected {
+                return .orange
+            }
             return .green
         case .blockedByUnmanagedSkill:
-            return .orange
+            return .red
         }
+    }
+
+    @ViewBuilder
+    private func skillVersionBadge(for platform: AISkillPlatform, kind: AISkillKind) -> some View {
+        let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)]
+        let expected = expectedSkillVersion(for: kind)
+        switch status?.state {
+        case .installed(let installed):
+            if let installed {
+                if installed == expected {
+                    badgeView(text: expected, tint: .green)
+                } else {
+                    badgeView(text: "\(installed)→\(expected)", tint: .orange)
+                }
+            } else {
+                badgeView(text: "已装", tint: .green)
+            }
+        case .blockedByUnmanagedSkill:
+            badgeView(text: "非 VowKy", tint: .red)
+        case .notInstalled, .none:
+            badgeView(text: "—", tint: .secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func badgeView(text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(tint.opacity(0.15))
+            .foregroundColor(tint)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .fixedSize()
+    }
+
+    // MARK: - AI 助手
+
+    private func buildAIConfig() -> AIProviderConfig {
+        AIProviderConfig(
+            enabled: aiEnabled,
+            providers: providerEntries.map { ProviderPriorityEntry(kind: $0.kind, enabled: true) },
+            codex: CLIConfig(binaryPath: codexBinaryPath),
+            claude: CLIConfig(binaryPath: claudeBinaryPath),
+            timeoutSeconds: aiTimeoutSeconds
+        )
+    }
+
+    private func saveAIConfig() {
+        AIProviderFactory.save(buildAIConfig())
+    }
+
+    /// 是否至少一个平台的 transcript-enhance 已装。
+    private var anyEnhanceInstalled: Bool {
+        AISkillPlatform.allCases.contains { platform in
+            guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: .enhance)] else {
+                return false
+            }
+            if case .installed = status.state { return true }
+            return false
+        }
+    }
+
+    private func moveProvider(at idx: Int, delta: Int) {
+        let newIdx = idx + delta
+        guard providerEntries.indices.contains(idx),
+              providerEntries.indices.contains(newIdx) else { return }
+        providerEntries.swapAt(idx, newIdx)
+        aiTestResult = nil
+        saveAIConfig()
+    }
+
+    @ViewBuilder
+    private func providerPriorityRow(index idx: Int) -> some View {
+        let entry = providerEntries[idx]
+        HStack(spacing: 8) {
+            Text("\(idx + 1).")
+                .font(.caption.monospacedDigit())
+                .foregroundColor(.secondary)
+            Text(entry.kind.displayName)
+            Spacer()
+            Button {
+                moveProvider(at: idx, delta: -1)
+            } label: {
+                Image(systemName: "arrow.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(idx == 0)
+
+            Button {
+                moveProvider(at: idx, delta: 1)
+            } label: {
+                Image(systemName: "arrow.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(idx == providerEntries.count - 1)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+    }
+
+    @ViewBuilder
+    private func platformInstallCard(_ platform: AISkillPlatform) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(platform == .claudeCode ? "Claude Code CLI" : "Codex CLI")
+                .font(.headline)
+
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
+                skillGridRow(platform: platform, kind: .transcribe)
+                skillGridRow(platform: platform, kind: .enhance)
+            }
+
+            if let skillStatusMessage {
+                Text(skillStatusMessage)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .padding(.leading, 8)
+                    .padding(.vertical, 4)
+                    .padding(.trailing, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.red.opacity(0.06))
+                    )
+                    .overlay(
+                        Rectangle()
+                            .fill(Color.red)
+                            .frame(width: 2),
+                        alignment: .leading
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 6) {
+                Spacer()
+                Button("安装/更新 skill") {
+                    installSkill(for: platform)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button("卸载") {
+                    uninstallSkill(for: platform)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(
+                    skillStatuses[SkillStatusKey(platform: platform, kind: .transcribe)]?.state == .notInstalled &&
+                    skillStatuses[SkillStatusKey(platform: platform, kind: .enhance)]?.state == .notInstalled
+                )
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.gray.opacity(0.06)))
+    }
+
+    @ViewBuilder
+    private func skillGridRow(platform: AISkillPlatform, kind: AISkillKind) -> some View {
+        GridRow {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(skillGridStatusColor(for: platform, kind: kind))
+                    .frame(width: 7, height: 7)
+                Text(kind.displayName)
+                    .font(.caption)
+            }
+            Text(skillGridStatusText(for: platform, kind: kind))
+                .font(.caption)
+                .foregroundColor(skillGridStatusColor(for: platform, kind: kind))
+                .gridColumnAlignment(.trailing)
+            skillVersionBadge(for: platform, kind: kind)
+                .gridColumnAlignment(.center)
+        }
+    }
+
+    @MainActor
+    private func testAIProvider() async {
+        aiTestInProgress = true
+        aiTestResult = nil
+        defer { aiTestInProgress = false }
+
+        let config = buildAIConfig()
+        let checker = ProviderUsabilityChecker()
+
+        var lines: [String] = []
+        for entry in config.providers where entry.enabled {
+            if let reason = checker.unusableReason(for: entry.kind, config: config) {
+                lines.append("✗ \(entry.kind.displayName)：\(reason.errorDescription ?? "不可用")")
+                continue
+            }
+            let provider = AIProviderFactory.makeProvider(kind: entry.kind, config: config)
+            do {
+                let probeStarted = Date()
+                let reply = try await provider.probe()
+                let elapsedMs = Int(Date().timeIntervalSince(probeStarted) * 1000)
+                let preview = reply.prefix(40)
+                lines.append("✓ \(entry.kind.displayName)（\(elapsedMs) ms）：\(preview)")
+            } catch {
+                let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                lines.append("✗ \(entry.kind.displayName)：\(msg)")
+            }
+        }
+
+        if config.providers.allSatisfy({ !$0.enabled }) {
+            lines.append("未启用任何 provider")
+        }
+
+        aiTestResult = lines.joined(separator: "\n")
     }
 }

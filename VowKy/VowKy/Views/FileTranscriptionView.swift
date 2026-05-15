@@ -83,6 +83,16 @@ struct FileTranscriptionJob: Identifiable, Equatable {
     var currentSegment: Int = 0
     var totalSegments: Int = 0
 
+    // AI 后处理状态（单 job 维度）
+    var titleStatus: RecordingTranscriptionViewModel.AIBadgeStatus = .idle
+    var summaryStatus: RecordingTranscriptionViewModel.AIBadgeStatus = .idle
+    var outlineStatus: RecordingTranscriptionViewModel.AIBadgeStatus = .idle
+    var enhancedMarkdown: String?
+    var enhancementInFlight: Bool = false
+
+    /// 实际落盘的 .md 路径；nil 表示尚未写盘（写权限不足 / 转写未完成）
+    var markdownURL: URL?
+
     var isFinished: Bool {
         switch state {
         case .completed, .cancelled, .failed:
@@ -105,13 +115,17 @@ final class FileTranscriptionViewModel: ObservableObject {
     private let appState: AppState
     private let fileTranscriptionServiceFactory: () -> FileTranscribing
     private let resultRecorder: (String) -> Void
+    private let enhancementService: TranscriptionEnhancing
+    private let aiConfigLoader: () -> AIProviderConfig
     private var transcriptionTask: Task<Void, Never>?
     private var activeTargetJobIDs: Set<UUID>?
 
     init(
         appState: AppState,
         fileTranscriptionServiceFactory: (() -> FileTranscribing)? = nil,
-        resultRecorder: ((String) -> Void)? = nil
+        resultRecorder: ((String) -> Void)? = nil,
+        enhancementService: TranscriptionEnhancing = EnhancementRouter(),
+        aiConfigLoader: @escaping () -> AIProviderConfig = { AIProviderFactory.load() }
     ) {
         self.appState = appState
         self.fileTranscriptionServiceFactory = fileTranscriptionServiceFactory ?? {
@@ -120,6 +134,8 @@ final class FileTranscriptionViewModel: ObservableObject {
         self.resultRecorder = resultRecorder ?? { text in
             appState.recordRecognitionResult(text: text, sourceType: "file")
         }
+        self.enhancementService = enhancementService
+        self.aiConfigLoader = aiConfigLoader
         refreshInsertionTarget()
     }
 
@@ -451,6 +467,20 @@ final class FileTranscriptionViewModel: ObservableObject {
                         job.state = .completed
                     }
                     resultRecorder(finalText)
+
+                    // 转写一完成就自动落盘 raw text .md（无 AI 也写，与录音流程一致）
+                    let mdURL = Self.resolveMarkdownOutputURL(for: jobURL)
+                    do {
+                        try finalText.write(to: mdURL, atomically: true, encoding: .utf8)
+                        updateJob(id: jobID) { $0.markdownURL = mdURL }
+                    } catch {
+                        print("[VowKy][FileTranscription] 自动落盘失败: \(error.localizedDescription)")
+                    }
+
+                    let cfg = aiConfigLoader()
+                    if cfg.enabled && !finalText.isEmpty {
+                        await runEnhancement(for: jobID, rawText: finalText, audioURL: jobURL)
+                    }
                 } catch is CancellationError {
                     updateJob(id: jobID) { job in
                         job.state = .cancelled
@@ -514,15 +544,18 @@ final class FileTranscriptionViewModel: ObservableObject {
         guard canUseResult, let selectedJob else { return }
 
         let panel = NSSavePanel()
-        panel.title = "保存转录文本"
-        panel.allowedContentTypes = [.plainText]
-        panel.allowsOtherFileTypes = false
+        panel.title = "另存为"
+        // 允许 .md 和 .txt（用户可在 SavePanel 自由编辑扩展名）
+        panel.allowedContentTypes = [.plainText, .data]
+        panel.allowsOtherFileTypes = true
         panel.nameFieldStringValue = defaultSaveName(for: selectedJob)
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        // 有 AI markdown 时优先写它；否则写 raw text
+        let content = selectedJob.enhancedMarkdown ?? resultText
         do {
-            try resultText.write(to: url, atomically: true, encoding: .utf8)
+            try content.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             updateJob(id: selectedJob.id) { job in
                 job.state = .failed("保存失败：\(error.localizedDescription)")
@@ -544,19 +577,32 @@ final class FileTranscriptionViewModel: ObservableObject {
 
         var usedNames: Set<String> = []
         for job in jobs where !job.resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let fileURL = uniqueTextFileURL(
+            let (content, ext) = job.enhancedMarkdown.map { ($0, "md") }
+                ?? (job.resultText, "txt")
+            let fileURL = uniqueOutputFileURL(
                 in: folderURL,
                 baseName: (job.fileName as NSString).deletingPathExtension,
+                ext: ext,
                 usedNames: &usedNames
             )
             do {
-                try job.resultText.write(to: fileURL, atomically: true, encoding: .utf8)
+                try content.write(to: fileURL, atomically: true, encoding: .utf8)
             } catch {
                 updateJob(id: job.id) { item in
                     item.state = .failed("保存失败：\(error.localizedDescription)")
                 }
             }
         }
+    }
+
+    /// 在 Finder 中显示当前选中 job 自动落盘的 .md 文件。
+    func revealMarkdownInFinder() {
+        guard let url = selectedJob?.markdownURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    var canRevealMarkdownInFinder: Bool {
+        selectedJob?.markdownURL != nil
     }
 
     func insertResult() {
@@ -631,6 +677,103 @@ final class FileTranscriptionViewModel: ObservableObject {
         mutate(&jobs[index])
     }
 
+    // MARK: - AI enhancement
+
+    /// 对单个已转写完成的 job 跑 AI 后处理。在 transcriptionTask 内串行调用。
+    func runEnhancement(for jobID: UUID, rawText: String, audioURL: URL) async {
+        updateJob(id: jobID) { job in
+            job.enhancementInFlight = true
+            job.titleStatus = .running
+            job.summaryStatus = .running
+            job.outlineStatus = .running
+        }
+
+        let input = EnhancementInput(
+            rawText: rawText,
+            audioURL: audioURL,
+            startedAt: Date(),
+            durationSeconds: nil,
+            sourceType: "file"
+        )
+        // frontmatter 里的 markdown_path 用实际写盘路径；尚未写盘时退到空字符串
+        let mdURL = jobs.first(where: { $0.id == jobID })?.markdownURL
+        let markdownPath = mdURL?.path ?? ""
+        // 同目录写 .ai-log.txt（与 .md 同 basename）
+        let logFilePath = mdURL.map {
+            $0.deletingPathExtension().appendingPathExtension("ai-log.txt").path
+        }
+
+        let result = await enhancementService.enhance(
+            input: input,
+            markdownPath: markdownPath,
+            logFilePath: logFilePath
+        ) { [weak self] progress in
+            Task { @MainActor in
+                self?.apply(enhancementProgress: progress, to: jobID)
+            }
+        }
+
+        // 把完整 markdown（带 frontmatter+heading）覆盖写回磁盘
+        if let mdURL {
+            do {
+                try result.fullMarkdownDocument.write(to: mdURL, atomically: true, encoding: .utf8)
+            } catch {
+                print("[VowKy][FileTranscription] AI markdown 覆盖写盘失败: \(error.localizedDescription)")
+            }
+        }
+
+        updateJob(id: jobID) { job in
+            job.enhancementInFlight = false
+            job.enhancedMarkdown = result.fullMarkdownDocument
+        }
+    }
+
+    /// 手动触发选中 job 的 AI 美化。
+    func runEnhancementForSelectedJob() {
+        guard let job = selectedJob,
+              job.state == .completed,
+              !job.resultText.isEmpty,
+              !job.enhancementInFlight,
+              job.enhancedMarkdown == nil else { return }
+        let id = job.id
+        let raw = job.resultText
+        let url = job.url
+        Task { await runEnhancement(for: id, rawText: raw, audioURL: url) }
+    }
+
+    var canRunEnhancementForSelectedJob: Bool {
+        guard let job = selectedJob else { return false }
+        guard aiConfigLoader().enabled else { return false }
+        return job.state == .completed
+            && !job.resultText.isEmpty
+            && !job.enhancementInFlight
+            && job.enhancedMarkdown == nil
+    }
+
+    var aiBadgesVisibleForSelectedJob: Bool {
+        guard let job = selectedJob else { return false }
+        return aiConfigLoader().enabled && job.state == .completed
+    }
+
+    private func apply(
+        enhancementProgress progress: EnhancementProgress,
+        to jobID: UUID
+    ) {
+        let status: RecordingTranscriptionViewModel.AIBadgeStatus
+        switch progress.status {
+        case .running:   status = .running
+        case .succeeded: status = .succeeded
+        case .failed(let msg): status = .failed(msg)
+        }
+        updateJob(id: jobID) { job in
+            switch progress.task {
+            case .title:   job.titleStatus = status
+            case .summary: job.summaryStatus = status
+            case .outline: job.outlineStatus = status
+            }
+        }
+    }
+
     private func normalizedFileKey(_ url: URL) -> String {
         url.standardizedFileURL.path
     }
@@ -680,20 +823,23 @@ final class FileTranscriptionViewModel: ObservableObject {
 
     private func defaultSaveName(for job: FileTranscriptionJob) -> String {
         let baseName = (job.fileName as NSString).deletingPathExtension
-        return baseName.isEmpty ? "VowKy转录.txt" : "\(baseName).txt"
+        let ext = job.enhancedMarkdown != nil ? "md" : "txt"
+        let base = baseName.isEmpty ? "VowKy转录" : baseName
+        return "\(base).\(ext)"
     }
 
-    private func uniqueTextFileURL(
+    private func uniqueOutputFileURL(
         in folderURL: URL,
         baseName: String,
+        ext: String,
         usedNames: inout Set<String>
     ) -> URL {
         let cleanBaseName = sanitizedFileName(baseName.isEmpty ? "VowKy转录" : baseName)
-        var candidate = "\(cleanBaseName).txt"
+        var candidate = "\(cleanBaseName).\(ext)"
         var suffix = 2
         while usedNames.contains(candidate)
             || FileManager.default.fileExists(atPath: folderURL.appendingPathComponent(candidate).path) {
-            candidate = "\(cleanBaseName)-\(suffix).txt"
+            candidate = "\(cleanBaseName)-\(suffix).\(ext)"
             suffix += 1
         }
         usedNames.insert(candidate)
@@ -701,10 +847,40 @@ final class FileTranscriptionViewModel: ObservableObject {
     }
 
     private func sanitizedFileName(_ name: String) -> String {
+        Self.sanitizedFileNameStatic(name)
+    }
+
+    private static func sanitizedFileNameStatic(_ name: String) -> String {
         let invalid = CharacterSet(charactersIn: "/:")
         let parts = name.components(separatedBy: invalid)
         let cleaned = parts.joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
         return cleaned.isEmpty ? "VowKy转录" : cleaned
+    }
+
+    /// 为给定音频 URL 选一个可写的 .md 落盘位置：优先音频同目录；
+    /// 同目录不可写时回退到 `~/Documents/VowKy Recordings/`。同名时加 `-2` / `-3` 后缀。
+    static func resolveMarkdownOutputURL(for audioURL: URL) -> URL {
+        let baseName = (audioURL.lastPathComponent as NSString).deletingPathExtension
+        let safeBase = sanitizedFileNameStatic(baseName)
+
+        let audioDir = audioURL.deletingLastPathComponent()
+        if FileManager.default.isWritableFile(atPath: audioDir.path) {
+            return pickNonExisting(dir: audioDir, base: safeBase)
+        }
+
+        let fallback = RecordingTranscriptionOutputStore.defaultOutputDirectory()
+        try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)
+        return pickNonExisting(dir: fallback, base: safeBase)
+    }
+
+    private static func pickNonExisting(dir: URL, base: String) -> URL {
+        var url = dir.appendingPathComponent("\(base).md")
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = dir.appendingPathComponent("\(base)-\(suffix).md")
+            suffix += 1
+        }
+        return url
     }
 
     private func clampedProgress(_ value: Double) -> Double {
@@ -1135,7 +1311,29 @@ struct FileTranscriptionView: View {
                             .fill(FileTranscriptionTheme.accentBright.opacity(0.30))
                     )
 
+                if viewModel.aiBadgesVisibleForSelectedJob, let job = viewModel.selectedJob {
+                    AIBadgesView(
+                        title: job.titleStatus,
+                        summary: job.summaryStatus,
+                        outline: job.outlineStatus
+                    )
+                }
+
+                if let job = viewModel.selectedJob, job.enhancementInFlight {
+                    ProgressView().controlSize(.small)
+                }
+
                 Spacer()
+
+                if viewModel.canRunEnhancementForSelectedJob {
+                    Button {
+                        viewModel.runEnhancementForSelectedJob()
+                    } label: {
+                        Label("AI 美化", systemImage: "wand.and.stars")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(FileSecondaryButtonStyle())
+                }
 
                 if !viewModel.resultText.isEmpty {
                     Text("\(viewModel.resultText.count) 字")
@@ -1161,7 +1359,9 @@ struct FileTranscriptionView: View {
                 }
 
                 TextEditor(text: Binding(
-                    get: { viewModel.resultText },
+                    get: {
+                        viewModel.selectedJob?.enhancedMarkdown ?? viewModel.resultText
+                    },
                     set: { viewModel.updateSelectedResultText($0) }
                 ))
                 .font(.system(size: 14))
@@ -1239,10 +1439,19 @@ struct FileTranscriptionView: View {
             Button {
                 viewModel.saveResult()
             } label: {
-                Label("保存", systemImage: "square.and.arrow.down")
+                Label("另存为", systemImage: "square.and.arrow.down")
             }
             .buttonStyle(FileSecondaryButtonStyle())
             .disabled(!viewModel.canUseResult)
+
+            Button {
+                viewModel.revealMarkdownInFinder()
+            } label: {
+                Label("在 Finder 中显示", systemImage: "folder")
+            }
+            .buttonStyle(FileSecondaryButtonStyle())
+            .disabled(!viewModel.canRevealMarkdownInFinder)
+            .help(viewModel.canRevealMarkdownInFinder ? "打开自动落盘的 .md 文件位置" : "尚未生成 .md 文件")
 
             if viewModel.canSaveAllResults {
                 Button {
