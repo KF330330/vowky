@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>VowKy AI 助手卡片布局方案对比</title>
+<style>
+  :root {
+    --bg: #ECECEC;
+    --panel: #FFFFFF;
+    --card-bg: #F5F5F7;
+    --card-border: rgba(0,0,0,0.06);
+    --text: #1D1D1F;
+    --text-secondary: #6E6E73;
+    --text-tertiary: #8E8E93;
+    --accent: #007AFF;
+    --green: #34C759;
+    --orange: #FF9500;
+    --red: #FF3B30;
+    --gray: #AEAEB2;
+    --gray-soft: rgba(120,120,128,0.16);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "PingFang SC", sans-serif;
+    color: var(--text);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 6px 0;
+    letter-spacing: -0.4px;
+  }
+  .intro {
+    color: var(--text-secondary);
+    margin: 0 0 4px 0;
+    font-size: 13px;
+  }
+  .recommend-banner {
+    background: linear-gradient(135deg, #E3F2FD 0%, #F3E5F5 100%);
+    border: 1px solid rgba(0,122,255,0.25);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin: 14px 0 28px 0;
+    font-size: 13px;
+    color: #1D1D1F;
+  }
+  .recommend-banner strong { color: var(--accent); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+    gap: 20px;
+  }
+  .scheme {
+    background: var(--panel);
+    border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 14px;
+    padding: 18px 18px 20px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .scheme.recommended {
+    border: 2px solid var(--accent);
+    box-shadow: 0 4px 16px rgba(0,122,255,0.18);
+    position: relative;
+  }
+  .scheme.recommended::before {
+    content: "★ 首选";
+    position: absolute;
+    top: -10px;
+    right: 14px;
+    background: var(--accent);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 10px;
+    letter-spacing: 0.3px;
+  }
+  .scheme h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.2px;
+  }
+  .scheme .desc {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin: 0 0 6px 0;
+    line-height: 1.4;
+  }
+  .score {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin: 0 0 14px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--card-border);
+  }
+  .score b { color: var(--text); font-weight: 600; }
+  .score .total {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 8px;
+    background: var(--gray-soft);
+    border-radius: 8px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .state-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-tertiary);
+    margin: 14px 0 6px 0;
+    font-weight: 600;
+  }
+
+  /* ==== Card width = 420px panel ==== */
+  .panel-frame {
+    width: 100%;
+    max-width: 404px;
+  }
+
+  /* ============================================
+     A. 紧凑堆叠（清理版）
+  ============================================ */
+  .card-a {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--card-border);
+  }
+  .card-a .title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .card-a .skill-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--text-secondary);
+  }
+  .card-a .skill-name {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .card-a .sep {
+    color: var(--text-tertiary);
+    font-size: 10px;
+  }
+  .card-a .badge {
+    margin-left: auto;
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 6px;
+    background: var(--gray-soft);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+  .card-a .badge.green { background: rgba(52,199,89,0.15); color: #1E8C3F; }
+  .card-a .badge.orange { background: rgba(255,149,0,0.18); color: #B86E00; }
+  .card-a .badge.red { background: rgba(255,59,48,0.15); color: #C6261B; }
+  .card-a .err {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--red);
+    line-height: 1.35;
+  }
+  .card-a .btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  /* ============================================
+     B. 头部整体状态 Chip
+  ============================================ */
+  .card-b {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--card-border);
+  }
+  .card-b .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .card-b .title { font-size: 13px; font-weight: 600; }
+  .card-b .status-chip {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 10px;
+    letter-spacing: 0.2px;
+  }
+  .card-b .status-chip.green { background: rgba(52,199,89,0.18); color: #1E8C3F; }
+  .card-b .status-chip.orange { background: rgba(255,149,0,0.20); color: #B86E00; }
+  .card-b .status-chip.gray { background: var(--gray-soft); color: var(--text-secondary); }
+  .card-b .status-chip.red { background: rgba(255,59,48,0.18); color: #C6261B; }
+  .card-b .skill-row {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--text-secondary);
+  }
+  .card-b .skill-row .name { color: var(--text); font-weight: 500; margin-right: 6px; }
+  .card-b .skill-row .ver { margin-left: auto; font-size: 11px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  .card-b .skill-row .ver.green { color: #1E8C3F; font-weight: 500; }
+  .card-b .skill-row .ver.orange { color: #B86E00; font-weight: 500; }
+  .card-b .skill-row .ver.red { color: #C6261B; font-weight: 500; }
+  .card-b .err {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--red);
+    padding-left: 10px;
+    border-left: 2px solid var(--red);
+    line-height: 1.35;
+  }
+  .card-b .btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  /* ============================================
+     C. 左右分栏
+  ============================================ */
+  .card-c {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--card-border);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: center;
+  }
+  .card-c .left .title {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .card-c .skill-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--text-secondary);
+  }
+  .card-c .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--gray);
+    flex-shrink: 0;
+  }
+  .card-c .dot.green { background: var(--green); }
+  .card-c .dot.orange { background: var(--orange); }
+  .card-c .dot.red { background: var(--red); }
+  .card-c .skill-name { color: var(--text); font-weight: 500; }
+  .card-c .ver { color: var(--text-tertiary); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .card-c .err {
+    grid-column: 1 / -1;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--red);
+    line-height: 1.35;
+  }
+  .card-c .right {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: stretch;
+  }
+
+  /* ============================================
+     D. Grid 严格列对齐
+  ============================================ */
+  .card-d {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--card-border);
+  }
+  .card-d .title {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .card-d .skill-grid {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    column-gap: 10px;
+    row-gap: 3px;
+    align-items: center;
+  }
+  .card-d .col-name {
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card-d .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--gray);
+    flex-shrink: 0;
+  }
+  .card-d .dot.green { background: var(--green); }
+  .card-d .dot.orange { background: var(--orange); }
+  .card-d .dot.red { background: var(--red); }
+  .card-d .col-status {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .card-d .col-status.green { color: #1E8C3F; }
+  .card-d .col-status.orange { color: #B86E00; }
+  .card-d .col-status.red { color: #C6261B; }
+  .card-d .col-badge {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 6px;
+    background: var(--gray-soft);
+    color: var(--text-secondary);
+    font-weight: 500;
+    min-width: 36px;
+    text-align: center;
+  }
+  .card-d .col-badge.green { background: rgba(52,199,89,0.15); color: #1E8C3F; }
+  .card-d .col-badge.orange { background: rgba(255,149,0,0.18); color: #B86E00; }
+  .card-d .col-badge.red { background: rgba(255,59,48,0.15); color: #C6261B; }
+  .card-d .err {
+    margin-top: 6px;
+    padding: 5px 8px;
+    border-left: 2px solid var(--red);
+    background: rgba(255,59,48,0.06);
+    font-size: 11px;
+    color: var(--red);
+    border-radius: 0 4px 4px 0;
+    line-height: 1.35;
+  }
+  .card-d .btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  /* ============================================
+     E. 左侧状态色条 + 紧凑内容
+  ============================================ */
+  .card-e {
+    background: var(--card-bg);
+    border-radius: 8px;
+    border: 1px solid var(--card-border);
+    display: grid;
+    grid-template-columns: 3px 1fr;
+    overflow: hidden;
+  }
+  .card-e .bar { background: var(--gray); }
+  .card-e .bar.green { background: var(--green); }
+  .card-e .bar.orange { background: var(--orange); }
+  .card-e .bar.red { background: var(--red); }
+  .card-e .content {
+    padding: 10px 12px;
+  }
+  .card-e .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .card-e .title { font-size: 12px; font-weight: 600; }
+  .card-e .health {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+  }
+  .card-e .health.green { color: #1E8C3F; }
+  .card-e .health.orange { color: #B86E00; }
+  .card-e .health.red { color: #C6261B; }
+  .card-e .skill-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 17px;
+  }
+  .card-e .icon {
+    width: 13px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--gray);
+  }
+  .card-e .icon.green { color: var(--green); }
+  .card-e .icon.orange { color: var(--orange); }
+  .card-e .icon.red { color: var(--red); }
+  .card-e .skill-name { color: var(--text); font-weight: 500; }
+  .card-e .skill-detail {
+    color: var(--text-tertiary);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    margin-left: auto;
+  }
+  .card-e .skill-detail.update { color: #B86E00; font-weight: 500; }
+  .card-e .err {
+    margin-top: 5px;
+    font-size: 11px;
+    color: var(--red);
+    line-height: 1.35;
+  }
+  .card-e .btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  /* ============================================
+     Buttons (shared)
+  ============================================ */
+  .btn {
+    font-family: inherit;
+    font-size: 11px;
+    padding: 3px 11px;
+    border-radius: 5px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: white;
+    color: var(--text);
+    cursor: pointer;
+    box-shadow: 0 0.5px 0 rgba(0,0,0,0.04);
+    line-height: 16px;
+  }
+  .btn.primary {
+    background: var(--accent);
+    color: white;
+    border-color: transparent;
+  }
+  .btn.danger {
+    color: var(--red);
+  }
+  .btn:disabled, .btn.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .btn.block {
+    display: block;
+    width: 100%;
+    text-align: center;
+  }
+
+  /* ============================================
+     Bottom summary table
+  ============================================ */
+  .summary {
+    margin-top: 32px;
+    background: var(--panel);
+    border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .summary h3 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .summary table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .summary th, .summary td {
+    padding: 6px 10px;
+    text-align: center;
+    border-bottom: 1px solid var(--card-border);
+  }
+  .summary th {
+    background: var(--card-bg);
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+  .summary td:first-child, .summary th:first-child {
+    text-align: left;
+  }
+  .summary .top { background: rgba(0,122,255,0.06); font-weight: 600; }
+  .summary .total-col { font-weight: 600; color: var(--accent); }
+</style>
+</head>
+<body>
+
+<h1>VowKy · AI 助手卡片布局方案对比</h1>
+<p class="intro">为「设置 → AI 助手」分区下的平台安装卡片（Claude Code CLI / Codex CLI）设计 5 种紧凑布局，每个方案覆盖 4 种状态：未装 / 已装最新 / 已装旧版可更新 / 冲突。</p>
+<div class="recommend-banner">
+  <strong>首选：方案 E（左侧状态色条 + 紧凑内容）</strong> — 色条提供周边视觉的整卡健康度，扫读不需要聚焦到文字；密度足够紧凑且错误展示位置自然（色条直接变红）。
+</div>
+
+<div class="grid">
+
+  <!-- ============================================
+       方案 A — 紧凑堆叠
+  ============================================ -->
+  <div class="scheme">
+    <h2>A · 紧凑堆叠（清理版）</h2>
+    <p class="desc">现状直接瘦身：去掉成功 toast 行，行高压到 18，分区内边距 10/12。skill 行 = 名 · 状态文字 · 版本徽标。</p>
+    <p class="score">
+      密度 17 · 扫读 19 · 层级 16 · 错误 12 · 美观 16
+      <span class="total">80</span>
+    </p>
+
+    <div class="state-label">① 未装</div>
+    <div class="panel-frame">
+      <div class="card-a">
+        <div class="title">Claude Code CLI</div>
+        <div class="skill-row"><span class="skill-name">vowky-transcribe</span><span class="sep">·</span><span>未安装</span><span class="badge">—</span></div>
+        <div class="skill-row"><span class="skill-name">transcript-enhance</span><span class="sep">·</span><span>未安装</span><span class="badge">—</span></div>
+        <div class="btn-row">
+          <button class="btn primary">安装 skill</button>
+          <button class="btn danger disabled" disabled>卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">② 已装最新</div>
+    <div class="panel-frame">
+      <div class="card-a">
+        <div class="title">Claude Code CLI</div>
+        <div class="skill-row"><span class="skill-name">vowky-transcribe</span><span class="sep">·</span><span>已安装</span><span class="badge green">1.0.1</span></div>
+        <div class="skill-row"><span class="skill-name">transcript-enhance</span><span class="sep">·</span><span>已安装</span><span class="badge green">1.0.0</span></div>
+        <div class="btn-row">
+          <button class="btn disabled" disabled>已是最新</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">③ 已装旧版（可更新）</div>
+    <div class="panel-frame">
+      <div class="card-a">
+        <div class="title">Claude Code CLI</div>
+        <div class="skill-row"><span class="skill-name">vowky-transcribe</span><span class="sep">·</span><span>可更新</span><span class="badge orange">0.0.5 → 1.0.1</span></div>
+        <div class="skill-row"><span class="skill-name">transcript-enhance</span><span class="sep">·</span><span>可更新</span><span class="badge orange">0.0.5 → 1.0.0</span></div>
+        <div class="btn-row">
+          <button class="btn primary">更新 skill</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">④ 冲突</div>
+    <div class="panel-frame">
+      <div class="card-a">
+        <div class="title">Claude Code CLI</div>
+        <div class="skill-row"><span class="skill-name">vowky-transcribe</span><span class="sep">·</span><span>冲突</span><span class="badge red">非 VowKy</span></div>
+        <div class="skill-row"><span class="skill-name">transcript-enhance</span><span class="sep">·</span><span>已安装</span><span class="badge green">1.0.0</span></div>
+        <div class="err">检测到同名 skill，请先手动移除 ~/.claude/skills/vowky-transcribe</div>
+        <div class="btn-row">
+          <button class="btn primary disabled" disabled>安装 skill</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================
+       方案 B — 头部整体状态 Chip
+  ============================================ -->
+  <div class="scheme">
+    <h2>B · 头部整体状态 Chip</h2>
+    <p class="desc">卡顶平台名 + 右侧整卡状态 chip（全装 / 可更新 / 未装 / 冲突），中部 skill 行更扁，版本右对齐。</p>
+    <p class="score">
+      密度 16 · 扫读 22 · 层级 18 · 错误 12 · 美观 18
+      <span class="total">86</span>
+    </p>
+
+    <div class="state-label">① 未装</div>
+    <div class="panel-frame">
+      <div class="card-b">
+        <div class="header">
+          <span class="title">Claude Code CLI</span>
+          <span class="status-chip gray">未安装</span>
+        </div>
+        <div class="skill-row"><span class="name">vowky-transcribe</span><span class="ver">—</span></div>
+        <div class="skill-row"><span class="name">transcript-enhance</span><span class="ver">—</span></div>
+        <div class="btn-row">
+          <button class="btn primary">安装 skill</button>
+          <button class="btn danger disabled" disabled>卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">② 已装最新</div>
+    <div class="panel-frame">
+      <div class="card-b">
+        <div class="header">
+          <span class="title">Claude Code CLI</span>
+          <span class="status-chip green">已是最新</span>
+        </div>
+        <div class="skill-row"><span class="name">vowky-transcribe</span><span class="ver green">1.0.1</span></div>
+        <div class="skill-row"><span class="name">transcript-enhance</span><span class="ver green">1.0.0</span></div>
+        <div class="btn-row">
+          <button class="btn disabled" disabled>已是最新</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">③ 已装旧版（可更新）</div>
+    <div class="panel-frame">
+      <div class="card-b">
+        <div class="header">
+          <span class="title">Claude Code CLI</span>
+          <span class="status-chip orange">可更新</span>
+        </div>
+        <div class="skill-row"><span class="name">vowky-transcribe</span><span class="ver orange">0.0.5 → 1.0.1</span></div>
+        <div class="skill-row"><span class="name">transcript-enhance</span><span class="ver orange">0.0.5 → 1.0.0</span></div>
+        <div class="btn-row">
+          <button class="btn primary">更新 skill</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">④ 冲突</div>
+    <div class="panel-frame">
+      <div class="card-b">
+        <div class="header">
+          <span class="title">Claude Code CLI</span>
+          <span class="status-chip red">冲突</span>
+        </div>
+        <div class="skill-row"><span class="name">vowky-transcribe</span><span class="ver red">⚠ 同名</span></div>
+        <div class="skill-row"><span class="name">transcript-enhance</span><span class="ver green">1.0.0</span></div>
+        <div class="err">检测到非 VowKy 来源的同名 skill，请手动处理后重试。</div>
+        <div class="btn-row">
+          <button class="btn primary disabled" disabled>安装 skill</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================
+       方案 C — 左右分栏
+  ============================================ -->
+  <div class="scheme">
+    <h2>C · 左右分栏（详情左 / 按钮右）</h2>
+    <p class="desc">左侧 70% 放标题 + skill 状态；右侧 30% 垂直堆叠操作按钮，操作区位置固定眼动稳定。</p>
+    <p class="score">
+      密度 15 · 扫读 20 · 层级 17 · 错误 13 · 美观 16
+      <span class="total">81</span>
+    </p>
+
+    <div class="state-label">① 未装</div>
+    <div class="panel-frame">
+      <div class="card-c">
+        <div class="left">
+          <div class="title">Claude Code CLI</div>
+          <div class="skill-row"><span class="dot"></span><span class="skill-name">vowky-transcribe</span><span class="ver">未安装</span></div>
+          <div class="skill-row"><span class="dot"></span><span class="skill-name">transcript-enhance</span><span class="ver">未安装</span></div>
+        </div>
+        <div class="right">
+          <button class="btn primary block">安装</button>
+          <button class="btn danger block disabled" disabled>卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">② 已装最新</div>
+    <div class="panel-frame">
+      <div class="card-c">
+        <div class="left">
+          <div class="title">Claude Code CLI</div>
+          <div class="skill-row"><span class="dot green"></span><span class="skill-name">vowky-transcribe</span><span class="ver">1.0.1</span></div>
+          <div class="skill-row"><span class="dot green"></span><span class="skill-name">transcript-enhance</span><span class="ver">1.0.0</span></div>
+        </div>
+        <div class="right">
+          <button class="btn block disabled" disabled>已最新</button>
+          <button class="btn danger block">卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">③ 已装旧版（可更新）</div>
+    <div class="panel-frame">
+      <div class="card-c">
+        <div class="left">
+          <div class="title">Claude Code CLI</div>
+          <div class="skill-row"><span class="dot orange"></span><span class="skill-name">vowky-transcribe</span><span class="ver">0.0.5 → 1.0.1</span></div>
+          <div class="skill-row"><span class="dot orange"></span><span class="skill-name">transcript-enhance</span><span class="ver">0.0.5 → 1.0.0</span></div>
+        </div>
+        <div class="right">
+          <button class="btn primary block">更新</button>
+          <button class="btn danger block">卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">④ 冲突</div>
+    <div class="panel-frame">
+      <div class="card-c">
+        <div class="left">
+          <div class="title">Claude Code CLI</div>
+          <div class="skill-row"><span class="dot red"></span><span class="skill-name">vowky-transcribe</span><span class="ver">同名冲突</span></div>
+          <div class="skill-row"><span class="dot green"></span><span class="skill-name">transcript-enhance</span><span class="ver">1.0.0</span></div>
+        </div>
+        <div class="right">
+          <button class="btn primary block disabled" disabled>安装</button>
+          <button class="btn danger block">卸载</button>
+        </div>
+        <div class="err">vowky-transcribe 已存在非 VowKy 来源版本，需手动移除。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================
+       方案 D — Grid 严格列对齐
+  ============================================ -->
+  <div class="scheme">
+    <h2>D · Grid 严格列对齐</h2>
+    <p class="desc">三列 grid：skill 名 · 状态文字 · 版本徽标。两行严格对齐，扫读最快；错误用底部 banner。</p>
+    <p class="score">
+      密度 18 · 扫读 23 · 层级 18 · 错误 13 · 美观 17
+      <span class="total">89</span>
+    </p>
+
+    <div class="state-label">① 未装</div>
+    <div class="panel-frame">
+      <div class="card-d">
+        <div class="title">Claude Code CLI</div>
+        <div class="skill-grid">
+          <div class="col-name"><span class="dot"></span>vowky-transcribe</div>
+          <div class="col-status">未安装</div>
+          <div class="col-badge">—</div>
+          <div class="col-name"><span class="dot"></span>transcript-enhance</div>
+          <div class="col-status">未安装</div>
+          <div class="col-badge">—</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary">安装 skill</button>
+          <button class="btn danger disabled" disabled>卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">② 已装最新</div>
+    <div class="panel-frame">
+      <div class="card-d">
+        <div class="title">Claude Code CLI</div>
+        <div class="skill-grid">
+          <div class="col-name"><span class="dot green"></span>vowky-transcribe</div>
+          <div class="col-status green">已安装</div>
+          <div class="col-badge green">1.0.1</div>
+          <div class="col-name"><span class="dot green"></span>transcript-enhance</div>
+          <div class="col-status green">已安装</div>
+          <div class="col-badge green">1.0.0</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn disabled" disabled>已是最新</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">③ 已装旧版（可更新）</div>
+    <div class="panel-frame">
+      <div class="card-d">
+        <div class="title">Claude Code CLI</div>
+        <div class="skill-grid">
+          <div class="col-name"><span class="dot orange"></span>vowky-transcribe</div>
+          <div class="col-status orange">可更新</div>
+          <div class="col-badge orange">0.0.5→1.0.1</div>
+          <div class="col-name"><span class="dot orange"></span>transcript-enhance</div>
+          <div class="col-status orange">可更新</div>
+          <div class="col-badge orange">0.0.5→1.0.0</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary">更新 skill</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">④ 冲突</div>
+    <div class="panel-frame">
+      <div class="card-d">
+        <div class="title">Claude Code CLI</div>
+        <div class="skill-grid">
+          <div class="col-name"><span class="dot red"></span>vowky-transcribe</div>
+          <div class="col-status red">冲突</div>
+          <div class="col-badge red">非 VowKy</div>
+          <div class="col-name"><span class="dot green"></span>transcript-enhance</div>
+          <div class="col-status green">已安装</div>
+          <div class="col-badge green">1.0.0</div>
+        </div>
+        <div class="err">检测到同名 skill，请先手动移除 ~/.claude/skills/vowky-transcribe 后重试。</div>
+        <div class="btn-row">
+          <button class="btn primary disabled" disabled>安装 skill</button>
+          <button class="btn danger">卸载</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================
+       方案 E — 左侧状态色条 + 紧凑内容（推荐）
+  ============================================ -->
+  <div class="scheme recommended">
+    <h2>E · 左侧状态色条 + 紧凑内容</h2>
+    <p class="desc">卡片左侧 3pt 竖色条表整卡健康度（灰/绿/橙/红），右侧紧凑内容；色条提供周边视觉信号，无需聚焦即可感知状态。</p>
+    <p class="score">
+      密度 17 · 扫读 23 · 层级 18 · 错误 14 · 美观 18
+      <span class="total">90</span>
+    </p>
+
+    <div class="state-label">① 未装</div>
+    <div class="panel-frame">
+      <div class="card-e">
+        <div class="bar"></div>
+        <div class="content">
+          <div class="header">
+            <span class="title">Claude Code CLI</span>
+            <span class="health">未安装</span>
+          </div>
+          <div class="skill-row"><span class="icon">○</span><span class="skill-name">vowky-transcribe</span><span class="skill-detail">—</span></div>
+          <div class="skill-row"><span class="icon">○</span><span class="skill-name">transcript-enhance</span><span class="skill-detail">—</span></div>
+          <div class="btn-row">
+            <button class="btn primary">安装 skill</button>
+            <button class="btn danger disabled" disabled>卸载</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">② 已装最新</div>
+    <div class="panel-frame">
+      <div class="card-e">
+        <div class="bar green"></div>
+        <div class="content">
+          <div class="header">
+            <span class="title">Claude Code CLI</span>
+            <span class="health green">已是最新</span>
+          </div>
+          <div class="skill-row"><span class="icon green">✓</span><span class="skill-name">vowky-transcribe</span><span class="skill-detail">1.0.1</span></div>
+          <div class="skill-row"><span class="icon green">✓</span><span class="skill-name">transcript-enhance</span><span class="skill-detail">1.0.0</span></div>
+          <div class="btn-row">
+            <button class="btn disabled" disabled>已是最新</button>
+            <button class="btn danger">卸载</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">③ 已装旧版（可更新）</div>
+    <div class="panel-frame">
+      <div class="card-e">
+        <div class="bar orange"></div>
+        <div class="content">
+          <div class="header">
+            <span class="title">Claude Code CLI</span>
+            <span class="health orange">可更新</span>
+          </div>
+          <div class="skill-row"><span class="icon orange">↑</span><span class="skill-name">vowky-transcribe</span><span class="skill-detail update">0.0.5 → 1.0.1</span></div>
+          <div class="skill-row"><span class="icon orange">↑</span><span class="skill-name">transcript-enhance</span><span class="skill-detail update">0.0.5 → 1.0.0</span></div>
+          <div class="btn-row">
+            <button class="btn primary">更新 skill</button>
+            <button class="btn danger">卸载</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state-label">④ 冲突</div>
+    <div class="panel-frame">
+      <div class="card-e">
+        <div class="bar red"></div>
+        <div class="content">
+          <div class="header">
+            <span class="title">Claude Code CLI</span>
+            <span class="health red">冲突</span>
+          </div>
+          <div class="skill-row"><span class="icon red">!</span><span class="skill-name">vowky-transcribe</span><span class="skill-detail">同名冲突</span></div>
+          <div class="skill-row"><span class="icon green">✓</span><span class="skill-name">transcript-enhance</span><span class="skill-detail">1.0.0</span></div>
+          <div class="err">检测到非 VowKy 来源的同名 skill，请手动移除后重试。</div>
+          <div class="btn-row">
+            <button class="btn primary disabled" disabled>安装 skill</button>
+            <button class="btn danger">卸载</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================================
+     评分汇总
+============================================ -->
+<div class="summary">
+  <h3>评分汇总（100 分制；权重：密度 20 / 扫读 25 / 层级 20 / 错误 15 / 美观 20）</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>方案</th>
+        <th>密度 20</th>
+        <th>扫读 25</th>
+        <th>层级 20</th>
+        <th>错误 15</th>
+        <th>美观 20</th>
+        <th>总分</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>A 紧凑堆叠</td>
+        <td>17</td><td>19</td><td>16</td><td>12</td><td>16</td>
+        <td class="total-col">80</td>
+      </tr>
+      <tr>
+        <td>B 头部 Chip</td>
+        <td>16</td><td>22</td><td>18</td><td>12</td><td>18</td>
+        <td class="total-col">86</td>
+      </tr>
+      <tr>
+        <td>C 左右分栏</td>
+        <td>15</td><td>20</td><td>17</td><td>13</td><td>16</td>
+        <td class="total-col">81</td>
+      </tr>
+      <tr>
+        <td>D Grid 列对齐</td>
+        <td>18</td><td>23</td><td>18</td><td>13</td><td>17</td>
+        <td class="total-col">89</td>
+      </tr>
+      <tr class="top">
+        <td>E 色条 + 紧凑 ★</td>
+        <td>17</td><td>23</td><td>18</td><td>14</td><td>18</td>
+        <td class="total-col">90</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>
