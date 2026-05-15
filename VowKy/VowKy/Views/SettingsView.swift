@@ -399,7 +399,7 @@ struct SettingsView: View {
         do {
             _ = try skillInstaller.install(platforms: [platform])
             refreshSkillStatuses()
-            skillStatusMessage = "已安装/更新 \(platform.displayName) 平台 skill"
+            skillStatusMessage = nil
         } catch {
             refreshSkillStatuses()
             skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -408,70 +408,90 @@ struct SettingsView: View {
 
     private func uninstallSkill(for platform: AISkillPlatform) {
         do {
-            let result = try skillInstaller.uninstall(platforms: [platform])
+            _ = try skillInstaller.uninstall(platforms: [platform])
             refreshSkillStatuses()
-            if result.removedCompletedJobCaches > 0 {
-                skillStatusMessage = "已卸载 \(platform.displayName) 平台 skill，已清理 \(result.removedCompletedJobCaches) 个已完成任务缓存"
-            } else {
-                skillStatusMessage = "已卸载 \(platform.displayName) 平台 skill"
-            }
+            skillStatusMessage = nil
         } catch {
             refreshSkillStatuses()
             skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    private func skillStatusText(for platform: AISkillPlatform, kind: AISkillKind) -> String {
+    private func expectedSkillVersion(for kind: AISkillKind) -> String {
+        switch kind {
+        case .transcribe: return AISkillInstallerService.transcribeSkillVersion
+        case .enhance:    return AISkillInstallerService.enhanceSkillVersion
+        }
+    }
+
+    private func skillGridStatusText(for platform: AISkillPlatform, kind: AISkillKind) -> String {
         guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)] else {
             return "检查中"
         }
+        let expected = expectedSkillVersion(for: kind)
         switch status.state {
         case .notInstalled:
             return "未安装"
-        case .installed(let version):
-            return version.map { "已安装 \($0)" } ?? "已安装"
+        case .installed(let installed):
+            if let installed, installed != expected {
+                return "可更新"
+            }
+            return "已安装"
         case .blockedByUnmanagedSkill:
-            return "存在同名 skill"
+            return "冲突"
         }
     }
 
-    private func skillStatusColor(for platform: AISkillPlatform, kind: AISkillKind) -> Color {
+    private func skillGridStatusColor(for platform: AISkillPlatform, kind: AISkillKind) -> Color {
         guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)] else {
             return .secondary
         }
+        let expected = expectedSkillVersion(for: kind)
         switch status.state {
         case .notInstalled:
             return .secondary
-        case .installed:
+        case .installed(let installed):
+            if let installed, installed != expected {
+                return .orange
+            }
             return .green
         case .blockedByUnmanagedSkill:
-            return .orange
+            return .red
         }
-    }
-
-    private func skillUpdateAvailable(for platform: AISkillPlatform, kind: AISkillKind) -> Bool {
-        guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)],
-              case .installed(let installed) = status.state,
-              let installed else { return false }
-        let expected: String
-        switch kind {
-        case .transcribe: expected = AISkillInstallerService.transcribeSkillVersion
-        case .enhance:    expected = AISkillInstallerService.enhanceSkillVersion
-        }
-        return installed != expected
     }
 
     @ViewBuilder
-    private func skillUpdateBadge(for platform: AISkillPlatform, kind: AISkillKind) -> some View {
-        if skillUpdateAvailable(for: platform, kind: kind) {
-            Text("可更新")
-                .font(.caption2)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.orange.opacity(0.15))
-                .foregroundColor(.orange)
-                .clipShape(Capsule())
+    private func skillVersionBadge(for platform: AISkillPlatform, kind: AISkillKind) -> some View {
+        let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)]
+        let expected = expectedSkillVersion(for: kind)
+        switch status?.state {
+        case .installed(let installed):
+            if let installed {
+                if installed == expected {
+                    badgeView(text: expected, tint: .green)
+                } else {
+                    badgeView(text: "\(installed)→\(expected)", tint: .orange)
+                }
+            } else {
+                badgeView(text: "已装", tint: .green)
+            }
+        case .blockedByUnmanagedSkill:
+            badgeView(text: "非 VowKy", tint: .red)
+        case .notInstalled, .none:
+            badgeView(text: "—", tint: .secondary)
         }
+    }
+
+    @ViewBuilder
+    private func badgeView(text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(tint.opacity(0.15))
+            .foregroundColor(tint)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .fixedSize()
     }
 
     // MARK: - AI 助手
@@ -556,26 +576,34 @@ struct SettingsView: View {
             Text(platform == .claudeCode ? "Claude Code CLI" : "Codex CLI")
                 .font(.headline)
 
-            HStack(spacing: 6) {
-                Text("vowky-transcribe:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(skillStatusText(for: platform, kind: .transcribe))
-                    .font(.caption)
-                    .foregroundColor(skillStatusColor(for: platform, kind: .transcribe))
-                skillUpdateBadge(for: platform, kind: .transcribe)
-            }
-            HStack(spacing: 6) {
-                Text("transcript-enhance:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(skillStatusText(for: platform, kind: .enhance))
-                    .font(.caption)
-                    .foregroundColor(skillStatusColor(for: platform, kind: .enhance))
-                skillUpdateBadge(for: platform, kind: .enhance)
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
+                skillGridRow(platform: platform, kind: .transcribe)
+                skillGridRow(platform: platform, kind: .enhance)
             }
 
-            HStack(spacing: 8) {
+            if let skillStatusMessage {
+                Text(skillStatusMessage)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .padding(.leading, 8)
+                    .padding(.vertical, 4)
+                    .padding(.trailing, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.red.opacity(0.06))
+                    )
+                    .overlay(
+                        Rectangle()
+                            .fill(Color.red)
+                            .frame(width: 2),
+                        alignment: .leading
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 6) {
+                Spacer()
                 Button("安装/更新 skill") {
                     installSkill(for: platform)
                 }
@@ -592,16 +620,29 @@ struct SettingsView: View {
                     skillStatuses[SkillStatusKey(platform: platform, kind: .enhance)]?.state == .notInstalled
                 )
             }
-
-            if let skillStatusMessage {
-                Text(skillStatusMessage)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
-        .padding(8)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.gray.opacity(0.06)))
+    }
+
+    @ViewBuilder
+    private func skillGridRow(platform: AISkillPlatform, kind: AISkillKind) -> some View {
+        GridRow {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(skillGridStatusColor(for: platform, kind: kind))
+                    .frame(width: 7, height: 7)
+                Text(kind.displayName)
+                    .font(.caption)
+            }
+            Text(skillGridStatusText(for: platform, kind: kind))
+                .font(.caption)
+                .foregroundColor(skillGridStatusColor(for: platform, kind: kind))
+                .gridColumnAlignment(.trailing)
+            skillVersionBadge(for: platform, kind: kind)
+                .gridColumnAlignment(.center)
+        }
     }
 
     @MainActor
