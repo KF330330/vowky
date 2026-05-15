@@ -26,7 +26,7 @@ final class ProviderUsabilityCheckerTests: XCTestCase {
     func testCodexCliNotFound() {
         let checker = makeChecker()
         let config = AIProviderConfig(
-            enabled: true, autoTrigger: false,
+            enabled: true,
             providers: AIProviderConfig.defaultProviders,
             codex: CLIConfig(binaryPath: tempDir.appendingPathComponent("does-not-exist").path),
             claude: .empty,
@@ -46,7 +46,7 @@ final class ProviderUsabilityCheckerTests: XCTestCase {
 
         let checker = makeChecker()
         let config = AIProviderConfig(
-            enabled: true, autoTrigger: false,
+            enabled: true,
             providers: AIProviderConfig.defaultProviders,
             codex: .empty,
             claude: CLIConfig(binaryPath: fakeClaude.path),
@@ -74,7 +74,7 @@ final class ProviderUsabilityCheckerTests: XCTestCase {
 
         let checker = makeChecker()
         let config = AIProviderConfig(
-            enabled: true, autoTrigger: false,
+            enabled: true,
             providers: AIProviderConfig.defaultProviders,
             codex: .empty,
             claude: CLIConfig(binaryPath: fakeClaude.path),

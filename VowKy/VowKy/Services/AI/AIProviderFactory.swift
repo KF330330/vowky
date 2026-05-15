@@ -20,7 +20,6 @@ struct ProviderPriorityEntry: Codable, Equatable {
 
 struct AIProviderConfig: Equatable {
     var enabled: Bool
-    var autoTrigger: Bool
     /// 顺序即 fallback 优先级。所有 AIProviderKind 必须全部出现（启用与否由 enabled 控制）。
     var providers: [ProviderPriorityEntry]
     var codex: CLIConfig
@@ -34,7 +33,6 @@ struct AIProviderConfig: Equatable {
 
     static let `default` = AIProviderConfig(
         enabled: false,
-        autoTrigger: true,
         providers: AIProviderConfig.defaultProviders,
         codex: .empty,
         claude: .empty,
@@ -76,11 +74,9 @@ enum AIProviderFactory {
         let timeout = timeoutStored ?? AIProviderConfig.default.timeoutSeconds
 
         let enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? AIProviderConfig.default.enabled
-        let autoTrigger = defaults.object(forKey: Keys.autoTrigger) as? Bool ?? AIProviderConfig.default.autoTrigger
 
         return AIProviderConfig(
             enabled: enabled,
-            autoTrigger: autoTrigger,
             providers: providers,
             codex: codex,
             claude: claude,
@@ -90,7 +86,6 @@ enum AIProviderFactory {
 
     static func save(_ config: AIProviderConfig, defaults: UserDefaults = .standard) {
         defaults.set(config.enabled, forKey: Keys.enabled)
-        defaults.set(config.autoTrigger, forKey: Keys.autoTrigger)
         if let data = try? JSONEncoder().encode(config.providers),
            let json = String(data: data, encoding: .utf8) {
             defaults.set(json, forKey: Keys.providersJSON)

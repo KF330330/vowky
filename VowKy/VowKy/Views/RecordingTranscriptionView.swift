@@ -427,9 +427,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             state = .completed
             statusMessage = nil
 
-            // AI 后处理：仅在 enabled + autoTrigger 且有有效文本时自动触发
+            // AI 后处理：仅在 enabled 且有有效文本时自动触发
             let cfg = aiConfigLoader()
-            if cfg.enabled && cfg.autoTrigger && !finalText.isEmpty {
+            if cfg.enabled && !finalText.isEmpty {
                 triggerEnhancement(rawText: finalText)
             }
         } catch {

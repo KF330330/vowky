@@ -65,9 +65,7 @@ struct SettingsView: View {
 
     // AI 助手
     @State private var aiEnabled: Bool
-    @State private var aiAutoTrigger: Bool
     @State private var providerEntries: [ProviderPriorityEntry]
-    @State private var selectedProviderIndex: Int = 0
     @State private var codexBinaryPath: String
     @State private var claudeBinaryPath: String
     @State private var aiTimeoutSeconds: Int
@@ -81,7 +79,6 @@ struct SettingsView: View {
         self.updater = updater
         let config = AIProviderFactory.load()
         _aiEnabled        = State(initialValue: config.enabled)
-        _aiAutoTrigger    = State(initialValue: config.autoTrigger)
         _providerEntries  = State(initialValue: config.providers)
         _codexBinaryPath  = State(initialValue: config.codex.binaryPath)
         _claudeBinaryPath = State(initialValue: config.claude.binaryPath)
@@ -192,56 +189,64 @@ struct SettingsView: View {
             }
 
             Section("AI 助手") {
-                Text("用本机 Claude Code / Codex CLI 给转写稿自动生成标题、摘要和分段。需先装 CLI 并安装对应 skill。")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Toggle("启用 AI 后处理", isOn: $aiEnabled)
-                    .onChange(of: aiEnabled) { _ in saveAIConfig() }
-
-                if aiEnabled {
-                    Toggle("转写完成后自动触发", isOn: $aiAutoTrigger)
-                        .onChange(of: aiAutoTrigger) { _ in saveAIConfig() }
-
-                    Text("Provider 优先级（前面的不可用时自动尝试后面的）")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    VStack(spacing: 4) {
-                        ForEach(providerEntries.indices, id: \.self) { idx in
-                            providerPriorityRow(index: idx)
-                        }
-                    }
-
-                    if let kind = currentSelectedProviderKind, let platform = skillPlatform(for: kind) {
-                        Divider()
-                        providerDetailPanel(for: kind, platform: platform)
-                    }
-
-                    Stepper("调用超时：\(aiTimeoutSeconds) 秒", value: $aiTimeoutSeconds, in: 30...300, step: 10)
-                        .onChange(of: aiTimeoutSeconds) { _ in saveAIConfig() }
-
-                    HStack {
-                        Button {
-                            Task { await testAIProvider() }
-                        } label: {
-                            if aiTestInProgress {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text("测试连接")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(aiTestInProgress)
-                        Spacer()
-                    }
-
-                    if let aiTestResult {
-                        Text(aiTestResult)
+                Toggle(isOn: $aiEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("启用 AI 后处理")
+                        Text("转写完成后自动给转写稿生成标题、摘要和段落结构")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .onChange(of: aiEnabled) { _ in saveAIConfig() }
+
+                if aiEnabled {
+                    Text("第一步：安装 AI 工具（可装一个或全装）")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    platformInstallCard(.claudeCode)
+                    platformInstallCard(.codex)
+
+                    if anyEnhanceInstalled {
+                        Text("第二步：Provider 优先级（前面的不可用时自动尝试后面的）")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        VStack(spacing: 4) {
+                            ForEach(providerEntries.indices, id: \.self) { idx in
+                                providerPriorityRow(index: idx)
+                            }
+                        }
+
+                        Stepper("调用超时：\(aiTimeoutSeconds) 秒", value: $aiTimeoutSeconds, in: 30...300, step: 10)
+                            .onChange(of: aiTimeoutSeconds) { _ in saveAIConfig() }
+
+                        HStack {
+                            Button {
+                                Task { await testAIProvider() }
+                            } label: {
+                                if aiTestInProgress {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Text("测试连接")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(aiTestInProgress)
+                            Spacer()
+                        }
+
+                        if let aiTestResult {
+                            Text(aiTestResult)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else {
+                        Text("⚠ 请至少安装一个 AI 工具的 skill 才能继续")
+                            .font(.caption)
+                            .foregroundColor(.orange)
                     }
                 }
             }
@@ -441,17 +446,11 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - AI 后处理
-
-    private var currentSelectedProviderKind: AIProviderKind? {
-        guard providerEntries.indices.contains(selectedProviderIndex) else { return nil }
-        return providerEntries[selectedProviderIndex].kind
-    }
+    // MARK: - AI 助手
 
     private func buildAIConfig() -> AIProviderConfig {
         AIProviderConfig(
             enabled: aiEnabled,
-            autoTrigger: aiAutoTrigger,
             providers: providerEntries,
             codex: CLIConfig(binaryPath: codexBinaryPath),
             claude: CLIConfig(binaryPath: claudeBinaryPath),
@@ -463,16 +462,22 @@ struct SettingsView: View {
         AIProviderFactory.save(buildAIConfig())
     }
 
+    /// 是否至少一个平台的 transcript-enhance 已装。
+    private var anyEnhanceInstalled: Bool {
+        AISkillPlatform.allCases.contains { platform in
+            guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: .enhance)] else {
+                return false
+            }
+            if case .installed = status.state { return true }
+            return false
+        }
+    }
+
     private func moveProvider(at idx: Int, delta: Int) {
         let newIdx = idx + delta
         guard providerEntries.indices.contains(idx),
               providerEntries.indices.contains(newIdx) else { return }
         providerEntries.swapAt(idx, newIdx)
-        if selectedProviderIndex == idx {
-            selectedProviderIndex = newIdx
-        } else if selectedProviderIndex == newIdx {
-            selectedProviderIndex = idx
-        }
         aiTestResult = nil
         saveAIConfig()
     }
@@ -480,7 +485,6 @@ struct SettingsView: View {
     @ViewBuilder
     private func providerPriorityRow(index idx: Int) -> some View {
         let entry = providerEntries[idx]
-        let isSelected = idx == selectedProviderIndex
         HStack(spacing: 8) {
             Toggle("", isOn: Binding(
                 get: { providerEntries[idx].enabled },
@@ -516,44 +520,29 @@ struct SettingsView: View {
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selectedProviderIndex = idx
-            aiTestResult = nil
-        }
     }
 
     @ViewBuilder
-    private func providerDetailPanel(for kind: AIProviderKind, platform: AISkillPlatform) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // CLI 路径
-            switch kind {
-            case .codex:
-                TextField("codex 绝对路径（留空自动探测）", text: $codexBinaryPath)
-                    .onChange(of: codexBinaryPath) { _ in saveAIConfig() }
-                Text("自动探测会扫 Homebrew、nvm、fnm、volta 等常见位置。装 codex：`npm i -g @openai/codex` 或 `brew install codex`。")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private func platformInstallCard(_ platform: AISkillPlatform) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(platform == .claudeCode ? "Claude Code CLI" : "Codex CLI")
+                .font(.headline)
+
+            switch platform {
             case .claudeCode:
                 TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
                     .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
-                Text("自动探测会扫 Homebrew、nvm、fnm 等常见位置。装 claude：`npm i -g @anthropic-ai/claude-code`。")
+                Text("装 claude：npm i -g @anthropic-ai/claude-code")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            case .codex:
+                TextField("codex 绝对路径（留空自动探测）", text: $codexBinaryPath)
+                    .onChange(of: codexBinaryPath) { _ in saveAIConfig() }
+                Text("装 codex：npm i -g @openai/codex")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
-            Divider()
-
-            // Skill 状态
-            Text("\(platform.displayName) 平台 Skill 状态")
-                .font(.caption)
-                .foregroundColor(.secondary)
             HStack(spacing: 6) {
                 Text("vowky-transcribe:")
                     .font(.caption)
@@ -596,6 +585,8 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.gray.opacity(0.06)))
     }
 
     @MainActor

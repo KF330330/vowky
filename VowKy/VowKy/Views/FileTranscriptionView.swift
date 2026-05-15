@@ -478,7 +478,7 @@ final class FileTranscriptionViewModel: ObservableObject {
                     }
 
                     let cfg = aiConfigLoader()
-                    if cfg.enabled && cfg.autoTrigger && !finalText.isEmpty {
+                    if cfg.enabled && !finalText.isEmpty {
                         await runEnhancement(for: jobID, rawText: finalText, audioURL: jobURL)
                     }
                 } catch is CancellationError {
