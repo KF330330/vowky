@@ -188,10 +188,10 @@ struct SettingsView: View {
                     }
             }
 
-            Section("AI 助手") {
+            Section("AI 助手（仅限 Claude code/codex 用户）") {
                 Toggle(isOn: $aiEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("启用 AI 后处理")
+                        Text("启用 AI 处理")
                         Text("转写完成后自动给转写稿生成标题、摘要和段落结构")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -201,17 +201,20 @@ struct SettingsView: View {
                 .onChange(of: aiEnabled) { _ in saveAIConfig() }
 
                 if aiEnabled {
-                    Text("第一步：安装 AI 工具（可装一个或全装）")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("安装 skill")
+                            .font(.headline)
+                        Text("将安装 vowky-transcribe 和 transcript-enhance 两个 skill")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
 
                     platformInstallCard(.claudeCode)
                     platformInstallCard(.codex)
 
                     if anyEnhanceInstalled {
-                        Text("第二步：Provider 优先级（前面的不可用时自动尝试后面的）")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Text("设置 agent 优先级")
+                            .font(.headline)
 
                         VStack(spacing: 4) {
                             ForEach(providerEntries.indices, id: \.self) { idx in
@@ -446,6 +449,31 @@ struct SettingsView: View {
         }
     }
 
+    private func skillUpdateAvailable(for platform: AISkillPlatform, kind: AISkillKind) -> Bool {
+        guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: kind)],
+              case .installed(let installed) = status.state,
+              let installed else { return false }
+        let expected: String
+        switch kind {
+        case .transcribe: expected = AISkillInstallerService.transcribeSkillVersion
+        case .enhance:    expected = AISkillInstallerService.enhanceSkillVersion
+        }
+        return installed != expected
+    }
+
+    @ViewBuilder
+    private func skillUpdateBadge(for platform: AISkillPlatform, kind: AISkillKind) -> some View {
+        if skillUpdateAvailable(for: platform, kind: kind) {
+            Text("可更新")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.15))
+                .foregroundColor(.orange)
+                .clipShape(Capsule())
+        }
+    }
+
     // MARK: - AI 助手
 
     private func buildAIConfig() -> AIProviderConfig {
@@ -528,21 +556,6 @@ struct SettingsView: View {
             Text(platform == .claudeCode ? "Claude Code CLI" : "Codex CLI")
                 .font(.headline)
 
-            switch platform {
-            case .claudeCode:
-                TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
-                    .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
-                Text("装 claude：npm i -g @anthropic-ai/claude-code")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            case .codex:
-                TextField("codex 绝对路径（留空自动探测）", text: $codexBinaryPath)
-                    .onChange(of: codexBinaryPath) { _ in saveAIConfig() }
-                Text("装 codex：npm i -g @openai/codex")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
             HStack(spacing: 6) {
                 Text("vowky-transcribe:")
                     .font(.caption)
@@ -550,6 +563,7 @@ struct SettingsView: View {
                 Text(skillStatusText(for: platform, kind: .transcribe))
                     .font(.caption)
                     .foregroundColor(skillStatusColor(for: platform, kind: .transcribe))
+                skillUpdateBadge(for: platform, kind: .transcribe)
             }
             HStack(spacing: 6) {
                 Text("transcript-enhance:")
@@ -558,6 +572,7 @@ struct SettingsView: View {
                 Text(skillStatusText(for: platform, kind: .enhance))
                     .font(.caption)
                     .foregroundColor(skillStatusColor(for: platform, kind: .enhance))
+                skillUpdateBadge(for: platform, kind: .enhance)
             }
 
             HStack(spacing: 8) {
