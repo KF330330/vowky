@@ -76,6 +76,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     @Published private(set) var audioLevel: Float = 0
     @Published private(set) var waveformBands: [RecordingWaveformBand] = RecordingTranscriptionViewModel.silentWaveformBands
     @Published private(set) var elapsedSeconds: TimeInterval = 0
+    @Published private(set) var finalizationProgress: RecordingFinalizationProgress?
+    @Published private(set) var finalizationElapsedSeconds: TimeInterval = 0
 
     // AI 后处理
     @Published private(set) var enhancementInFlight: Bool = false
@@ -107,6 +109,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private var workerTask: Task<Void, Never>?
     private var enhancementTask: Task<Void, Never>?
     private var timer: Timer?
+    private var finalizationTimer: Timer?
+    private var finalizationStartedAt: Date?
     private var activeOperationID: UUID?
     private var recordingStartedAt: Date?
 
@@ -250,6 +254,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         guard state == .recording else { return }
         state = .finishing
         stopTimer()
+        startFinalizationTimer()
         _ = audioRecorder.stopRecording()
         audioRecorder.onSamplesCaptured = nil
         sampleContinuation?.finish()
@@ -277,6 +282,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         activeRecognizer?.reset()
         activeRecognizer = nil
         stopTimer()
+        resetFinalizationState()
         deletePreparedOutput(preparedOutput)
         activePreparedOutput = nil
 
@@ -375,6 +381,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                 do {
                     let result = try await engine.run(audioChunks: audioStream) { update in
                         self?.apply(update: update, operationID: operationID)
+                    } finalizationProgress: { progress in
+                        self?.applyFinalization(progress: progress, operationID: operationID)
                     }
                     await self?.complete(result: result, operationID: operationID)
                 } catch is CancellationError {
@@ -396,10 +404,16 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         transcriptText = update.displayText
     }
 
+    private func applyFinalization(progress: RecordingFinalizationProgress, operationID: UUID) {
+        guard isActive(operationID) else { return }
+        finalizationProgress = progress
+    }
+
     private func complete(result: RecordingTranscriptionResult, operationID: UUID) {
         guard isActive(operationID), let preparedOutput = activePreparedOutput else { return }
 
         stopTimer()
+        resetFinalizationState()
         audioRecorder.onSamplesCaptured = nil
         sampleContinuation = nil
 
@@ -521,6 +535,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
     private func completeCancellation(operationID: UUID) {
         guard isActive(operationID) else { return }
+        resetFinalizationState()
         deletePreparedOutput(activePreparedOutput)
         state = .cancelled
         clearActiveOperation(operationID: operationID)
@@ -529,6 +544,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private func fail(operationID: UUID, message: String) {
         guard isActive(operationID) else { return }
         stopTimer()
+        resetFinalizationState()
         if state == .recording || state == .finishing {
             _ = audioRecorder.stopRecording()
         }
@@ -573,6 +589,65 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+
+    private func startFinalizationTimer() {
+        stopFinalizationTimer()
+        finalizationStartedAt = Date()
+        finalizationElapsedSeconds = 0
+        finalizationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let startedAt = self.finalizationStartedAt else { return }
+                self.finalizationElapsedSeconds = Date().timeIntervalSince(startedAt)
+            }
+        }
+    }
+
+    private func stopFinalizationTimer() {
+        finalizationTimer?.invalidate()
+        finalizationTimer = nil
+    }
+
+    private func resetFinalizationState() {
+        stopFinalizationTimer()
+        finalizationStartedAt = nil
+        finalizationElapsedSeconds = 0
+        finalizationProgress = nil
+    }
+
+    var finalizationFraction: Double? {
+        guard let p = finalizationProgress, p.total > 0 else { return nil }
+        return min(1, Double(p.completed) / Double(p.total))
+    }
+
+    var finalizationETAText: String? {
+        guard let p = finalizationProgress else { return nil }
+        guard p.inputClosed, p.completed >= 2, p.total > p.completed,
+              finalizationElapsedSeconds > 0 else {
+            return "估算中…"
+        }
+        let perSegment = finalizationElapsedSeconds / Double(p.completed)
+        let remaining = Int((Double(p.total - p.completed) * perSegment).rounded())
+        if remaining < 1 { return "即将完成" }
+        if remaining < 60 { return "约还需 \(remaining) 秒" }
+        let mins = remaining / 60
+        let secs = remaining % 60
+        return secs == 0 ? "约还需 \(mins) 分钟" : "约还需 \(mins) 分 \(secs) 秒"
+    }
+
+    var finalizationDurationText: String {
+        let totalSeconds = max(0, Int(finalizationElapsedSeconds.rounded()))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    var finalizationSegmentText: String? {
+        guard let p = finalizationProgress else { return nil }
+        if p.total == 0 {
+            return "准备处理音频…"
+        }
+        return "第 \(p.completed) / \(p.total) 段"
     }
 
     nonisolated static func displayWaveformBands(from samples: [Float]) -> [RecordingWaveformBand] {
@@ -720,7 +795,7 @@ struct RecordingTranscriptionView: View {
                         .foregroundColor(RecordingTheme.textPrimary)
                         .lineLimit(1)
 
-                    Text(viewModel.statusText)
+                    Text(headerSubtitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(RecordingTheme.textSecondary)
                         .lineLimit(1)
@@ -730,7 +805,7 @@ struct RecordingTranscriptionView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text(viewModel.durationText)
+                    Text(headerDurationText)
                         .font(.system(size: 30, weight: .semibold, design: .monospaced))
                         .foregroundColor(RecordingTheme.textPrimary)
                         .lineLimit(1)
@@ -748,7 +823,25 @@ struct RecordingTranscriptionView: View {
             )
             .frame(height: 36)
 
-            if viewModel.state == .loadingModel || viewModel.state == .finishing {
+            if viewModel.state == .finishing {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let fraction = viewModel.finalizationFraction {
+                        ProgressView(value: fraction)
+                            .progressViewStyle(.linear)
+                            .tint(RecordingTheme.accentDeep)
+                            .frame(height: 8)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .tint(RecordingTheme.accentDeep)
+                            .frame(height: 8)
+                    }
+                    Text("正在用高质量模型重新转录，请勿关闭窗口，完成后会自动保存。")
+                        .font(.system(size: 11))
+                        .foregroundColor(RecordingTheme.textMuted)
+                        .lineLimit(2)
+                }
+            } else if viewModel.state == .loadingModel {
                 ProgressView()
                     .progressViewStyle(.linear)
                     .tint(RecordingTheme.accentDeep)
@@ -758,6 +851,21 @@ struct RecordingTranscriptionView: View {
         .padding(14)
         .frame(minHeight: 104)
         .recordingCardStyle()
+    }
+
+    private var headerSubtitle: String {
+        if viewModel.state == .finishing {
+            let segment = viewModel.finalizationSegmentText ?? "准备处理音频…"
+            if let eta = viewModel.finalizationETAText {
+                return "\(segment) · \(eta)"
+            }
+            return segment
+        }
+        return viewModel.statusText
+    }
+
+    private var headerDurationText: String {
+        viewModel.state == .finishing ? viewModel.finalizationDurationText : viewModel.durationText
     }
 
     private var transcriptCard: some View {
@@ -978,7 +1086,7 @@ struct RecordingTranscriptionView: View {
         case .completed:
             return "总时长"
         case .finishing:
-            return "录音时长"
+            return "处理已用时"
         default:
             return "当前时长"
         }
