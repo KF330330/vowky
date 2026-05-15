@@ -66,8 +66,6 @@ final class EnhancementRouter: TranscriptionEnhancing {
         config: AIProviderConfig
     ) -> TranscriptionEnhancing {
         switch kind {
-        case .openAICompatible:
-            return TranscriptionEnhancementService(provider: provider)
         case .codex:
             return SkillBackedEnhancementService(
                 platform: .codex,

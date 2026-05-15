@@ -32,19 +32,26 @@ final class AIProviderConfigMigrationTests: XCTestCase {
 
     func testLoadFromNewProvidersJSON() throws {
         let entries: [ProviderPriorityEntry] = [
-            ProviderPriorityEntry(kind: .openAICompatible, enabled: true),
-            ProviderPriorityEntry(kind: .claudeCode, enabled: true),
-            ProviderPriorityEntry(kind: .codex, enabled: false),
+            ProviderPriorityEntry(kind: .codex, enabled: true),
+            ProviderPriorityEntry(kind: .claudeCode, enabled: false),
         ]
         let data = try JSONEncoder().encode(entries)
         defaults.set(String(data: data, encoding: .utf8), forKey: AIProviderFactory.Keys.providersJSON)
-        // 旧 key 不存在或不一致都应被忽略
-        defaults.set("codex", forKey: AIProviderFactory.Keys.provider)
+        defaults.set("claudeCode", forKey: AIProviderFactory.Keys.provider) // 旧 key 应被忽略
 
         let config = AIProviderFactory.load(defaults: defaults)
 
         XCTAssertEqual(config.providers, entries)
-        XCTAssertEqual(config.enabledKindsInPriorityOrder, [.openAICompatible, .claudeCode])
+        XCTAssertEqual(config.enabledKindsInPriorityOrder, [.codex])
+    }
+
+    func testLoadFromLegacyOpenAIKeyFallsBackToDefaults() {
+        defaults.set("openAICompatible", forKey: AIProviderFactory.Keys.provider)
+
+        let config = AIProviderFactory.load(defaults: defaults)
+
+        // OpenAI 已废弃,旧 ai.provider=openAICompatible 应迁移成新默认（claude+codex 都启用）
+        XCTAssertEqual(config.providers, AIProviderConfig.defaultProviders)
     }
 
     func testLoadDefaultsWhenNothingStored() {
@@ -57,7 +64,6 @@ final class AIProviderConfigMigrationTests: XCTestCase {
         config.providers = [
             ProviderPriorityEntry(kind: .codex, enabled: true),
             ProviderPriorityEntry(kind: .claudeCode, enabled: false),
-            ProviderPriorityEntry(kind: .openAICompatible, enabled: false),
         ]
 
         AIProviderFactory.save(config, defaults: defaults)

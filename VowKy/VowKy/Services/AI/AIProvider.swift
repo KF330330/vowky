@@ -3,13 +3,11 @@ import Foundation
 // MARK: - Provider kind
 
 enum AIProviderKind: String, CaseIterable, Codable {
-    case openAICompatible
     case codex
     case claudeCode
 
     var displayName: String {
         switch self {
-        case .openAICompatible: return "OpenAI 兼容 API"
         case .codex:            return "Codex CLI（本机）"
         case .claudeCode:       return "Claude Code CLI（本机）"
         }

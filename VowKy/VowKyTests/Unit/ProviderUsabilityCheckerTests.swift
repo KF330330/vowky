@@ -21,38 +21,13 @@ final class ProviderUsabilityCheckerTests: XCTestCase {
         tempDir = nil; homeDir = nil; binDir = nil
     }
 
-    // MARK: - openAI
-
-    func testOpenAINotConfiguredWhenFieldsEmpty() {
-        let checker = makeChecker()
-        let config = AIProviderConfig(
-            enabled: true, autoTrigger: false,
-            providers: AIProviderConfig.defaultProviders,
-            openAI: OpenAICompatibleConfig(baseURL: "", apiKey: "", model: ""),
-            codex: .empty, claude: .empty, timeoutSeconds: 90
-        )
-        XCTAssertEqual(checker.unusableReason(for: .openAICompatible, config: config), .openAINotConfigured)
-    }
-
-    func testOpenAIUsableWhenConfigured() {
-        let checker = makeChecker()
-        let config = AIProviderConfig(
-            enabled: true, autoTrigger: false,
-            providers: AIProviderConfig.defaultProviders,
-            openAI: OpenAICompatibleConfig(baseURL: "https://api.openai.com", apiKey: "sk-xxx", model: "gpt-4o"),
-            codex: .empty, claude: .empty, timeoutSeconds: 90
-        )
-        XCTAssertNil(checker.unusableReason(for: .openAICompatible, config: config))
-    }
-
     // MARK: - codex / claude
 
     func testCodexCliNotFound() {
-        let checker = makeChecker()  // empty bin dir, no env override
+        let checker = makeChecker()
         let config = AIProviderConfig(
             enabled: true, autoTrigger: false,
             providers: AIProviderConfig.defaultProviders,
-            openAI: .default,
             codex: CLIConfig(binaryPath: tempDir.appendingPathComponent("does-not-exist").path),
             claude: .empty,
             timeoutSeconds: 90
@@ -73,7 +48,6 @@ final class ProviderUsabilityCheckerTests: XCTestCase {
         let config = AIProviderConfig(
             enabled: true, autoTrigger: false,
             providers: AIProviderConfig.defaultProviders,
-            openAI: .default,
             codex: .empty,
             claude: CLIConfig(binaryPath: fakeClaude.path),
             timeoutSeconds: 90
@@ -102,7 +76,6 @@ final class ProviderUsabilityCheckerTests: XCTestCase {
         let config = AIProviderConfig(
             enabled: true, autoTrigger: false,
             providers: AIProviderConfig.defaultProviders,
-            openAI: .default,
             codex: .empty,
             claude: CLIConfig(binaryPath: fakeClaude.path),
             timeoutSeconds: 90

@@ -2,14 +2,11 @@ import Foundation
 
 /// Provider 不可用的具体原因。"不可用"= 还没法对 AI 发起调用（pre-flight 不通过）。
 enum ProviderUnusableReason: LocalizedError, Equatable {
-    case openAINotConfigured
     case cliNotFound(commandName: String)
     case skillNotInstalled(platform: AISkillPlatform)
 
     var errorDescription: String? {
         switch self {
-        case .openAINotConfigured:
-            return "OpenAI 兼容 API 配置不完整（Base URL / API Key / Model 任一为空）"
         case .cliNotFound(let name):
             return "未找到 \(name) 命令（请安装 CLI 或在设置里填绝对路径）"
         case .skillNotInstalled(let platform):
@@ -37,8 +34,6 @@ struct ProviderUsabilityChecker {
     /// 返回 nil 表示可用；否则返回不可用原因。
     func unusableReason(for kind: AIProviderKind, config: AIProviderConfig) -> ProviderUnusableReason? {
         switch kind {
-        case .openAICompatible:
-            return config.openAI.isConfigured ? nil : .openAINotConfigured
         case .codex:
             return cliBackedCheck(commandName: "codex", binaryPath: config.codex.binaryPath, platform: .codex)
         case .claudeCode:

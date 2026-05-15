@@ -60,19 +60,14 @@ struct SettingsView: View {
         return defaults.bool(forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
     }()
     @State private var permissionRefreshTimer: Timer?
-    @State private var installCodexSkill = true
-    @State private var installClaudeSkill = true
     @State private var skillStatuses: [SkillStatusKey: AISkillPlatformStatus] = [:]
     @State private var skillStatusMessage: String?
 
-    // AI 后处理
+    // AI 助手
     @State private var aiEnabled: Bool
     @State private var aiAutoTrigger: Bool
     @State private var providerEntries: [ProviderPriorityEntry]
     @State private var selectedProviderIndex: Int = 0
-    @State private var openAIBaseURL: String
-    @State private var openAIApiKey: String
-    @State private var openAIModel: String
     @State private var codexBinaryPath: String
     @State private var claudeBinaryPath: String
     @State private var aiTimeoutSeconds: Int
@@ -88,9 +83,6 @@ struct SettingsView: View {
         _aiEnabled        = State(initialValue: config.enabled)
         _aiAutoTrigger    = State(initialValue: config.autoTrigger)
         _providerEntries  = State(initialValue: config.providers)
-        _openAIBaseURL    = State(initialValue: config.openAI.baseURL)
-        _openAIApiKey     = State(initialValue: config.openAI.apiKey)
-        _openAIModel      = State(initialValue: config.openAI.model)
         _codexBinaryPath  = State(initialValue: config.codex.binaryPath)
         _claudeBinaryPath = State(initialValue: config.claude.binaryPath)
         _aiTimeoutSeconds = State(initialValue: config.timeoutSeconds)
@@ -199,41 +191,13 @@ struct SettingsView: View {
                     }
             }
 
-            Section("AI Skills") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle(isOn: $installCodexSkill) {
-                        skillPlatformRow(platform: .codex, title: "Codex")
-                    }
+            Section("AI 助手") {
+                Text("用本机 Claude Code / Codex CLI 给转写稿自动生成标题、摘要和分段。需先装 CLI 并安装对应 skill。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                    Toggle(isOn: $installClaudeSkill) {
-                        skillPlatformRow(platform: .claudeCode, title: "Claude Code")
-                    }
-
-                    HStack {
-                        Button("安装/更新") {
-                            installSelectedSkills()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(selectedSkillPlatforms.isEmpty)
-
-                        Button("卸载") {
-                            uninstallSelectedSkills()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(selectedSkillPlatforms.isEmpty)
-                    }
-
-                    if let skillStatusMessage {
-                        Text(skillStatusMessage)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-
-            Section("AI 后处理") {
-                Toggle("启用 AI 后处理（标题 / 摘要 / 自动分段）", isOn: $aiEnabled)
+                Toggle("启用 AI 后处理", isOn: $aiEnabled)
                     .onChange(of: aiEnabled) { _ in saveAIConfig() }
 
                 if aiEnabled {
@@ -250,9 +214,9 @@ struct SettingsView: View {
                         }
                     }
 
-                    if let kind = currentSelectedProviderKind {
+                    if let kind = currentSelectedProviderKind, let platform = skillPlatform(for: kind) {
                         Divider()
-                        providerConfigForm(for: kind)
+                        providerDetailPanel(for: kind, platform: platform)
                     }
 
                     Stepper("调用超时：\(aiTimeoutSeconds) 秒", value: $aiTimeoutSeconds, in: 30...300, step: 10)
@@ -405,18 +369,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - AI Skills
-
-    private var selectedSkillPlatforms: Set<AISkillPlatform> {
-        var platforms = Set<AISkillPlatform>()
-        if installCodexSkill {
-            platforms.insert(.codex)
-        }
-        if installClaudeSkill {
-            platforms.insert(.claudeCode)
-        }
-        return platforms
-    }
+    // MARK: - AI Skills helpers
 
     private func refreshSkillStatuses() {
         skillStatuses = Dictionary(
@@ -426,61 +379,11 @@ struct SettingsView: View {
         )
     }
 
-    @ViewBuilder
-    private func skillPlatformRow(platform: AISkillPlatform, title: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-            HStack(spacing: 6) {
-                Text("vowky-transcribe:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(skillStatusText(for: platform, kind: .transcribe))
-                    .font(.caption)
-                    .foregroundColor(skillStatusColor(for: platform, kind: .transcribe))
-            }
-            HStack(spacing: 6) {
-                Text("transcript-enhance:")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(skillStatusText(for: platform, kind: .enhance))
-                    .font(.caption)
-                    .foregroundColor(skillStatusColor(for: platform, kind: .enhance))
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var skillStatusMessageView: some View {
-        if let skillStatusMessage {
-            Text(skillStatusMessage)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    @ViewBuilder
-    private func enhanceSkillWarning(for platform: AISkillPlatform) -> some View {
-        let installed: Bool = {
-            guard let status = skillStatuses[SkillStatusKey(platform: platform, kind: .enhance)] else {
-                return false
-            }
-            if case .installed = status.state { return true }
-            return false
-        }()
-        if !installed {
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
-                Text("需要先安装 transcript-enhance（AI Skills 区域）")
-                    .font(.caption)
-                    .foregroundColor(.red)
-                Button("一键安装") {
-                    installSkill(for: platform)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
+    /// Provider kind → 对应平台。
+    private func skillPlatform(for kind: AIProviderKind) -> AISkillPlatform? {
+        switch kind {
+        case .codex:      return .codex
+        case .claudeCode: return .claudeCode
         }
     }
 
@@ -488,32 +391,21 @@ struct SettingsView: View {
         do {
             _ = try skillInstaller.install(platforms: [platform])
             refreshSkillStatuses()
-            skillStatusMessage = "已安装/更新 \(platform.displayName) 平台 AI Skills"
+            skillStatusMessage = "已安装/更新 \(platform.displayName) 平台 skill"
         } catch {
             refreshSkillStatuses()
             skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 
-    private func installSelectedSkills() {
+    private func uninstallSkill(for platform: AISkillPlatform) {
         do {
-            let installed = try skillInstaller.install(platforms: selectedSkillPlatforms)
-            refreshSkillStatuses()
-            skillStatusMessage = "已安装/更新：\(installed.map(\.path).joined(separator: "，"))"
-        } catch {
-            refreshSkillStatuses()
-            skillStatusMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        }
-    }
-
-    private func uninstallSelectedSkills() {
-        do {
-            let result = try skillInstaller.uninstall(platforms: selectedSkillPlatforms)
+            let result = try skillInstaller.uninstall(platforms: [platform])
             refreshSkillStatuses()
             if result.removedCompletedJobCaches > 0 {
-                skillStatusMessage = "已卸载所选 AI Skills，已清理 \(result.removedCompletedJobCaches) 个已完成任务缓存"
+                skillStatusMessage = "已卸载 \(platform.displayName) 平台 skill，已清理 \(result.removedCompletedJobCaches) 个已完成任务缓存"
             } else {
-                skillStatusMessage = "已卸载所选 AI Skills"
+                skillStatusMessage = "已卸载 \(platform.displayName) 平台 skill"
             }
         } catch {
             refreshSkillStatuses()
@@ -561,11 +453,6 @@ struct SettingsView: View {
             enabled: aiEnabled,
             autoTrigger: aiAutoTrigger,
             providers: providerEntries,
-            openAI: OpenAICompatibleConfig(
-                baseURL: openAIBaseURL,
-                apiKey: openAIApiKey,
-                model: openAIModel
-            ),
             codex: CLIConfig(binaryPath: codexBinaryPath),
             claude: CLIConfig(binaryPath: claudeBinaryPath),
             timeoutSeconds: aiTimeoutSeconds
@@ -641,31 +528,73 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func providerConfigForm(for kind: AIProviderKind) -> some View {
-        switch kind {
-        case .openAICompatible:
-            TextField("Base URL", text: $openAIBaseURL)
-                .onChange(of: openAIBaseURL) { _ in saveAIConfig() }
-            SecureField("API Key", text: $openAIApiKey)
-                .onChange(of: openAIApiKey) { _ in saveAIConfig() }
-            TextField("Model", text: $openAIModel)
-                .onChange(of: openAIModel) { _ in saveAIConfig() }
-        case .codex:
-            TextField("codex 绝对路径（留空自动探测）", text: $codexBinaryPath)
-                .onChange(of: codexBinaryPath) { _ in saveAIConfig() }
-            Text("提示：常见路径包括 /opt/homebrew/bin/codex、~/.cargo/bin/codex。")
+    private func providerDetailPanel(for kind: AIProviderKind, platform: AISkillPlatform) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // CLI 路径
+            switch kind {
+            case .codex:
+                TextField("codex 绝对路径（留空自动探测）", text: $codexBinaryPath)
+                    .onChange(of: codexBinaryPath) { _ in saveAIConfig() }
+                Text("自动探测会扫 Homebrew、nvm、fnm、volta 等常见位置。装 codex：`npm i -g @openai/codex` 或 `brew install codex`。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .claudeCode:
+                TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
+                    .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
+                Text("自动探测会扫 Homebrew、nvm、fnm 等常见位置。装 claude：`npm i -g @anthropic-ai/claude-code`。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            // Skill 状态
+            Text("\(platform.displayName) 平台 Skill 状态")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            enhanceSkillWarning(for: .codex)
-            skillStatusMessageView
-        case .claudeCode:
-            TextField("claude 绝对路径（留空自动探测）", text: $claudeBinaryPath)
-                .onChange(of: claudeBinaryPath) { _ in saveAIConfig() }
-            Text("提示：常见路径包括 /opt/homebrew/bin/claude、~/.npm-global/bin/claude。")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            enhanceSkillWarning(for: .claudeCode)
-            skillStatusMessageView
+            HStack(spacing: 6) {
+                Text("vowky-transcribe:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(skillStatusText(for: platform, kind: .transcribe))
+                    .font(.caption)
+                    .foregroundColor(skillStatusColor(for: platform, kind: .transcribe))
+            }
+            HStack(spacing: 6) {
+                Text("transcript-enhance:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(skillStatusText(for: platform, kind: .enhance))
+                    .font(.caption)
+                    .foregroundColor(skillStatusColor(for: platform, kind: .enhance))
+            }
+
+            HStack(spacing: 8) {
+                Button("安装/更新 skill") {
+                    installSkill(for: platform)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button("卸载") {
+                    uninstallSkill(for: platform)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(
+                    skillStatuses[SkillStatusKey(platform: platform, kind: .transcribe)]?.state == .notInstalled &&
+                    skillStatuses[SkillStatusKey(platform: platform, kind: .enhance)]?.state == .notInstalled
+                )
+            }
+
+            if let skillStatusMessage {
+                Text(skillStatusMessage)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
