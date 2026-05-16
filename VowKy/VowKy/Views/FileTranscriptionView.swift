@@ -116,6 +116,7 @@ final class FileTranscriptionViewModel: ObservableObject {
     private let fileTranscriptionServiceFactory: () -> FileTranscribing
     private let resultRecorder: (String) -> Void
     private let enhancementService: TranscriptionEnhancing
+    private let enhancementRunner: TranscriptionEnhancementRunner
     private let aiConfigLoader: () -> AIProviderConfig
     private var transcriptionTask: Task<Void, Never>?
     private var activeTargetJobIDs: Set<UUID>?
@@ -135,6 +136,7 @@ final class FileTranscriptionViewModel: ObservableObject {
             appState.recordRecognitionResult(text: text, sourceType: "file")
         }
         self.enhancementService = enhancementService
+        self.enhancementRunner = TranscriptionEnhancementRunner(service: enhancementService)
         self.aiConfigLoader = aiConfigLoader
         refreshInsertionTarget()
     }
@@ -688,39 +690,21 @@ final class FileTranscriptionViewModel: ObservableObject {
             job.outlineStatus = .running
         }
 
-        let input = EnhancementInput(
+        let mdURL = jobs.first(where: { $0.id == jobID })?.markdownURL
+
+        let result = await enhancementRunner.run(
             rawText: rawText,
             audioURL: audioURL,
+            sourceType: "file",
             startedAt: Date(),
             durationSeconds: nil,
-            sourceType: "file"
+            markdownURL: mdURL,
+            progress: { [weak self] progress in
+                Task { @MainActor in
+                    self?.apply(enhancementProgress: progress, to: jobID)
+                }
+            }
         )
-        // frontmatter 里的 markdown_path 用实际写盘路径；尚未写盘时退到空字符串
-        let mdURL = jobs.first(where: { $0.id == jobID })?.markdownURL
-        let markdownPath = mdURL?.path ?? ""
-        // 同目录写 .ai-log.txt（与 .md 同 basename）
-        let logFilePath = mdURL.map {
-            $0.deletingPathExtension().appendingPathExtension("ai-log.txt").path
-        }
-
-        let result = await enhancementService.enhance(
-            input: input,
-            markdownPath: markdownPath,
-            logFilePath: logFilePath
-        ) { [weak self] progress in
-            Task { @MainActor in
-                self?.apply(enhancementProgress: progress, to: jobID)
-            }
-        }
-
-        // 把完整 markdown（带 frontmatter+heading）覆盖写回磁盘
-        if let mdURL {
-            do {
-                try result.fullMarkdownDocument.write(to: mdURL, atomically: true, encoding: .utf8)
-            } catch {
-                print("[VowKy][FileTranscription] AI markdown 覆盖写盘失败: \(error.localizedDescription)")
-            }
-        }
 
         updateJob(id: jobID) { job in
             job.enhancementInFlight = false
