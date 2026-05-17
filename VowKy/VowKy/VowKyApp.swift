@@ -45,7 +45,8 @@ struct VowKyApp: App {
                 updateCoordinator: updateCoordinator
             )
         } label: {
-            Image(systemName: menuBarIconName)
+            Image(nsImage: Self.butterflyTemplateImage)
+                .opacity(menuBarIconActive ? 1.0 : 0.85)
                 .task {
                     let needsOnboarding = !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
                     if appState.hotkeyManager == nil {
@@ -73,15 +74,22 @@ struct VowKyApp: App {
         }
     }
 
-    private var menuBarIconName: String {
+    private static let butterflyTemplateImage: NSImage = {
+        let img = NSImage(named: "ButterflyTemplate") ?? NSImage()
+        img.isTemplate = true
+        img.size = NSSize(width: 22, height: 22)
+        return img
+    }()
+
+    private var menuBarIconActive: Bool {
         if appState.isRecordingTranscriptionInProgress {
-            return "mic.fill"
+            return true
         }
         switch appState.state {
         case .recording:
-            return "mic.fill"
+            return true
         default:
-            return "mic"
+            return false
         }
     }
 }
