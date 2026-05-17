@@ -1265,25 +1265,37 @@ private struct RecordingPulseIcon: View {
                 .frame(width: 52, height: 52)
                 .shadow(color: RecordingTheme.accentMain.opacity(0.24), radius: 12, x: 0, y: 6)
 
-            Image(systemName: iconName)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(RecordingTheme.accentDarkest)
+            stateIcon
         }
         .frame(width: 70, height: 70)
     }
 
-    private var iconName: String {
+    @ViewBuilder
+    private var stateIcon: some View {
         switch state {
         case .loadingModel, .finishing:
-            return "waveform"
+            Image(systemName: "waveform")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(RecordingTheme.accentDarkest)
         case .completed:
-            return "checkmark"
+            Image(systemName: "checkmark")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(RecordingTheme.accentDarkest)
         case .cancelled:
-            return "xmark"
+            Image(systemName: "xmark")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(RecordingTheme.accentDarkest)
         case .failed:
-            return "exclamationmark"
+            Image(systemName: "exclamationmark")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(RecordingTheme.accentDarkest)
         default:
-            return "mic.fill"
+            Image("ButterflyLarge")
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 32, height: 32)
+                .foregroundColor(RecordingTheme.accentDarkest)
         }
     }
 }
