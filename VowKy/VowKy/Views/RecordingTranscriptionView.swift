@@ -1273,10 +1273,6 @@ private struct RecordingPulseIcon: View {
     @ViewBuilder
     private var stateIcon: some View {
         switch state {
-        case .loadingModel, .finishing:
-            Image(systemName: "waveform")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(RecordingTheme.accentDarkest)
         case .completed:
             Image(systemName: "checkmark")
                 .font(.system(size: 22, weight: .semibold))
