@@ -958,24 +958,6 @@ struct FileTranscriptionView: View {
                     .lineLimit(1)
             }
 
-            HStack(spacing: 6) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 9, weight: .bold))
-                Text("LOCAL")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .foregroundColor(FileTranscriptionTheme.accentDarkest)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(FileTranscriptionTheme.cardBackground.opacity(0.82))
-                    .overlay(
-                        Capsule()
-                            .stroke(FileTranscriptionTheme.borderLight, lineWidth: 1)
-                    )
-            )
-
             Spacer()
 
             if !viewModel.jobs.isEmpty {
@@ -1043,12 +1025,6 @@ struct FileTranscriptionView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(FileTranscriptionTheme.textMuted)
                     .multilineTextAlignment(.center)
-            }
-
-            HStack(spacing: 8) {
-                importChip("批量队列")
-                importChip("不上传")
-                importChip("离线模型")
             }
 
             Button {
@@ -1411,14 +1387,6 @@ struct FileTranscriptionView: View {
             Spacer()
 
             Button {
-                viewModel.copyResult()
-            } label: {
-                Label("复制", systemImage: "doc.on.doc")
-            }
-            .buttonStyle(FileSecondaryButtonStyle())
-            .disabled(!viewModel.canUseResult)
-
-            Button {
                 viewModel.saveResult()
             } label: {
                 Label("另存为", systemImage: "square.and.arrow.down")
@@ -1435,31 +1403,6 @@ struct FileTranscriptionView: View {
             .disabled(!viewModel.canRevealMarkdownInFinder)
             .help(viewModel.canRevealMarkdownInFinder ? "打开自动落盘的 .md 文件位置" : "尚未生成 .md 文件")
 
-            if viewModel.canSaveAllResults {
-                Button {
-                    viewModel.saveAllResults()
-                } label: {
-                    Label("保存全部", systemImage: "tray.and.arrow.down")
-                }
-                .buttonStyle(FilePrimaryButtonStyle())
-            } else {
-                Button {
-                    viewModel.saveAllResults()
-                } label: {
-                    Label("保存全部", systemImage: "tray.and.arrow.down")
-                }
-                .buttonStyle(FileSecondaryButtonStyle())
-                .disabled(true)
-            }
-
-            Button {
-                viewModel.insertResult()
-            } label: {
-                Label("插入", systemImage: "keyboard")
-            }
-            .buttonStyle(FileSecondaryButtonStyle())
-            .disabled(!viewModel.canUseResult || !viewModel.hasInsertionTarget)
-            .help(viewModel.hasInsertionTarget ? "插入到上一个应用" : "没有可插入的目标应用")
         }
         .controlSize(.small)
         .frame(height: 34)
