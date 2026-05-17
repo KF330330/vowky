@@ -110,6 +110,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private let outputStore: RecordingTranscriptionOutputStore
     private let resultRecorder: (String) -> Void
     private let enhancementService: TranscriptionEnhancing
+    private let enhancementRunner: TranscriptionEnhancementRunner
     private let aiConfigLoader: () -> AIProviderConfig
 
     private var activeRecognizer: StreamingSpeechRecognizerProtocol?
@@ -147,6 +148,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             appState.recordRecognitionResult(text: text, sourceType: "recording")
         }
         self.enhancementService = enhancementService
+        self.enhancementRunner = TranscriptionEnhancementRunner(service: enhancementService)
         self.aiConfigLoader = aiConfigLoader
     }
 
@@ -504,41 +506,32 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         outlineStatus = .running
         enhancementResult = nil
 
-        let input = EnhancementInput(
-            rawText: rawText,
-            audioURL: preparedOutput.audioURL,
-            startedAt: preparedOutput.startedAt,
-            durationSeconds: output?.duration,
-            sourceType: "recording"
-        )
-        let markdownPath = preparedOutput.textURL.path
+        let runner = enhancementRunner
         let textURL = preparedOutput.textURL
-        // 同目录写 .ai-log.txt，方便排查 AI prompt / response
-        let logURL = preparedOutput.textURL
-            .deletingPathExtension()
-            .appendingPathExtension("ai-log.txt")
-        let service = enhancementService
+        let audioURL = preparedOutput.audioURL
+        let startedAt = preparedOutput.startedAt
+        let duration = output?.duration
 
         enhancementTask = Task { @MainActor [weak self] in
-            let result = await service.enhance(
-                input: input,
-                markdownPath: markdownPath,
-                logFilePath: logURL.path
-            ) { progress in
-                Task { @MainActor in
-                    self?.apply(enhancementProgress: progress)
+            let result = await runner.run(
+                rawText: rawText,
+                audioURL: audioURL,
+                sourceType: "recording",
+                startedAt: startedAt,
+                durationSeconds: duration,
+                markdownURL: textURL,
+                progress: { progress in
+                    Task { @MainActor in
+                        self?.apply(enhancementProgress: progress)
+                    }
                 }
-            }
-            // 任务可能在 cancel 中已取消
+            )
             guard let self else { return }
             if Task.isCancelled { return }
 
             self.enhancementInFlight = false
             self.enhancementResult = result
             self.formattedMarkdown = result.fullMarkdownDocument
-
-            // 覆盖写入带 frontmatter 的完整 markdown
-            try? result.fullMarkdownDocument.write(to: textURL, atomically: true, encoding: .utf8)
         }
     }
 
