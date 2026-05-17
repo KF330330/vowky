@@ -1230,9 +1230,7 @@ struct FileTranscriptionView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let selectedJob = viewModel.selectedJob {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: detailIconName(for: selectedJob.state))
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(stateTint(for: selectedJob.state))
+                    detailIcon(for: selectedJob.state)
                         .frame(width: 42, height: 42)
                         .background(
                             Circle()
@@ -1531,6 +1529,28 @@ struct FileTranscriptionView: View {
             return "exclamationmark.triangle.fill"
         }
     }
+
+    @ViewBuilder
+    private func detailIcon(for state: FileTranscriptionJobState) -> some View {
+        switch state {
+        case .reading, .transcribing:
+            Image(nsImage: Self.butterflyLargeImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 22, height: 22)
+                .foregroundColor(stateTint(for: state))
+        default:
+            Image(systemName: detailIconName(for: state))
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(stateTint(for: state))
+        }
+    }
+
+    private static let butterflyLargeImage: NSImage = {
+        let img = NSImage(named: "ButterflyLarge") ?? NSImage()
+        img.isTemplate = true
+        return img
+    }()
 
     private func detailIconName(for state: FileTranscriptionJobState) -> String {
         switch state {
