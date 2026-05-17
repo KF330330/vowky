@@ -1290,14 +1290,19 @@ private struct RecordingPulseIcon: View {
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(RecordingTheme.accentDarkest)
         default:
-            Image("ButterflyLarge")
-                .renderingMode(.template)
+            Image(nsImage: Self.butterflyLargeImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 32, height: 32)
                 .foregroundColor(RecordingTheme.accentDarkest)
         }
     }
+
+    private static let butterflyLargeImage: NSImage = {
+        let img = NSImage(named: "ButterflyLarge") ?? NSImage()
+        img.isTemplate = true
+        return img
+    }()
 }
 
 private struct RecordingWaveformView: View {
