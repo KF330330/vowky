@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>VowKy 录音悬浮窗 · 方案 1 绿色主题 · 3 变体</title>
+<style>
+  :root {
+    /* VowKy 品牌色 */
+    --green-main: #b2d35d;    /* logo 内圆主绿 */
+    --green-bright: #c5e26e;  /* 高亮绿 */
+    --green-deep: #7a9c2e;    /* 深绿（深底/强调） */
+    --green-dark: #4a5e1a;    /* 最深绿 */
+    --cream: #f0e3d5;         /* logo 外圈米色 */
+    --cream-edge: #e2d4c0;    /* 米色描边 */
+    --ink: #2b2b2b;           /* 蝴蝶条纹深色 */
+
+    --bg-page: #0e0f12;
+    --bg-card: #1a1c20;
+    --text: #e8eaed;
+    --text-dim: #8b8e94;
+    --hud-bg: rgba(28, 28, 32, 0.88);
+    --hud-border: rgba(255, 255, 255, 0.08);
+    --accent: #4f8cff;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+                 "Helvetica Neue", Arial, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 20% -10%, #1f2230 0%, transparent 60%),
+      radial-gradient(800px 500px at 110% 110%, #2a2f1f 0%, transparent 55%),
+      var(--bg-page);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 40px 32px 16px;
+  }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 600; letter-spacing: 0.2px; }
+  .subtitle { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.6; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 14px;
+    margin-top: 18px; padding: 12px 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+  }
+  button.toggle {
+    appearance: none; border: none;
+    background: var(--green-main); color: #1a1f0a;
+    padding: 8px 14px; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  button.toggle:hover { filter: brightness(1.08); }
+  button.toggle.paused { background: #3a3f4a; color: #fff; }
+
+  .level-meter {
+    flex: 1; height: 4px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px; overflow: hidden;
+  }
+  .level-meter > i {
+    display: block; height: 100%;
+    background: linear-gradient(90deg, var(--green-main), var(--green-bright));
+    width: 0%; transition: width 0.05s linear;
+  }
+  .level-label {
+    font-size: 12px; color: var(--text-dim);
+    min-width: 130px; font-variant-numeric: tabular-nums;
+  }
+
+  main {
+    max-width: 1120px; margin: 0 auto;
+    padding: 24px 32px 80px;
+    display: grid; grid-template-columns: 1fr; gap: 22px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 22px 22px 24px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .card-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  }
+  .card-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .card-head .num { color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .card .desc { margin: 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.55; }
+
+  /* HUD 舞台 */
+  .hud-stage {
+    height: 200px;
+    border-radius: 12px;
+    background:
+      linear-gradient(140deg, rgba(255,255,255,0.02), rgba(255,255,255,0)),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><circle cx='1' cy='1' r='0.6' fill='%23ffffff' opacity='0.04'/></svg>");
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* HUD = 真实尺寸 260×80（实际比例 1:1，可视上放大 1.6x 方便看清） */
+  .hud {
+    width: 260px; height: 80px;
+    background: var(--hud-bg);
+    border: 1px solid var(--hud-border);
+    border-radius: 16px;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 16px;
+    overflow: hidden; position: relative;
+    transform: scale(1.6); transform-origin: center;
+  }
+
+  .hud .icon-slot {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .hud .text-slot {
+    display: flex; flex-direction: column; gap: 6px;
+    flex: 1; min-width: 0;
+  }
+  .hud .text-slot .label {
+    font-size: 12px; letter-spacing: 0.2px;
+    color: rgba(255,255,255,0.82);
+  }
+  .hud .wave-slot {
+    height: 18px; width: 100%; position: relative;
+  }
+  .bars {
+    display: flex; align-items: center; gap: 2px;
+    height: 100%; width: 100%;
+  }
+  .bars > i {
+    display: block; flex: 1; height: 20%;
+    border-radius: 1px;
+    transform-origin: center;
+    transition: height 0.06s linear, opacity 0.06s linear;
+    opacity: 0.85;
+  }
+
+  /* ============ 方案 A: Logo 内置（完整 logo + 绿色频谱） ============ */
+  .vA .bars > i {
+    background: var(--green-main);
+  }
+
+  /* ============ 方案 B: 条纹延续（蝴蝶剪影 + 同语言频谱） ============ */
+  .vB .bars {
+    gap: 3px;  /* 与蝴蝶条纹间距对齐 */
+  }
+  .vB .bars > i {
+    background: var(--green-bright);
+    flex: 0 0 1.6px;  /* 与蝴蝶条纹宽度对齐 */
+    opacity: 1;
+  }
+  .vB .bars { justify-content: space-between; }
+
+  /* ============ 方案 C: 全绿底（HUD 整体绿调） ============ */
+  .vC .hud {
+    background: linear-gradient(135deg, rgba(178, 211, 93, 0.92), rgba(160, 195, 75, 0.92));
+    border: 1px solid var(--cream);
+    box-shadow: 0 10px 30px rgba(74, 94, 26, 0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .vC .label { color: #1a1f0a; font-weight: 500; }
+  .vC .bars > i { background: var(--green-dark); opacity: 0.92; }
+
+  footer {
+    max-width: 1120px; margin: 0 auto;
+    padding: 0 32px 40px;
+    color: var(--text-dim); font-size: 12px; line-height: 1.6;
+  }
+  footer kbd {
+    display: inline-block; padding: 1px 6px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>VowKy · 方案 1 极简线条 · 绿色主题 3 变体</h1>
+  <p class="subtitle">
+    都用「条纹蝴蝶 logo」 + 16 条垂直频谱。三个变体的差异在 <b>蝴蝶的呈现方式</b> 和 <b>整体配色基调</b>。<br/>
+    悬浮窗实际尺寸 <b>260 × 80</b>，下方 mockup 已放大 1.6× 方便看清。
+  </p>
+  <div class="toolbar">
+    <button class="toggle" id="toggleBtn">▶ 模拟说话</button>
+    <div class="level-meter"><i id="levelBar"></i></div>
+    <div class="level-label" id="levelText">音量 0.00 · 已停止</div>
+  </div>
+</header>
+
+<!-- ====== 全局共享 defs：条纹 pattern + 蝴蝶 mask ====== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- 深色条纹（用于完整 logo 的蝴蝶） -->
+    <pattern id="stripes-ink" x="0" y="0" width="2.6" height="100" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="1.3" height="100" fill="#2b2b2b"/>
+    </pattern>
+    <!-- 绿色条纹（用于纯剪影蝴蝶） -->
+    <pattern id="stripes-green" x="0" y="0" width="2.6" height="100" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="1.3" height="100" fill="#c5e26e"/>
+    </pattern>
+    <!-- 深绿条纹（用于全绿底变体上的蝴蝶） -->
+    <pattern id="stripes-darkgreen" x="0" y="0" width="2.6" height="100" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="1.3" height="100" fill="#4a5e1a"/>
+    </pattern>
+
+    <!-- 蝴蝶轮廓（4 椭圆 + 身体） -->
+    <symbol id="butterfly-shape" viewBox="0 0 100 100">
+      <g>
+        <!-- 上翅膀 左右 -->
+        <ellipse cx="33" cy="40" rx="15" ry="18"/>
+        <ellipse cx="67" cy="40" rx="15" ry="18"/>
+        <!-- 下翅膀 左右（更小） -->
+        <ellipse cx="38" cy="65" rx="11" ry="13"/>
+        <ellipse cx="62" cy="65" rx="11" ry="13"/>
+        <!-- 身体 -->
+        <ellipse cx="50" cy="50" rx="2.5" ry="22"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<main>
+
+  <!-- ============ 变体 A：完整 Logo 内置 ============ -->
+  <section class="card vA">
+    <div class="card-head">
+      <h2>变体 A · Logo 内置</h2>
+      <span class="num">A / 3</span>
+    </div>
+    <p class="desc">
+      左侧用 <b>完整 logo</b>（米色外圈 + 绿色内圆 + 深色条纹蝴蝶），右侧绿色 FFT 频谱。
+      最忠实呈现品牌 logo，HUD 主体保持深色克制，绿色只作为高光出现。
+      <span style="color:#9aa">推荐场景：希望 logo 在悬浮窗里也清晰可识别。</span>
+    </p>
+    <div class="hud-stage">
+      <div class="hud">
+        <div class="icon-slot">
+          <!-- 完整 logo: 外圈 + 内圈 + 条纹蝴蝶 -->
+          <svg width="32" height="32" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="49" fill="#f0e3d5"/>
+            <circle cx="50" cy="50" r="40" fill="#b2d35d"/>
+            <g>
+              <ellipse cx="33" cy="40" rx="15" ry="18" fill="url(#stripes-ink)"/>
+              <ellipse cx="67" cy="40" rx="15" ry="18" fill="url(#stripes-ink)"/>
+              <ellipse cx="38" cy="65" rx="11" ry="13" fill="url(#stripes-ink)"/>
+              <ellipse cx="62" cy="65" rx="11" ry="13" fill="url(#stripes-ink)"/>
+              <ellipse cx="50" cy="50" rx="2.5" ry="22" fill="#2b2b2b"/>
+            </g>
+          </svg>
+        </div>
+        <div class="text-slot">
+          <div class="label">正在聆听...</div>
+          <div class="wave-slot"><div class="bars" id="vA-bars"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 变体 B：条纹延续 ============ -->
+  <section class="card vB">
+    <div class="card-head">
+      <h2>变体 B · 条纹延续</h2>
+      <span class="num">B / 3</span>
+    </div>
+    <p class="desc">
+      <b>只用蝴蝶剪影（去掉外圈圆）</b>，条纹直接换成与频谱同色的高亮绿，
+      右侧频谱条与蝴蝶身上的竖条 <b>采用同样的粗细和间距</b> —— 视觉上像"蝴蝶的翅膀条纹延伸到了空气中"。
+      最有概念融合感、最像"听觉可视化"。
+      <span style="color:#9aa">推荐场景：希望品牌图形和功能元素无缝融合。</span>
+    </p>
+    <div class="hud-stage">
+      <div class="hud">
+        <div class="icon-slot">
+          <!-- 只有蝴蝶剪影（绿色条纹），无外圈 -->
+          <svg width="34" height="34" viewBox="0 0 100 100">
+            <g>
+              <ellipse cx="33" cy="40" rx="15" ry="18" fill="url(#stripes-green)"/>
+              <ellipse cx="67" cy="40" rx="15" ry="18" fill="url(#stripes-green)"/>
+              <ellipse cx="38" cy="65" rx="11" ry="13" fill="url(#stripes-green)"/>
+              <ellipse cx="62" cy="65" rx="11" ry="13" fill="url(#stripes-green)"/>
+              <ellipse cx="50" cy="50" rx="2.5" ry="22" fill="#c5e26e"/>
+            </g>
+          </svg>
+        </div>
+        <div class="text-slot">
+          <div class="label">正在聆听...</div>
+          <div class="wave-slot"><div class="bars" id="vB-bars"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 变体 C：全绿底 ============ -->
+  <section class="card vC">
+    <div class="card-head">
+      <h2>变体 C · 全绿底（VowKy 品牌色满版）</h2>
+      <span class="num">C / 3</span>
+    </div>
+    <p class="desc">
+      HUD <b>整个背景换成 VowKy 主绿色</b>（半透明），米色描边一圈，完整 logo 居中靠左。
+      文字和频谱条都改为深绿色，呈现强烈的"VowKy 绿"品牌识别度。
+      <span style="color:#9aa">推荐场景：希望悬浮窗在桌面上一眼就能认出是 VowKy。注意可能与桌面其他元素抢眼。</span>
+    </p>
+    <div class="hud-stage">
+      <div class="hud">
+        <div class="icon-slot">
+          <!-- 完整 logo（但因为背景已经是绿色，logo 内圈与背景融为一体，重点强调外圈+蝴蝶） -->
+          <svg width="34" height="34" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="49" fill="#f0e3d5"/>
+            <circle cx="50" cy="50" r="40" fill="#b2d35d"/>
+            <g>
+              <ellipse cx="33" cy="40" rx="15" ry="18" fill="url(#stripes-darkgreen)"/>
+              <ellipse cx="67" cy="40" rx="15" ry="18" fill="url(#stripes-darkgreen)"/>
+              <ellipse cx="38" cy="65" rx="11" ry="13" fill="url(#stripes-darkgreen)"/>
+              <ellipse cx="62" cy="65" rx="11" ry="13" fill="url(#stripes-darkgreen)"/>
+              <ellipse cx="50" cy="50" rx="2.5" ry="22" fill="#4a5e1a"/>
+            </g>
+          </svg>
+        </div>
+        <div class="text-slot">
+          <div class="label">正在聆听...</div>
+          <div class="wave-slot"><div class="bars" id="vC-bars"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  挑一个变体告诉我（"A"/"B"/"C"，或"A 的 logo + B 的频谱"组合）。<br/>
+  按 <kbd>Space</kbd> 可暂停/开始模拟。打开 HTML 才能看到动画效果。
+</footer>
+
+<script>
+'use strict';
+
+// ============================================================
+//  模拟音量信号（与 v1 同款，方便对比）
+// ============================================================
+let playing = false;
+let level = 0;
+let levelTarget = 0;
+
+function rawLevel(t) {
+  if (!playing) return 0;
+  const s1 = Math.sin(t * 0.0028);
+  const s2 = Math.sin(t * 0.0091 + 1.3);
+  const s3 = Math.sin(t * 0.0163 + 2.5);
+  const base = 0.42 + 0.18 * s1 + 0.13 * s2 + 0.08 * s3;
+  const burst = Math.max(0, Math.sin(t * 0.0011)) * 0.15;
+  const noise = (Math.random() - 0.5) * 0.12;
+  return Math.max(0, Math.min(1, base + burst + noise));
+}
+
+// ============================================================
+//  3 个变体共享渲染逻辑（FFT 16 条频谱）
+//  唯一区别：bars 元素的颜色由 CSS 控制
+// ============================================================
+function setupBars(containerId, count = 16) {
+  const c = document.getElementById(containerId);
+  const arr = [];
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement('i');
+    c.appendChild(el);
+    arr.push(el);
+  }
+  return arr;
+}
+
+const vABars = setupBars('vA-bars', 16);
+const vBBars = setupBars('vB-bars', 22);   // 变体 B 用更多更细的条，与蝴蝶条纹同语言
+const vCBars = setupBars('vC-bars', 16);
+
+const vAPhases = vABars.map((_, i) => Math.random() * Math.PI * 2);
+const vBPhases = vBBars.map((_, i) => Math.random() * Math.PI * 2);
+const vCPhases = vCBars.map((_, i) => Math.random() * Math.PI * 2);
+
+function renderBars(bars, phases, t) {
+  const N = bars.length;
+  for (let i = 0; i < N; i++) {
+    // 中央高、两端低
+    const centerWeight = 1 - Math.abs((i - (N - 1) / 2) / ((N - 1) / 2)) * 0.55;
+    const osc = 0.5 + 0.5 * Math.sin(t * 0.012 + phases[i]);
+    const h = Math.max(0.08, level * centerWeight * (0.55 + 0.45 * osc));
+    bars[i].style.height = (h * 100).toFixed(1) + '%';
+    bars[i].style.opacity = (0.55 + 0.45 * h).toFixed(2);
+  }
+}
+
+// ============================================================
+//  顶部控制 + 主循环
+// ============================================================
+const levelBar = document.getElementById('levelBar');
+const levelText = document.getElementById('levelText');
+const toggleBtn = document.getElementById('toggleBtn');
+
+function setPlaying(next) {
+  playing = next;
+  toggleBtn.textContent = playing ? '⏸ 停止' : '▶ 模拟说话';
+  toggleBtn.classList.toggle('paused', !playing);
+}
+toggleBtn.addEventListener('click', () => setPlaying(!playing));
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setPlaying(!playing); }
+});
+
+let lastT = performance.now();
+function loop(now) {
+  const dt = Math.min(50, now - lastT);
+  lastT = now;
+  levelTarget = rawLevel(now);
+  level += (levelTarget - level) * Math.min(1, dt / 90);
+
+  levelBar.style.width = (level * 100).toFixed(1) + '%';
+  levelText.textContent = `音量 ${level.toFixed(2)} · ${playing ? '采音中' : '已停止'}`;
+
+  renderBars(vABars, vAPhases, now);
+  renderBars(vBBars, vBPhases, now);
+  renderBars(vCBars, vCPhases, now);
+
+  requestAnimationFrame(loop);
+}
+
+setPlaying(true);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
