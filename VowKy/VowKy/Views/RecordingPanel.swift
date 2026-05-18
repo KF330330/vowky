@@ -209,7 +209,7 @@ struct ButterflyIcon: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: 28, height: 28)
-            .foregroundColor(PanelTheme.accentBright)
+            .foregroundColor(PanelTheme.accentDeep)
     }
 
     private static let butterflyImage: NSImage = {
@@ -240,7 +240,7 @@ struct WaveformBars: View {
                 HStack(alignment: .center, spacing: 2) {
                     ForEach(0..<Self.barCount, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 1)
-                            .fill(PanelTheme.accentBright)
+                            .fill(PanelTheme.barGradient)
                             .frame(
                                 width: 4,
                                 height: Self.barHeight(
@@ -278,14 +278,24 @@ struct WaveformBars: View {
 // MARK: - Panel Theme Tokens
 //
 // RecordingTheme 定义在 RecordingTranscriptionView.swift 中且为 private，
-// 这里只取 RecordingPanel 用到的一个 token，避免改动跨文件可见性。
-// 数值同步自 RecordingTheme.accentBright (#D4E87C)。
+// 这里只取 RecordingPanel 用到的几个 token，避免改动跨文件可见性。
+// 数值同步自 RecordingTheme（accentBright / accentDeep）。
 
 private enum PanelTheme {
-    static let accentBright = Color(
+    static let accentBright = Color(    // #D4E87C
         red: 0xD4 / 255.0,
         green: 0xE8 / 255.0,
         blue: 0x7C / 255.0
+    )
+    static let accentDeep = Color(      // #8AAE3A
+        red: 0x8A / 255.0,
+        green: 0xAE / 255.0,
+        blue: 0x3A / 255.0
+    )
+    static let barGradient = LinearGradient(
+        colors: [accentBright, accentDeep],
+        startPoint: .top,
+        endPoint: .bottom
     )
 }
 
