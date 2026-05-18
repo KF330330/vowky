@@ -83,19 +83,36 @@ struct MenuBarView: View {
 
             Divider()
 
-            // Recording
-            Button {
-                RecordingTranscriptionWindowController.shared.showWindow(appState: appState)
-            } label: {
-                HStack {
-                    Image(systemName: "record.circle")
-                    Text("录音")
+            // Recording / Return to recording window
+            // 录音中：显示突出的"返回录音窗口"入口（始终可点），避免窗口失焦或被关后用户找不到回路。
+            // 空闲：显示原"录音"按钮，逻辑同前。
+            if appState.isRecordingTranscriptionInProgress {
+                Button {
+                    RecordingTranscriptionWindowController.shared.showWindow(appState: appState)
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.uturn.backward.circle.fill")
+                        Text("返回录音窗口")
+                    }
+                    .foregroundColor(.accentColor)
                 }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+            } else {
+                Button {
+                    RecordingTranscriptionWindowController.shared.showWindow(appState: appState)
+                } label: {
+                    HStack {
+                        Image(systemName: "record.circle")
+                        Text("录音")
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .disabled(appState.state != .idle || appState.isFileTranscriptionInProgress)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .disabled(appState.state != .idle || appState.isFileTranscriptionInProgress || appState.isRecordingTranscriptionInProgress)
 
             // File transcription
             Button {
