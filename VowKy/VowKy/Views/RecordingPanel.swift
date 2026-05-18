@@ -209,7 +209,10 @@ struct ButterflyIcon: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: 28, height: 28)
-            .foregroundColor(PanelTheme.accentDeep)
+            .foregroundColor(PanelTheme.accentMain)
+            // 叠两层细窄阴影模拟描边光环；亮底下深绿光环救对比，暗底下不影响。
+            .shadow(color: PanelTheme.accentDarkest, radius: 0.6, x: 0, y: 0)
+            .shadow(color: PanelTheme.accentDarkest, radius: 0.6, x: 0, y: 0)
     }
 
     private static let butterflyImage: NSImage = {
@@ -267,7 +270,10 @@ struct WaveformBars: View {
         let mid = (n - 1) / 2.0
         let centerWeight = 1.0 - abs(Double(index) - mid) / mid * 0.55
         let osc = 0.5 + 0.5 * sin(time * 7.5 + phases[index])
-        let lev = Double(min(max(level, 0), 1))
+        // RMS 是平方均方根，正常说话只在 0.05~0.25 区间，线性传入会让 bar 顶多到 22% 看不清。
+        // 用 sqrt 非线性放大 + 1.6x 系数，让说话音量更明显映射到视觉高度。
+        let rawLev = Double(min(max(level, 0), 1))
+        let lev = min(1.0, sqrt(rawLev) * 1.6)
         let baselineBreath = 0.06 + 0.03 * (0.5 + 0.5 * sin(time * 1.6 + phases[index] * 0.7))
         let dynamic = lev * centerWeight * (0.45 + 0.55 * osc) * 0.88
         let h = min(1.0, baselineBreath + dynamic)
@@ -287,10 +293,20 @@ private enum PanelTheme {
         green: 0xE8 / 255.0,
         blue: 0x7C / 255.0
     )
+    static let accentMain = Color(      // #B8D458
+        red: 0xB8 / 255.0,
+        green: 0xD4 / 255.0,
+        blue: 0x58 / 255.0
+    )
     static let accentDeep = Color(      // #8AAE3A
         red: 0x8A / 255.0,
         green: 0xAE / 255.0,
         blue: 0x3A / 255.0
+    )
+    static let accentDarkest = Color(   // #4A5A22
+        red: 0x4A / 255.0,
+        green: 0x5A / 255.0,
+        blue: 0x22 / 255.0
     )
     static let barGradient = LinearGradient(
         colors: [accentBright, accentDeep],
