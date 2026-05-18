@@ -20,8 +20,15 @@ struct TranscriptionEnhancementRunner {
             sourceType: sourceType
         )
         let markdownPath = markdownURL?.path ?? ""
-        let logFilePath = markdownURL.map {
-            $0.deletingPathExtension().appendingPathExtension("ai-log.txt").path
+        let logFilePath = markdownURL.flatMap { url -> String? in
+            guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+                return nil
+            }
+            let logsDir = appSupport
+                .appendingPathComponent("VowKy", isDirectory: true)
+                .appendingPathComponent("AILogs", isDirectory: true)
+            let base = url.deletingPathExtension().lastPathComponent
+            return logsDir.appendingPathComponent("\(base).ai-log.txt").path
         }
 
         let result = await service.enhance(

@@ -24,8 +24,10 @@ final class EnhancementRouter: TranscriptionEnhancing {
     ) async -> EnhancementResult {
         let config = configLoader()
         let order = config.enabledKindsInPriorityOrder
+        print("[VowKy][Router] enhance 开始: order=\(order.map { $0.displayName }), markdownPath=\(markdownPath)")
 
         if order.isEmpty {
+            print("[VowKy][Router] order 为空，走 emitFailure")
             return await emitFailure(
                 input: input,
                 markdownPath: markdownPath,
@@ -37,9 +39,12 @@ final class EnhancementRouter: TranscriptionEnhancing {
         var skipped: [(label: String, reason: String)] = []
         for kind in order {
             if let reason = checker.unusableReason(for: kind, config: config) {
-                skipped.append((kind.displayName, reason.errorDescription ?? "不可用"))
+                let reasonText = reason.errorDescription ?? "不可用"
+                print("[VowKy][Router] 跳过 \(kind.displayName): \(reasonText)")
+                skipped.append((kind.displayName, reasonText))
                 continue
             }
+            print("[VowKy][Router] 选中 provider: \(kind.displayName)")
             let provider = AIProviderFactory.makeProvider(kind: kind, config: config)
             let service = makeService(kind: kind, provider: provider, config: config)
             return await service.enhance(
@@ -50,6 +55,7 @@ final class EnhancementRouter: TranscriptionEnhancing {
             )
         }
 
+        print("[VowKy][Router] 所有 provider 都不可用，skipped=\(skipped.map { "\($0.label):\($0.reason)" })")
         return await emitFailure(
             input: input,
             markdownPath: markdownPath,

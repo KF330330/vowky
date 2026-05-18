@@ -54,6 +54,7 @@ enum AIProviderError: LocalizedError, Equatable {
     case cliExitNonZero(code: Int32, stderr: String)
     case httpError(status: Int, body: String)
     case timeout
+    case timeoutWithDetail(detail: String)
     case cancelled
     case decoding(String)
     case empty
@@ -74,6 +75,9 @@ enum AIProviderError: LocalizedError, Equatable {
             return "HTTP \(status)：\(snippet)"
         case .timeout:
             return "AI 调用超时"
+        case .timeoutWithDetail(let detail):
+            let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "AI 调用超时" : "AI 调用超时\n\(trimmed)"
         case .cancelled:
             return "已取消"
         case .decoding(let reason):

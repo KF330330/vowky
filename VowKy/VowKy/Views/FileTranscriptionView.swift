@@ -191,7 +191,7 @@ final class FileTranscriptionViewModel: ObservableObject {
     }
 
     var completedCount: Int {
-        jobs.filter { $0.state == .completed }.count
+        jobs.filter { $0.state == .completed && !$0.enhancementInFlight }.count
     }
 
     var failedCount: Int {
@@ -260,7 +260,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         case .reading, .transcribing:
             return "\(Int(clampedProgress(job.progress) * 100))%"
         case .completed:
-            return "完成"
+            return job.enhancementInFlight ? "AI 增强中…" : "完成"
         case .cancelled:
             return "已取消"
         case .failed:
@@ -355,7 +355,7 @@ final class FileTranscriptionViewModel: ObservableObject {
             if case .failed = $0.state { return true }
             return false
         }.count
-        let completedCount = jobs.filter { $0.state == .completed }.count
+        let completedCount = jobs.filter { $0.state == .completed && !$0.enhancementInFlight }.count
         if failedCount > 0 {
             return "\(completedCount) 个完成，\(failedCount) 个失败"
         }
@@ -480,8 +480,12 @@ final class FileTranscriptionViewModel: ObservableObject {
                     }
 
                     let cfg = aiConfigLoader()
+                    print("[VowKy][FileTranscription] cfg.enabled=\(cfg.enabled), rawTextLen=\(finalText.count), jobURL=\(jobURL.path)")
                     if cfg.enabled && !finalText.isEmpty {
+                        print("[VowKy][FileTranscription] 调用 runEnhancement: jobID=\(jobID)")
                         await runEnhancement(for: jobID, rawText: finalText, audioURL: jobURL)
+                    } else {
+                        print("[VowKy][FileTranscription] 跳过 AI 增强: enabled=\(cfg.enabled), textEmpty=\(finalText.isEmpty)")
                     }
                 } catch is CancellationError {
                     updateJob(id: jobID) { job in
@@ -691,6 +695,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         }
 
         let mdURL = jobs.first(where: { $0.id == jobID })?.markdownURL
+        print("[VowKy][FileTranscription] runEnhancement 入口: jobID=\(jobID), rawTextLen=\(rawText.count), audioURL=\(audioURL.path), mdURL=\(mdURL?.path ?? "(nil)")")
 
         let result = await enhancementRunner.run(
             rawText: rawText,
@@ -705,6 +710,8 @@ final class FileTranscriptionViewModel: ObservableObject {
                 }
             }
         )
+
+        print("[VowKy][FileTranscription] runEnhancement 完成: jobID=\(jobID), title=\(result.titleSucceeded), summary=\(result.summarySucceeded), outline=\(result.outlineSucceeded), warnings=\(result.warnings)")
 
         updateJob(id: jobID) { job in
             job.enhancementInFlight = false
@@ -797,7 +804,7 @@ final class FileTranscriptionViewModel: ObservableObject {
             guard job.totalSegments > 0 else { return "正在转录..." }
             return "正在转录第 \(job.currentSegment) / \(job.totalSegments) 段"
         case .completed:
-            return "转录完成"
+            return job.enhancementInFlight ? "转录完成 · AI 增强中…" : "转录完成"
         case .cancelled:
             return job.resultText.isEmpty ? "已取消" : "已取消，已保留当前结果"
         case .failed(let message):

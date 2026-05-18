@@ -97,6 +97,17 @@ final class AIEnhancementLogger: @unchecked Sendable {
         write(lines.joined(separator: "\n") + "\n")
     }
 
+    func appendDiagnostics(_ lines: [String]) {
+        guard !lines.isEmpty else { return }
+        var outLines: [String] = []
+        outLines.append("############################################################")
+        outLines.append("# Diagnostics")
+        for line in lines { outLines.append("# \(line)") }
+        outLines.append("############################################################")
+        outLines.append("")
+        write(outLines.joined(separator: "\n") + "\n")
+    }
+
     func appendFooter(titleOK: Bool, summaryOK: Bool, outlineOK: Bool, warnings: [String]) {
         var lines: [String] = []
         lines.append("############################################################")

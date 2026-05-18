@@ -17,7 +17,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
         platform: AISkillPlatform,
         userBinaryPath: String,
         providerLabel: String,
-        timeoutSeconds: Int = 600,
+        timeoutSeconds: Int = 1800,
         fileManager: FileManager = .default,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -47,7 +47,9 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
         // skill 是否已装
         let skillRoot = skillDirectory()
         let skillFile = skillRoot.appendingPathComponent("SKILL.md")
-        guard fileManager.fileExists(atPath: skillFile.path) else {
+        let skillExists = fileManager.fileExists(atPath: skillFile.path)
+        print("[VowKy][Skill] platform=\(platform), skillFile=\(skillFile.path), exists=\(skillExists)")
+        guard skillExists else {
             let msg = "transcript-enhance skill 未安装（\(skillFile.path)），请到设置安装。"
             return await failAll(input: input, markdownPath: markdownPath, message: msg, progress: progress)
         }
@@ -75,8 +77,10 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             binary = try resolveBinaryPath()
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            print("[VowKy][Skill] resolveBinaryPath 失败: \(msg)")
             return await failAll(input: input, markdownPath: markdownPath, message: msg, progress: progress)
         }
+        print("[VowKy][Skill] resolved binary=\(binary)")
 
         let prompt = buildPrompt(
             inputPath: inputFile.path,
@@ -84,23 +88,39 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             audioPath: input.audioURL?.path,
             durationSeconds: input.durationSeconds
         )
+        let promptHead = prompt.prefix(500)
+        print("[VowKy][Skill] prompt 前 500 字符:\n\(promptHead)")
+        let timeout = effectiveTimeout(for: input.rawText)
+        print("[VowKy][Skill] 开始 runCLI, effectiveTimeout=\(timeout)s (基线=\(timeoutSeconds)s, rawChars=\(input.rawText.count)), inputFile=\(inputFile.path)")
+
+        // 写 log 头 + 诊断（放在 CLI 调用之前，万一 app 被中途强退也能留下证据）
+        let logger: AIEnhancementLogger? = (logFilePath.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }).map { AIEnhancementLogger(url: $0) }
+        logger?.appendHeader(input: input, provider: providerLabel, markdownPath: markdownPath)
+        logger?.appendDiagnostics([
+            "effectiveTimeout: \(timeout)s (基线: \(timeoutSeconds)s)",
+            "rawChars: \(input.rawText.count)",
+            "inputFile: \(inputFile.path)",
+            "outputFile: \(outputURL.path)",
+            "skillRoot: \(skillRoot.path)",
+            "binary: \(binary)",
+            "platform: \(platform)",
+            "提示：skill 工作目录通常在 /var/folders/*/T/transcript-enhance-* 或 /tmp/transcript-enhance-*",
+        ])
 
         let cliStarted = Date()
         let runResult: Result<String, Error>
         do {
-            let stdout = try await runCLI(binary: binary, prompt: prompt)
+            let stdout = try await runCLI(binary: binary, prompt: prompt, timeoutSeconds: timeout)
             runResult = .success(stdout)
         } catch {
             runResult = .failure(error)
         }
 
-        // 写 log 头（CLI 调用结果记录）
-        let logger: AIEnhancementLogger? = (logFilePath.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }).map { AIEnhancementLogger(url: $0) }
-        logger?.appendHeader(input: input, provider: providerLabel, markdownPath: markdownPath)
         let cliElapsed = Date().timeIntervalSince(cliStarted)
         let logRequest = AIRequest(systemPrompt: "", userPrompt: prompt, responseFormat: .text, temperature: 0)
         switch runResult {
         case .success(let stdout):
+            print("[VowKy][Skill] CLI 成功: elapsed=\(String(format: "%.1f", cliElapsed))s, stdoutLen=\(stdout.count), stdoutHead=\(stdout.prefix(200))")
             logger?.append(
                 task: "skill.transcript-enhance",
                 provider: providerLabel,
@@ -111,6 +131,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             )
         case .failure(let err):
             let msg = (err as? LocalizedError)?.errorDescription ?? err.localizedDescription
+            print("[VowKy][Skill] CLI 失败: elapsed=\(String(format: "%.1f", cliElapsed))s, error=\(msg)")
             logger?.append(
                 task: "skill.transcript-enhance",
                 provider: providerLabel,
@@ -124,11 +145,15 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
         }
 
         // 读最终 .md
+        let outputExists = fileManager.fileExists(atPath: outputURL.path)
+        let outputSize = (try? fileManager.attributesOfItem(atPath: outputURL.path)[.size] as? Int) ?? -1
+        print("[VowKy][Skill] 读取 OUTPUT: path=\(outputURL.path), exists=\(outputExists), size=\(outputSize)")
         guard let markdownContent = try? String(contentsOf: outputURL, encoding: .utf8), !markdownContent.isEmpty else {
             let msg = "skill 调用结束但未生成 .md 输出（\(outputURL.path)）"
             logger?.appendFooter(titleOK: false, summaryOK: false, outlineOK: false, warnings: [msg])
             return await failAll(input: input, markdownPath: markdownPath, message: msg, progress: progress)
         }
+        print("[VowKy][Skill] OUTPUT 读取成功: contentLen=\(markdownContent.count)")
 
         let parsed = parseFrontmatter(markdownContent)
         let title = parsed.title.isEmpty ? fallbackTitle(from: input.rawText) : parsed.title
@@ -195,18 +220,25 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
         if let durationSeconds { lines.append("DURATION_SECONDS=\(Int(durationSeconds.rounded()))") }
         lines.append("")
         lines.append("要求：")
-        lines.append("1. 严格遵守 SKILL.md 的 Step 0-8 全部流程，不要省略 validate。")
+        lines.append("1. 严格遵守 SKILL.md 的 Step 0-7 全部流程，不要省略 validate。")
         lines.append("2. 不要修改原文一个字符（byte-for-byte preserve）。")
         lines.append("3. 最终输出文件路径必须等于 OUTPUT。")
-        lines.append("4. AI 日志写到 OUTPUT 同目录下的 .ai-log.txt。")
-        lines.append("5. 如果 AUDIO 提供了，frontmatter 中加 audio_path 字段。")
-        lines.append("6. 如果 DURATION_SECONDS 提供了，frontmatter 中加 duration_seconds 字段。")
-        lines.append("7. 完成后**只输出一行**：DONE")
-        lines.append("8. 失败时输出一行：FAILED: <reason>")
+        lines.append("4. 如果 AUDIO 提供了，frontmatter 中加 audio_path 字段。")
+        lines.append("5. 如果 DURATION_SECONDS 提供了，frontmatter 中加 duration_seconds 字段。")
+        lines.append("6. 完成后**只输出一行**：DONE")
+        lines.append("7. 失败时输出一行：FAILED: <reason>")
         return lines.joined(separator: "\n")
     }
 
-    private func runCLI(binary: String, prompt: String) async throws -> String {
+    /// 基于输入文本长度估算所需 CLI timeout。
+    /// 经验值：≤ 5000 字用基线；超出部分每 1000 字加 60s；上限 3600s（1 小时）。
+    private func effectiveTimeout(for rawText: String) -> Int {
+        let extraChars = max(0, rawText.count - 5000)
+        let extra = (extraChars / 1000) * 60
+        return min(3600, max(timeoutSeconds, timeoutSeconds + extra))
+    }
+
+    private func runCLI(binary: String, prompt: String, timeoutSeconds: Int) async throws -> String {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: binary)
@@ -243,14 +275,20 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
             process.terminationHandler = { proc in
                 completed.value = true
                 timeoutSource.cancel()
-                if timedOut.value {
-                    continuation.resume(throwing: AIProviderError.timeout)
-                    return
-                }
                 let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
                 let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                 let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
                 let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+                if timedOut.value {
+                    let parts: [String] = [
+                        "timeout 阈值=\(timeoutSeconds)s",
+                        stderr.isEmpty ? "" : "--- partial stderr (末尾 2000 字符) ---\n\(String(stderr.suffix(2000)))",
+                        stdout.isEmpty ? "" : "--- partial stdout (末尾 2000 字符) ---\n\(String(stdout.suffix(2000)))"
+                    ].filter { !$0.isEmpty }
+                    let detail = parts.joined(separator: "\n")
+                    continuation.resume(throwing: AIProviderError.timeoutWithDetail(detail: detail))
+                    return
+                }
                 let status = proc.terminationStatus
                 if status != 0 {
                     continuation.resume(throwing: AIProviderError.cliExitNonZero(
@@ -355,6 +393,7 @@ final class SkillBackedEnhancementService: TranscriptionEnhancing {
         message: String,
         progress: @escaping @MainActor (EnhancementProgress) -> Void
     ) async -> EnhancementResult {
+        print("[VowKy][Skill] failAll: \(message)")
         progress(.init(task: .title,   status: .failed(message)))
         progress(.init(task: .summary, status: .failed(message)))
         progress(.init(task: .outline, status: .failed(message)))

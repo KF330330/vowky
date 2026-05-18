@@ -40,13 +40,11 @@ Throughout the steps:
 - `INPUT` = user-provided `.txt` path
 - `OUTPUT` = resolved output path (default `${INPUT%.txt}.enhanced.md`)
 - `WORK` = `/tmp/transcript-enhance-<sanitized-basename>`
-- `LOG` = `<dir of OUTPUT>/.ai-log.txt`
 
 ### Step 0 — Setup
 
 ```bash
 mkdir -p "$WORK"
-python3 "$SKILL_DIR/scripts/ai_log.py" "$LOG" reset
 ```
 
 ### Step 1 — Chunk sentences
@@ -71,16 +69,6 @@ Chunker verifies byte-for-byte reconstruction internally; non-zero exit = abort.
    - `operations[0].after_id == 0` and `type == "h2"`
    - all `after_id` values are in `[0, max_id]`
    - operations sorted by `after_id` ascending
-5. Log:
-   ```bash
-   python3 "$SKILL_DIR/scripts/ai_log.py" "$LOG" append \
-     --step outline \
-     --prompt-file "$WORK/sentences.txt" \
-     --response-file "$WORK/ops.json" \
-     --status ok --duration <seconds>
-   ```
-   (Record actual wall-clock duration using `date +%s` before/after the
-   reasoning step.)
 
 ### Step 3 — Build sample for title/summary
 
@@ -104,7 +92,6 @@ PY
 2. Read `$WORK/sample.txt`.
 3. Produce a single-line title (≤ 20 chars, plain text, no prefix). Write to
    `$WORK/title.txt`.
-4. Log with `--step title`.
 
 ### Step 5 — Summary (AI → summary.txt)
 
@@ -112,7 +99,6 @@ PY
 2. Read `$WORK/sample.txt`.
 3. Produce a single-line summary (3–6 sentences, 200–500 chars). Write to
    `$WORK/summary.txt`.
-4. Log with `--step summary`.
 
 ### Step 6 — Validate ops/title/summary before assembling
 
@@ -188,12 +174,6 @@ The `## 目录` table of contents (H2 + H3, GitHub-style anchors) is generated
 by `apply.py` directly from `ops.json` — **not by AI**. Pass `--no-toc` to
 omit it.
 
-### Step 8 — Log summary
-
-```bash
-python3 "$SKILL_DIR/scripts/ai_log.py" "$LOG" summary
-```
-
 ## Verification checklist
 
 Before reporting success:
@@ -202,7 +182,6 @@ Before reporting success:
       `generated_at` (and optionally `audio_path`, `duration_seconds`)
 - [ ] First body line after frontmatter starts with `## `
 - [ ] `apply.py verify` returns 0
-- [ ] `$LOG` contains entries for `outline`, `title`, `summary` plus a summary block
 
 ## Error handling
 
@@ -218,7 +197,6 @@ Before reporting success:
 - `SKILL.md` — this file
 - `scripts/chunk.py` — sentence splitter with byte-offset map
 - `scripts/apply.py` — Markdown assembler with verify mode
-- `scripts/ai_log.py` — structured log appender
 - `references/prompts/outline.md` — AI prompt for ops generation
 - `references/prompts/title.md` — AI prompt for title
 - `references/prompts/summary.md` — AI prompt for summary
