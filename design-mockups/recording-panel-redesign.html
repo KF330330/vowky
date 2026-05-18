@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>VowKy 录音悬浮窗 · 6 方案设计探索</title>
+<style>
+  :root {
+    --bg-page: #0e0f12;
+    --bg-card: #1a1c20;
+    --text: #e8eaed;
+    --text-dim: #8b8e94;
+    --hud-bg: rgba(28, 28, 32, 0.88);
+    --hud-border: rgba(255, 255, 255, 0.08);
+    --accent: #4f8cff;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+                 "Helvetica Neue", Arial, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 20% -10%, #1f2230 0%, transparent 60%),
+      radial-gradient(800px 500px at 110% 110%, #2a1f30 0%, transparent 55%),
+      var(--bg-page);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 40px 32px 16px;
+  }
+
+  h1 {
+    margin: 0 0 8px;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+
+  .subtitle {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 18px;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+  }
+
+  button.toggle {
+    appearance: none;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  button.toggle:hover { filter: brightness(1.1); }
+  button.toggle.paused { background: #3a3f4a; }
+
+  .level-meter {
+    flex: 1;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+  .level-meter > i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #4f8cff, #b54fff);
+    width: 0%;
+    transition: width 0.05s linear;
+  }
+  .level-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    min-width: 100px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  main {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 24px 32px 80px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 22px;
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 16px;
+    padding: 22px 22px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .card .card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .card .card-head .num {
+    color: var(--text-dim);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .card .card-head h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .card .desc {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+
+  /* HUD = 实际的悬浮窗模拟，260×80 (与 SwiftUI RecordingPanel 一致) */
+  .hud-stage {
+    height: 132px;
+    border-radius: 12px;
+    background:
+      linear-gradient(140deg, rgba(255,255,255,0.02), rgba(255,255,255,0)),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><circle cx='1' cy='1' r='0.6' fill='%23ffffff' opacity='0.04'/></svg>");
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hud {
+    width: 260px;
+    height: 80px;
+    background: var(--hud-bg);
+    border: 1px solid var(--hud-border);
+    border-radius: 16px;
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .hud .icon-slot {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .hud .text-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+  }
+  .hud .text-slot .label {
+    font-size: 12px;
+    color: rgba(255,255,255,0.78);
+    letter-spacing: 0.2px;
+  }
+
+  .hud .wave-slot {
+    height: 18px;
+    width: 100%;
+    position: relative;
+  }
+
+  /* ===== 方案 1: 极简线条 ===== */
+  .p1 .label { color: rgba(255,255,255,0.85); }
+  .p1 .bars {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 100%;
+    width: 100%;
+  }
+  .p1 .bars > i {
+    display: block;
+    flex: 1;
+    height: 20%;
+    background: #ffffff;
+    border-radius: 1px;
+    transform-origin: center;
+    transition: height 0.06s linear, opacity 0.06s linear;
+    opacity: 0.85;
+  }
+
+  /* ===== 方案 2: 渐变流光 ===== */
+  .p2 .hud {
+    background: linear-gradient(135deg, rgba(54, 28, 64, 0.92), rgba(28, 28, 40, 0.92));
+    border: 1px solid rgba(255, 200, 230, 0.12);
+  }
+  .p2 .label { color: rgba(255, 220, 240, 0.9); }
+  .p2 svg.wave { width: 100%; height: 100%; overflow: visible; }
+  .p2 .wave-path {
+    fill: none;
+    stroke: url(#p2-grad);
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+  .p2 .wave-path.echo {
+    stroke: url(#p2-grad);
+    opacity: 0.35;
+    stroke-width: 1;
+  }
+
+  /* ===== 方案 3: 翅膀即频谱 ===== */
+  .p3 .hud { padding: 0 12px; }
+  .p3 .wing-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 56px;
+    gap: 6px;
+  }
+  .p3 .wing {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 100%;
+  }
+  .p3 .wing.left { justify-content: flex-end; }
+  .p3 .wing.right { justify-content: flex-start; }
+  .p3 .wing i {
+    display: block;
+    width: 4px;
+    background: linear-gradient(180deg, #ffc4d2, #ff6aa9);
+    border-radius: 2px;
+    height: 10%;
+    transition: height 0.06s linear;
+  }
+  .p3 .body {
+    width: 6px;
+    height: 36px;
+    background: linear-gradient(180deg, #2a2a32, #16161a);
+    border-radius: 3px;
+    position: relative;
+    flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+  }
+  .p3 .body::before, .p3 .body::after {
+    content: "";
+    position: absolute;
+    top: -8px;
+    width: 1px;
+    height: 8px;
+    background: rgba(255,255,255,0.7);
+    transform-origin: bottom;
+  }
+  .p3 .body::before { left: 1px; transform: rotate(-22deg); }
+  .p3 .body::after { right: 1px; transform: rotate(22deg); }
+
+  /* ===== 方案 4: 星点呼吸 ===== */
+  .p4 .hud { padding: 0 14px; }
+  .p4 .label { color: rgba(255,255,255,0.78); }
+  .p4 .dots {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+    width: 100%;
+  }
+  .p4 .dots i {
+    display: block;
+    width: 5px;
+    height: 5px;
+    background: rgba(255,255,255,0.85);
+    border-radius: 50%;
+    flex-shrink: 0;
+    transform: translateY(0);
+    transition: transform 0.08s ease-out, opacity 0.08s linear;
+  }
+
+  /* ===== 方案 5: 诗意飞舞 ===== */
+  .p5 .hud {
+    background: linear-gradient(135deg, rgba(20, 30, 45, 0.92), rgba(22, 28, 38, 0.92));
+  }
+  .p5 .label { color: rgba(200, 220, 255, 0.85); }
+  .p5 .wave-slot { height: 28px; }
+  .p5 svg.wave { width: 100%; height: 100%; overflow: visible; }
+  .p5 .wave-line {
+    fill: none;
+    stroke: rgba(170, 200, 255, 0.55);
+    stroke-width: 1.4;
+    stroke-linecap: round;
+  }
+  .p5 .flying-fly {
+    transition: transform 0.08s ease-out;
+  }
+
+  /* ===== 方案 6: 粒子科技 ===== */
+  .p6 .hud {
+    background: linear-gradient(135deg, rgba(10, 18, 32, 0.92), rgba(18, 14, 30, 0.92));
+    border: 1px solid rgba(120, 180, 255, 0.12);
+  }
+  .p6 .label { color: rgba(180, 220, 255, 0.88); }
+  .p6 canvas.particles {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  footer {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 32px 40px;
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  footer kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+  }
+
+  @media (max-width: 800px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  /* closeup 模式：给截图用的放大视图（URL 加 ?closeup） */
+  body.closeup main { grid-template-columns: 1fr; gap: 28px; }
+  body.closeup .hud-stage { height: 200px; }
+  body.closeup .hud { transform: scale(2); transform-origin: center; }
+  body.closeup .card { padding: 18px 22px 24px; }
+  body.closeup header { padding-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>VowKy · 录音悬浮窗重设计</h1>
+  <p class="subtitle">
+    把麦克风换成蝴蝶 · 把横杠换成动态波形 / 频谱。6 个方向并排对比，所有方案共享同一段模拟"语音"信号，看谁在动得最舒服。<br/>
+    悬浮窗实际尺寸 <b>260 × 80</b>，与 SwiftUI <code>RecordingPanel</code> 一致。
+  </p>
+  <div class="toolbar">
+    <button class="toggle" id="toggleBtn">▶ 模拟说话</button>
+    <div class="level-meter"><i id="levelBar"></i></div>
+    <div class="level-label" id="levelText">音量 0.00 · 已停止</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ 方案 1: 极简线条 ============ -->
+  <section class="card p1">
+    <div class="card-head"><h2>方案 1 · 极简线条</h2><span class="num">01 / 06</span></div>
+    <p class="desc">单色线条蝴蝶 + 16 条竖向 FFT 柱状频谱。最接近 SF Symbols 风格，落地到 SwiftUI 成本最低。整体克制、原生感强。</p>
+    <div class="hud-stage">
+      <div class="hud">
+        <div class="icon-slot">
+          <!-- 线条蝴蝶 SVG -->
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <!-- 身体 -->
+            <line x1="16" y1="8" x2="16" y2="24" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>
+            <!-- 触角 -->
+            <path d="M16 8 Q 14 5 12 4" stroke="#fff" stroke-width="1" fill="none" stroke-linecap="round"/>
+            <path d="M16 8 Q 18 5 20 4" stroke="#fff" stroke-width="1" fill="none" stroke-linecap="round"/>
+            <!-- 左上翅 -->
+            <path d="M16 12 Q 8 6 4 12 Q 4 16 9 16 Q 13 16 16 14 Z"
+                  stroke="#fff" stroke-width="1.2" fill="none" stroke-linejoin="round"/>
+            <!-- 右上翅 -->
+            <path d="M16 12 Q 24 6 28 12 Q 28 16 23 16 Q 19 16 16 14 Z"
+                  stroke="#fff" stroke-width="1.2" fill="none" stroke-linejoin="round"/>
+            <!-- 左下翅 -->
+            <path d="M16 18 Q 10 22 8 26 Q 12 27 14 24 Q 16 22 16 20 Z"
+                  stroke="#fff" stroke-width="1.2" fill="none" stroke-linejoin="round"/>
+            <!-- 右下翅 -->
+            <path d="M16 18 Q 22 22 24 26 Q 20 27 18 24 Q 16 22 16 20 Z"
+                  stroke="#fff" stroke-width="1.2" fill="none" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="text-slot">
+          <div class="label">正在聆听...</div>
+          <div class="wave-slot">
+            <div class="bars" id="p1-bars"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 方案 2: 渐变流光 ============ -->
+  <section class="card p2">
+    <div class="card-head"><h2>方案 2 · 渐变流光</h2><span class="num">02 / 06</span></div>
+    <p class="desc">紫→粉渐变填充蝴蝶，配中心向两侧镜像展开的双层平滑波形。暖色、灵动，有光泽，"AI 在听你说话"的氛围最足。</p>
+    <div class="hud-stage">
+      <div class="hud">
+        <div class="icon-slot">
+          <!-- 渐变填充蝴蝶 -->
+          <svg width="30" height="30" viewBox="0 0 32 32">
+            <defs>
+              <linearGradient id="p2-bf" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#c98bff"/>
+                <stop offset="50%" stop-color="#ff7ec0"/>
+                <stop offset="100%" stop-color="#ffb070"/>
+              </linearGradient>
+              <linearGradient id="p2-grad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#c98bff" stop-opacity="0.2"/>
+                <stop offset="50%" stop-color="#ff7ec0"/>
+                <stop offset="100%" stop-color="#c98bff" stop-opacity="0.2"/>
+              </linearGradient>
+            </defs>
+            <line x1="16" y1="8" x2="16" y2="24" stroke="#ffe2f1" stroke-width="1.4" stroke-linecap="round"/>
+            <path d="M16 8 Q 14 5 12 4" stroke="#ffe2f1" stroke-width="1" fill="none" stroke-linecap="round"/>
+            <path d="M16 8 Q 18 5 20 4" stroke="#ffe2f1" stroke-width="1" fill="none" stroke-linecap="round"/>
+            <path d="M16 13 Q 7 5 3 13 Q 3 17 9 17 Q 13 16 16 15 Z" fill="url(#p2-bf)"/>
+            <path d="M16 13 Q 25 5 29 13 Q 29 17 23 17 Q 19 16 16 15 Z" fill="url(#p2-bf)"/>
+            <path d="M16 17 Q 10 22 9 27 Q 13 28 15 24 Q 16 21 16 19 Z" fill="url(#p2-bf)" opacity="0.85"/>
+            <path d="M16 17 Q 22 22 23 27 Q 19 28 17 24 Q 16 21 16 19 Z" fill="url(#p2-bf)" opacity="0.85"/>
+          </svg>
+        </div>
+        <div class="text-slot">
+          <div class="label">正在聆听...</div>
+          <div class="wave-slot">
+            <svg class="wave" viewBox="0 0 200 18" preserveAspectRatio="none">
+              <path id="p2-wave-echo" class="wave-path echo" d=""/>
+              <path id="p2-wave-main" class="wave-path" d=""/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 方案 3: 翅膀即频谱 ============ -->
+  <section class="card p3">
+    <div class="card-head"><h2>方案 3 · 翅膀即频谱</h2><span class="num">03 / 06</span></div>
+    <p class="desc">蝴蝶身体居中，左右两片翅膀直接由竖向频谱条组成 — 翅膀本身随音量"扇动"。最有记忆点、最具品牌识别度，但实现复杂度最高。</p>
+    <div class="hud-stage">
+      <div class="hud">
+        <div class="wing-stage">
+          <div class="wing left" id="p3-wing-l"></div>
+          <div class="body"></div>
+          <div class="wing right" id="p3-wing-r"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 方案 4: 星点呼吸 ============ -->
+  <section class="card p4">
+    <div class="card-head"><h2>方案 4 · 星点呼吸</h2><span class="num">04 / 06</span></div>
+    <p class="desc">小蝴蝶 + 一排小圆点，圆点按音量做波浪式上下起伏。极简、克制，Notion / Things 那种"不打扰"的气质。SwiftUI 实现最简单。</p>
+    <div class="hud-stage">
+      <div class="hud">
+        <div class="icon-slot">
+          <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+            <line x1="16" y1="9" x2="16" y2="22" stroke="rgba(255,255,255,0.85)" stroke-width="1.1" stroke-linecap="round"/>
+            <path d="M16 9 Q 14.5 6.5 13 5.5" stroke="rgba(255,255,255,0.85)" stroke-width="0.9" fill="none"/>
+            <path d="M16 9 Q 17.5 6.5 19 5.5" stroke="rgba(255,255,255,0.85)" stroke-width="0.9" fill="none"/>
+            <path d="M16 13 Q 8 7 5 13 Q 6 16 10 16 Q 13 15 16 14 Z" fill="rgba(255,255,255,0.85)"/>
+            <path d="M16 13 Q 24 7 27 13 Q 26 16 22 16 Q 19 15 16 14 Z" fill="rgba(255,255,255,0.85)"/>
+            <path d="M16 17 Q 11 21 10 25 Q 13 26 15 23 Z" fill="rgba(255,255,255,0.6)"/>
+            <path d="M16 17 Q 21 21 22 25 Q 19 26 17 23 Z" fill="rgba(255,255,255,0.6)"/>
+          </svg>
+        </div>
+        <div class="text-slot">
+          <div class="label">正在聆听...</div>
+          <div class="wave-slot">
+            <div class="dots" id="p4-dots"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 方案 5: 诗意飞舞 ============ -->
+  <section class="card p5">
+    <div class="card-head"><h2>方案 5 · 诗意飞舞</h2><span class="num">05 / 06</span></div>
+    <p class="desc">一条贯穿画面的连续平滑曲线，小蝴蝶沿曲线左右移动、上下飞舞 — y 偏移随音量变化。优雅、有故事感。视觉故事性最强。</p>
+    <div class="hud-stage">
+      <div class="hud">
+        <div class="text-slot" style="padding: 8px 0;">
+          <div class="label" style="text-align:center;">正在聆听...</div>
+          <div class="wave-slot" style="height:32px; position: relative;">
+            <svg class="wave" viewBox="0 0 240 32" preserveAspectRatio="none">
+              <path id="p5-wave" class="wave-line" d=""/>
+            </svg>
+            <svg id="p5-fly" class="flying-fly" width="22" height="22" viewBox="0 0 32 32"
+                 style="position:absolute; left:0; top:0;">
+              <line x1="16" y1="11" x2="16" y2="22" stroke="rgba(220,235,255,0.95)" stroke-width="1.1"/>
+              <path d="M16 13 Q 8 7 5 14 Q 7 17 11 16 Q 14 15 16 14 Z" fill="rgba(220,235,255,0.95)"/>
+              <path d="M16 13 Q 24 7 27 14 Q 25 17 21 16 Q 18 15 16 14 Z" fill="rgba(220,235,255,0.95)"/>
+              <path d="M16 17 Q 12 21 11 24 Q 14 25 16 22 Z" fill="rgba(180,210,255,0.85)"/>
+              <path d="M16 17 Q 20 21 21 24 Q 18 25 16 22 Z" fill="rgba(180,210,255,0.85)"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 方案 6: 粒子科技 ============ -->
+  <section class="card p6">
+    <div class="card-head"><h2>方案 6 · 粒子科技</h2><span class="num">06 / 06</span></div>
+    <p class="desc">蝴蝶由 ~50 个发光粒子聚合而成；说话时粒子从蝴蝶边缘向外散开，形成带状波形。科技感、未来感、AI 味最浓。Canvas 渲染。</p>
+    <div class="hud-stage">
+      <div class="hud">
+        <canvas class="particles" id="p6-canvas" width="520" height="160"></canvas>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  挑一个方案告诉我（"我选方案 3"或"方案 2 的蝴蝶 + 方案 1 的频谱"），下一步我会把它移植到 SwiftUI 的 <code>RecordingPanel.swift</code> 里。<br/>
+  小贴士：按 <kbd>Space</kbd> 可以快速开关模拟。
+</footer>
+
+<script>
+'use strict';
+
+// ============================================================
+//  全局模拟音量信号
+// ============================================================
+let playing = false;
+let level = 0;        // 当前 0~1 平滑后的"音量"
+let levelTarget = 0;  // 目标值（带随机起伏）
+let t0 = performance.now();
+
+function rawLevel(t) {
+  if (!playing) return 0;
+  // 多正弦叠加 + 噪声，模拟说话起伏
+  const s1 = Math.sin(t * 0.0028);
+  const s2 = Math.sin(t * 0.0091 + 1.3);
+  const s3 = Math.sin(t * 0.0163 + 2.5);
+  const base = 0.42 + 0.18 * s1 + 0.13 * s2 + 0.08 * s3;
+  const burst = Math.max(0, Math.sin(t * 0.0011)) * 0.15; // 偶发的高峰
+  const noise = (Math.random() - 0.5) * 0.12;
+  return Math.max(0, Math.min(1, base + burst + noise));
+}
+
+// ============================================================
+//  方案 1 · 极简线条 — 16 条 FFT 柱
+// ============================================================
+const P1_BARS = 16;
+const p1Container = document.getElementById('p1-bars');
+const p1Bars = [];
+for (let i = 0; i < P1_BARS; i++) {
+  const el = document.createElement('i');
+  p1Container.appendChild(el);
+  p1Bars.push(el);
+}
+// 每根 bar 给一个相位偏移，让起伏不整齐划一
+const p1Phases = p1Bars.map((_, i) => Math.random() * Math.PI * 2);
+
+function renderP1(t) {
+  for (let i = 0; i < P1_BARS; i++) {
+    // 中央高、两端低（类似 FFT 视觉）
+    const centerWeight = 1 - Math.abs((i - (P1_BARS - 1) / 2) / ((P1_BARS - 1) / 2)) * 0.55;
+    const osc = 0.5 + 0.5 * Math.sin(t * 0.012 + p1Phases[i]);
+    const h = Math.max(0.08, level * centerWeight * (0.55 + 0.45 * osc));
+    p1Bars[i].style.height = (h * 100).toFixed(1) + '%';
+    p1Bars[i].style.opacity = (0.55 + 0.45 * h).toFixed(2);
+  }
+}
+
+// ============================================================
+//  方案 2 · 渐变流光 — 中心镜像的平滑波形
+// ============================================================
+const p2Main = document.getElementById('p2-wave-main');
+const p2Echo = document.getElementById('p2-wave-echo');
+
+function buildP2Path(t, amp) {
+  const W = 200, H = 18, mid = H / 2;
+  const N = 40;
+  let d = '';
+  for (let i = 0; i <= N; i++) {
+    const x = (i / N) * W;
+    // 中心权重：两端振幅低，中间高
+    const u = i / N;
+    const center = Math.sin(u * Math.PI); // 0 → 1 → 0
+    const y = mid + Math.sin(t * 0.009 + u * 6.5) * amp * center;
+    d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(2) + ' ';
+  }
+  return d;
+}
+
+function renderP2(t) {
+  const amp = 0.5 + level * 7.5;        // 主波 最大约 ±8 px
+  const amp2 = 0.3 + level * 4.5;       // 回声波 振幅稍小
+  p2Main.setAttribute('d', buildP2Path(t, amp));
+  p2Echo.setAttribute('d', buildP2Path(t + 380, amp2));
+}
+
+// ============================================================
+//  方案 3 · 翅膀即频谱
+// ============================================================
+const P3_BARS_PER_WING = 8;
+const p3WingL = document.getElementById('p3-wing-l');
+const p3WingR = document.getElementById('p3-wing-r');
+const p3LeftBars = [], p3RightBars = [];
+for (let i = 0; i < P3_BARS_PER_WING; i++) {
+  const lI = document.createElement('i'); p3WingL.appendChild(lI); p3LeftBars.push(lI);
+  const rI = document.createElement('i'); p3WingR.appendChild(rI); p3RightBars.push(rI);
+}
+// 让翅膀整体呈"中间高两端低"的钻石形，类似真实蝴蝶轮廓
+function p3Envelope(i) {
+  // i: 0 (最外) → P3_BARS_PER_WING-1 (最靠近身体)
+  const u = i / (P3_BARS_PER_WING - 1);    // 0..1
+  // 外侧 → 内侧 渐高，呈翅膀曲线
+  return 0.35 + 0.65 * Math.sin(u * Math.PI * 0.85);
+}
+const p3PhasesL = p3LeftBars.map((_, i) => i * 0.32 + Math.random());
+const p3PhasesR = p3RightBars.map((_, i) => i * 0.32 + Math.random() + 1.7);
+
+function renderP3(t) {
+  for (let i = 0; i < P3_BARS_PER_WING; i++) {
+    // 左翅：i=0 最远，i=7 最靠近身体（DOM 顺序）
+    const envL = p3Envelope(P3_BARS_PER_WING - 1 - i);
+    const envR = p3Envelope(i);
+    const oscL = 0.55 + 0.45 * Math.sin(t * 0.014 + p3PhasesL[i]);
+    const oscR = 0.55 + 0.45 * Math.sin(t * 0.014 + p3PhasesR[i]);
+    const flapBase = 0.2 + level * 0.85;
+    const hL = Math.max(0.1, envL * flapBase * oscL);
+    const hR = Math.max(0.1, envR * flapBase * oscR);
+    p3LeftBars[i].style.height = (hL * 100).toFixed(1) + '%';
+    p3RightBars[i].style.height = (hR * 100).toFixed(1) + '%';
+  }
+}
+
+// ============================================================
+//  方案 4 · 星点呼吸 — 一排小圆点的波浪
+// ============================================================
+const P4_DOTS = 28;
+const p4Container = document.getElementById('p4-dots');
+const p4Dots = [];
+for (let i = 0; i < P4_DOTS; i++) {
+  const el = document.createElement('i');
+  p4Container.appendChild(el);
+  p4Dots.push(el);
+}
+
+function renderP4(t) {
+  const amp = 6 + level * 8;  // 振幅 像素
+  for (let i = 0; i < P4_DOTS; i++) {
+    const u = i / (P4_DOTS - 1);
+    const y = Math.sin(t * 0.006 + u * 6.3) * amp * (0.35 + level);
+    const op = 0.45 + level * 0.5 + Math.abs(Math.sin(t * 0.004 + i * 0.5)) * 0.1;
+    p4Dots[i].style.transform = 'translateY(' + y.toFixed(2) + 'px)';
+    p4Dots[i].style.opacity = Math.min(1, op).toFixed(2);
+  }
+}
+
+// ============================================================
+//  方案 5 · 诗意飞舞 — 平滑曲线 + 飞蝶
+// ============================================================
+const p5Wave = document.getElementById('p5-wave');
+const p5Fly = document.getElementById('p5-fly');
+
+function buildP5Path(t, amp) {
+  const W = 240, H = 32, mid = H / 2;
+  const N = 60;
+  let d = '';
+  for (let i = 0; i <= N; i++) {
+    const x = (i / N) * W;
+    const y = mid + Math.sin(t * 0.0042 + i * 0.32) * amp
+                  + Math.sin(t * 0.0021 + i * 0.11) * amp * 0.45;
+    d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(2) + ' ';
+  }
+  return d;
+}
+
+function renderP5(t) {
+  const amp = 2 + level * 11;
+  p5Wave.setAttribute('d', buildP5Path(t, amp));
+
+  // 蝴蝶沿波形飞舞：x 缓慢游走，y 跟随该点波形 + 一点垂直颤动
+  const slotW = 240, slotH = 32;
+  const xU = (Math.sin(t * 0.0006) * 0.5 + 0.5); // 0..1 缓慢左右
+  const xPct = 0.06 + xU * 0.82;                 // 6%..88% 避免贴边
+  const yMid = slotH / 2;
+  const yWave = Math.sin(t * 0.0042 + xPct * 19) * amp
+              + Math.sin(t * 0.0021 + xPct * 6.6) * amp * 0.45;
+  const flutter = Math.sin(t * 0.018) * (2 + level * 3);
+  const px = xPct * slotW - 11; // -11 = 蝶宽/2
+  const py = yMid + yWave + flutter - 11;
+  p5Fly.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
+}
+
+// ============================================================
+//  方案 6 · 粒子科技 — Canvas 粒子蝴蝶 + 粒子波
+// ============================================================
+const p6Canvas = document.getElementById('p6-canvas');
+const p6Ctx = p6Canvas.getContext('2d');
+
+// HiDPI
+function fitCanvas() {
+  const rect = p6Canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  p6Canvas.width = Math.round(rect.width * dpr);
+  p6Canvas.height = Math.round(rect.height * dpr);
+  p6Ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+fitCanvas();
+window.addEventListener('resize', fitCanvas);
+
+// 蝴蝶轮廓点（在 -1..1 的归一坐标下），手工放点
+const p6ButterflyPoints = [];
+(function buildButterflyPoints() {
+  // 身体（垂直）
+  for (let i = 0; i < 7; i++) {
+    p6ButterflyPoints.push({ x: 0, y: -0.55 + i * 0.18, body: true });
+  }
+  // 触角
+  p6ButterflyPoints.push({ x: -0.15, y: -0.75, body: true });
+  p6ButterflyPoints.push({ x:  0.15, y: -0.75, body: true });
+  // 上翅（左右各 9 点，外大内小）
+  const upperLeft = [
+    [-0.85, -0.25], [-0.95, -0.05], [-0.85, 0.10], [-0.65, 0.05],
+    [-0.45, -0.10], [-0.30, -0.25], [-0.55, -0.35], [-0.75, -0.40], [-0.20, -0.05]
+  ];
+  const lowerLeft = [
+    [-0.55, 0.30], [-0.65, 0.55], [-0.45, 0.70], [-0.30, 0.55],
+    [-0.20, 0.35], [-0.40, 0.45]
+  ];
+  upperLeft.forEach(([x,y]) => { p6ButterflyPoints.push({x,y}); p6ButterflyPoints.push({x:-x,y}); });
+  lowerLeft.forEach(([x,y]) => { p6ButterflyPoints.push({x,y}); p6ButterflyPoints.push({x:-x,y}); });
+})();
+
+// 散出粒子池
+const p6Sparks = [];
+function emitSpark(t) {
+  const angle = Math.random() * Math.PI * 2;
+  const speed = 0.6 + Math.random() * 1.4;
+  p6Sparks.push({
+    x: 0, y: 0,                    // 相对蝴蝶中心
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed * 0.7,
+    life: 0,
+    maxLife: 50 + Math.random() * 40,
+    size: 0.8 + Math.random() * 1.2
+  });
+}
+
+function renderP6(t, dt) {
+  const rect = p6Canvas.getBoundingClientRect();
+  const W = rect.width, H = rect.height;
+  p6Ctx.clearRect(0, 0, W, H);
+
+  const cx = W / 2, cy = H / 2;
+  const scale = 28;  // 蝴蝶基础尺寸
+  const flap = 1 + Math.sin(t * 0.012) * 0.08 * (1 + level);
+
+  // 1) 蝴蝶粒子
+  for (const pt of p6ButterflyPoints) {
+    // 翅膀点 x 方向按 flap 拉伸；身体不变
+    const sx = pt.body ? pt.x : pt.x * flap;
+    const jitter = pt.body ? 0.5 : (1.2 + level * 3);
+    const px = cx + sx * scale + (Math.random() - 0.5) * jitter;
+    const py = cy + pt.y * scale + (Math.random() - 0.5) * jitter * 0.6;
+    const r = pt.body ? 1.2 : (1.6 + level * 1.1);
+
+    // 发光
+    const g = p6Ctx.createRadialGradient(px, py, 0, px, py, r * 4);
+    g.addColorStop(0, 'rgba(170, 215, 255, 0.95)');
+    g.addColorStop(0.4, 'rgba(140, 170, 255, 0.45)');
+    g.addColorStop(1, 'rgba(140, 170, 255, 0)');
+    p6Ctx.fillStyle = g;
+    p6Ctx.beginPath();
+    p6Ctx.arc(px, py, r * 4, 0, Math.PI * 2);
+    p6Ctx.fill();
+
+    p6Ctx.fillStyle = 'rgba(220, 240, 255, 0.95)';
+    p6Ctx.beginPath();
+    p6Ctx.arc(px, py, r, 0, Math.PI * 2);
+    p6Ctx.fill();
+  }
+
+  // 2) 散出粒子：按音量发射
+  const emitProb = level * 1.4;
+  if (Math.random() < emitProb) emitSpark(t);
+  if (level > 0.6 && Math.random() < 0.6) emitSpark(t);
+
+  // 3) 更新 & 绘制 sparks
+  for (let i = p6Sparks.length - 1; i >= 0; i--) {
+    const s = p6Sparks[i];
+    s.x += s.vx;
+    s.y += s.vy;
+    s.life++;
+    const alpha = Math.max(0, 1 - s.life / s.maxLife);
+    if (alpha <= 0) { p6Sparks.splice(i, 1); continue; }
+    const px = cx + s.x;
+    const py = cy + s.y;
+    p6Ctx.fillStyle = `rgba(180, 220, 255, ${(alpha * 0.85).toFixed(3)})`;
+    p6Ctx.beginPath();
+    p6Ctx.arc(px, py, s.size, 0, Math.PI * 2);
+    p6Ctx.fill();
+  }
+}
+
+// ============================================================
+//  顶部状态条 + 主循环
+// ============================================================
+const levelBar = document.getElementById('levelBar');
+const levelText = document.getElementById('levelText');
+const toggleBtn = document.getElementById('toggleBtn');
+
+function setPlaying(next) {
+  playing = next;
+  toggleBtn.textContent = playing ? '⏸ 停止' : '▶ 模拟说话';
+  toggleBtn.classList.toggle('paused', !playing);
+}
+toggleBtn.addEventListener('click', () => setPlaying(!playing));
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && !e.repeat) {
+    e.preventDefault();
+    setPlaying(!playing);
+  }
+});
+
+let lastT = performance.now();
+function loop(now) {
+  const dt = Math.min(50, now - lastT);
+  lastT = now;
+  // 平滑追随 target，避免抖动
+  levelTarget = rawLevel(now);
+  level += (levelTarget - level) * Math.min(1, dt / 90);
+
+  // 顶部仪表
+  levelBar.style.width = (level * 100).toFixed(1) + '%';
+  levelText.textContent = `音量 ${level.toFixed(2)} · ${playing ? '采音中' : '已停止'}`;
+
+  renderP1(now);
+  renderP2(now);
+  renderP3(now);
+  renderP4(now);
+  renderP5(now);
+  renderP6(now, dt);
+
+  requestAnimationFrame(loop);
+}
+
+// closeup 模式（截图用）：URL ?closeup
+if (location.search.includes('closeup')) {
+  document.body.classList.add('closeup');
+}
+
+// 自动开始模拟（便于打开即看）
+setPlaying(true);
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
