@@ -147,12 +147,12 @@ struct RecordingPanelContent: View {
 
     private var recordingView: some View {
         HStack(spacing: 12) {
-            PulsingMicIcon()
+            ButterflyIcon()
             VStack(alignment: .leading, spacing: 4) {
                 Text("正在聆听...")
                     .font(.system(size: 14, weight: .medium))
-                AudioLevelBar(level: appState.audioLevel)
-                    .frame(height: 4)
+                WaveformBars(level: appState.audioLevel)
+                    .frame(height: 18)
             }
         }
         .padding(.horizontal, 20)
@@ -181,6 +181,9 @@ struct RecordingPanelContent: View {
 }
 
 // MARK: - Pulsing Mic Icon
+//
+// 不再用于悬浮窗（已替换为 ButterflyIcon），但 OnboardingView 的"试一试"流程仍引用。
+// 保留定义以维持向后兼容。
 
 struct PulsingMicIcon: View {
     @State private var isPulsing = false
@@ -198,27 +201,92 @@ struct PulsingMicIcon: View {
     }
 }
 
-// MARK: - Audio Level Bar
+// MARK: - Butterfly Icon
 
-struct AudioLevelBar: View {
+struct ButterflyIcon: View {
+    var body: some View {
+        Image(nsImage: Self.butterflyImage)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 28, height: 28)
+            .foregroundColor(PanelTheme.accentBright)
+    }
+
+    private static let butterflyImage: NSImage = {
+        let img = NSImage(named: "ButterflyLarge") ?? NSImage()
+        img.isTemplate = true
+        return img
+    }()
+}
+
+// MARK: - Waveform Bars
+//
+// 16 条竖向频谱条，按 audioLevel + 各自相位 sin 振荡。
+// 没有真 FFT — 视觉上像 EQ，但每条与音频频段无对应关系，等同 HTML 方案 B 的实现。
+// baseline 有微弱呼吸，保证没说话时也能看出"在听"。
+
+struct WaveformBars: View {
     let level: Float
 
-    private var normalizedLevel: CGFloat {
-        CGFloat(min(max(level, 0), 1))
+    private static let barCount: Int = 16
+    private static let phases: [Double] = (0..<barCount).map { i in
+        Double(i) * 0.83 + sin(Double(i) * 1.7)
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.gray.opacity(0.3))
-                Capsule()
-                    .fill(Color.green)
-                    .frame(width: geometry.size.width * normalizedLevel)
-                    .animation(.linear(duration: 0.05), value: normalizedLevel)
+        TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            GeometryReader { geo in
+                HStack(alignment: .center, spacing: 2) {
+                    ForEach(0..<Self.barCount, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(PanelTheme.accentBright)
+                            .frame(
+                                width: 4,
+                                height: Self.barHeight(
+                                    index: i,
+                                    time: t,
+                                    level: level,
+                                    maxHeight: geo.size.height
+                                )
+                            )
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
         }
     }
+
+    private static func barHeight(
+        index: Int,
+        time: TimeInterval,
+        level: Float,
+        maxHeight: CGFloat
+    ) -> CGFloat {
+        let n = Double(barCount)
+        let mid = (n - 1) / 2.0
+        let centerWeight = 1.0 - abs(Double(index) - mid) / mid * 0.55
+        let osc = 0.5 + 0.5 * sin(time * 7.5 + phases[index])
+        let lev = Double(min(max(level, 0), 1))
+        let baselineBreath = 0.06 + 0.03 * (0.5 + 0.5 * sin(time * 1.6 + phases[index] * 0.7))
+        let dynamic = lev * centerWeight * (0.45 + 0.55 * osc) * 0.88
+        let h = min(1.0, baselineBreath + dynamic)
+        return maxHeight * CGFloat(h)
+    }
+}
+
+// MARK: - Panel Theme Tokens
+//
+// RecordingTheme 定义在 RecordingTranscriptionView.swift 中且为 private，
+// 这里只取 RecordingPanel 用到的一个 token，避免改动跨文件可见性。
+// 数值同步自 RecordingTheme.accentBright (#D4E87C)。
+
+private enum PanelTheme {
+    static let accentBright = Color(
+        red: 0xD4 / 255.0,
+        green: 0xE8 / 255.0,
+        blue: 0x7C / 255.0
+    )
 }
 
 // MARK: - AppState audio level accessor
