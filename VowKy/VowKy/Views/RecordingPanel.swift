@@ -151,7 +151,7 @@ struct RecordingPanelContent: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("正在聆听...")
                     .font(.system(size: 14, weight: .medium))
-                WaveformBars(level: appState.audioLevel)
+                WaveformBars(levelProvider: { appState.audioLevel })
                     .frame(height: 18)
             }
         }
@@ -209,10 +209,7 @@ struct ButterflyIcon: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: 28, height: 28)
-            .foregroundColor(PanelTheme.accentMain)
-            // 叠两层细窄阴影模拟描边光环；亮底下深绿光环救对比，暗底下不影响。
-            .shadow(color: PanelTheme.accentDarkest, radius: 0.6, x: 0, y: 0)
-            .shadow(color: PanelTheme.accentDarkest, radius: 0.6, x: 0, y: 0)
+            .foregroundColor(PanelTheme.accentDeep)
     }
 
     private static let butterflyImage: NSImage = {
@@ -227,9 +224,13 @@ struct ButterflyIcon: View {
 // 16 条竖向频谱条，按 audioLevel + 各自相位 sin 振荡。
 // 没有真 FFT — 视觉上像 EQ，但每条与音频频段无对应关系，等同 HTML 方案 B 的实现。
 // baseline 有微弱呼吸，保证没说话时也能看出"在听"。
+//
+// level 用 () -> Float 闭包传入：AudioRecorder.audioLevel 不是 @Published，
+// 父 view body 不会因它变化重新评估。改用闭包，让 TimelineView 每帧 fire 时
+// 从 appState 直接拿最新音量，否则 bar 永远停在 view 首次评估那一刻的 RMS 快照。
 
 struct WaveformBars: View {
-    let level: Float
+    let levelProvider: () -> Float
 
     private static let barCount: Int = 16
     private static let phases: [Double] = (0..<barCount).map { i in
@@ -239,6 +240,7 @@ struct WaveformBars: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
+            let level = levelProvider()
             GeometryReader { geo in
                 HStack(alignment: .center, spacing: 2) {
                     ForEach(0..<Self.barCount, id: \.self) { i in
