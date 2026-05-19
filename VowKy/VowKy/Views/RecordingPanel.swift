@@ -36,7 +36,7 @@ final class RecordingPanel {
 
     private func createPanel() {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 64),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
@@ -46,13 +46,13 @@ final class RecordingPanel {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        // 锁定 Light Mode 外观：HUD 始终白底，不跟随系统亮/暗（SwiftUI 文字色也会按 Light 渲染）
+        // 锁定 Light Mode 外观（SwiftUI 文字色按 Light 渲染，不跟随系统转暗）
         panel.appearance = NSAppearance(named: .aqua)
 
         // Position: top-center of main screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
-            let x = screenFrame.midX - 130
+            let x = screenFrame.midX - 160 // panel width 320 / 2
             let y = screenFrame.maxY - 120
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
@@ -62,20 +62,21 @@ final class RecordingPanel {
                 .environmentObject(appState)
         )
 
-        // 实色白底卡片（用户要求不要半透明毛玻璃）
-        let bg = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 80))
+        // 胶囊形 + 对角渐变背景（accentMain → accentDeep）
+        let bg = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 64))
         bg.wantsLayer = true
-        bg.layer?.backgroundColor = NSColor.white.cgColor
-        bg.layer?.cornerRadius = 16
+        bg.layer?.cornerRadius = 32  // 高度一半，胶囊形
         bg.layer?.masksToBounds = true
-        // 浅描边（RecordingTheme.border #DCE6C8 同款），给卡片轮廓
-        bg.layer?.borderColor = NSColor(
-            srgbRed: 0xDC / 255.0,
-            green: 0xE6 / 255.0,
-            blue: 0xC8 / 255.0,
-            alpha: 1.0
-        ).cgColor
-        bg.layer?.borderWidth = 1
+
+        let gradient = CAGradientLayer()
+        gradient.frame = bg.bounds
+        gradient.colors = [
+            NSColor(srgbRed: 0xB8 / 255.0, green: 0xD4 / 255.0, blue: 0x58 / 255.0, alpha: 1.0).cgColor, // accentMain
+            NSColor(srgbRed: 0x8A / 255.0, green: 0xAE / 255.0, blue: 0x3A / 255.0, alpha: 1.0).cgColor  // accentDeep
+        ]
+        gradient.startPoint = CGPoint(x: 0, y: 1) // 左上（macOS y 向上）
+        gradient.endPoint   = CGPoint(x: 1, y: 0) // 右下
+        bg.layer?.addSublayer(gradient)
 
         hostingView.frame = bg.bounds
         hostingView.autoresizingMask = [.width, .height]
@@ -150,7 +151,7 @@ struct RecordingPanelContent: View {
                 toastView
             }
         }
-        .frame(width: 260, height: 80)
+        .frame(width: 320, height: 64)
     }
 
     private var recordingView: some View {
@@ -158,33 +159,36 @@ struct RecordingPanelContent: View {
             ButterflyIcon()
             VStack(alignment: .leading, spacing: 4) {
                 Text("正在聆听...")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
                 WaveformBars(levelProvider: { appState.audioLevel })
-                    .frame(height: 18)
+                    .frame(height: 16)
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 22)
     }
 
     private var recognizingView: some View {
         HStack(spacing: 12) {
             ProgressView()
                 .controlSize(.small)
+                .colorScheme(.dark)
             Text("识别中...")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 22)
     }
 
     private var toastView: some View {
         HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle")
-                .foregroundColor(.orange)
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.white)
             Text("未识别到语音，请重试")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 22)
     }
 }
 
@@ -216,8 +220,8 @@ struct ButterflyIcon: View {
         Image(nsImage: Self.butterflyImage)
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .frame(width: 28, height: 28)
-            .foregroundColor(PanelTheme.accentDeep)
+            .frame(width: 32, height: 32)
+            .foregroundColor(.white)
     }
 
     private static let butterflyImage: NSImage = {
@@ -245,9 +249,6 @@ struct WaveformBars: View {
         Double(i) * 0.83 + sin(Double(i) * 1.7)
     }
 
-    // 临时诊断：每隔约 0.5s 打印一次当前 audioLevel，确认信号是否到 UI（确认后可删）
-    private static var lastLogTime: TimeInterval = 0
-
     var body: some View {
         // GeometryReader 提到 TimelineView 外面：避免 SwiftUI 把内嵌的 GeometryReader 当稳定布局缓存，
         // 每帧 fire 时仍能拿到 geo.size 并真实重算 bar 高度。
@@ -255,16 +256,10 @@ struct WaveformBars: View {
             TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
                 let level = levelProvider()
-                let _: Void = {
-                    if t - Self.lastLogTime > 0.5 {
-                        Self.lastLogTime = t
-                        NSLog("[VowKy][WaveformBars] level=\(level)")
-                    }
-                }()
                 HStack(alignment: .center, spacing: 2) {
                     ForEach(0..<Self.barCount, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 1)
-                            .fill(PanelTheme.barGradient)
+                            .fill(Color.white.opacity(0.92))
                             .frame(
                                 width: 4,
                                 height: Self.barHeight(
