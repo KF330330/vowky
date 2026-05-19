@@ -46,6 +46,8 @@ final class RecordingPanel {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // 锁定 Light Mode 外观：HUD 不管系统亮/暗都呈浅白半透明（不跟随系统转暗）
+        panel.appearance = NSAppearance(named: .aqua)
 
         // Position: top-center of main screen
         if let screen = NSScreen.main {
@@ -238,10 +240,12 @@ struct WaveformBars: View {
     }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            let level = levelProvider()
-            GeometryReader { geo in
+        // GeometryReader 提到 TimelineView 外面：避免 SwiftUI 把内嵌的 GeometryReader 当稳定布局缓存，
+        // 每帧 fire 时仍能拿到 geo.size 并真实重算 bar 高度。
+        GeometryReader { geo in
+            TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let level = levelProvider()
                 HStack(alignment: .center, spacing: 2) {
                     ForEach(0..<Self.barCount, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 1)
@@ -273,9 +277,10 @@ struct WaveformBars: View {
         let centerWeight = 1.0 - abs(Double(index) - mid) / mid * 0.55
         let osc = 0.5 + 0.5 * sin(time * 7.5 + phases[index])
         // RMS 是平方均方根，正常说话只在 0.05~0.25 区间，线性传入会让 bar 顶多到 22% 看不清。
-        // 用 sqrt 非线性放大 + 1.6x 系数，让说话音量更明显映射到视觉高度。
+        // 用 sqrt 非线性放大 + 2.0x 系数，让说话音量更明显映射到视觉高度。
+        // 系数预期效果：RMS 0.05 → 45%，0.15 → 77%，0.25 → 100%。
         let rawLev = Double(min(max(level, 0), 1))
-        let lev = min(1.0, sqrt(rawLev) * 1.6)
+        let lev = min(1.0, sqrt(rawLev) * 2.0)
         let baselineBreath = 0.06 + 0.03 * (0.5 + 0.5 * sin(time * 1.6 + phases[index] * 0.7))
         let dynamic = lev * centerWeight * (0.45 + 0.55 * osc) * 0.88
         let h = min(1.0, baselineBreath + dynamic)
