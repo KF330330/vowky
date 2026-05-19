@@ -1280,7 +1280,8 @@ struct FileTranscriptionView: View {
                     AIBadgesView(
                         title: job.titleStatus,
                         summary: job.summaryStatus,
-                        outline: job.outlineStatus
+                        outline: job.outlineStatus,
+                        markdownURL: job.markdownURL
                     )
                 }
 

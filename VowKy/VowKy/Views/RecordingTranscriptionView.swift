@@ -967,7 +967,8 @@ struct RecordingTranscriptionView: View {
                     AIBadgesView(
                         title: viewModel.titleStatus,
                         summary: viewModel.summaryStatus,
-                        outline: viewModel.outlineStatus
+                        outline: viewModel.outlineStatus,
+                        markdownURL: viewModel.output?.textURL
                     )
                 }
 
@@ -1497,26 +1498,68 @@ struct AIBadgesView: View {
     let title: RecordingTranscriptionViewModel.AIBadgeStatus
     let summary: RecordingTranscriptionViewModel.AIBadgeStatus
     let outline: RecordingTranscriptionViewModel.AIBadgeStatus
+    /// 对应转录的 markdown 路径；用于推导 AI 日志位置。nil 时 popover 中不显示"打开日志"按钮。
+    var markdownURL: URL? = nil
+
+    @State private var popoverLabel: String?
+
+    private struct Item: Identifiable {
+        let id = UUID()
+        let label: String
+        let status: RecordingTranscriptionViewModel.AIBadgeStatus
+    }
+
+    private var items: [Item] {
+        [
+            Item(label: "标题", status: title),
+            Item(label: "摘要", status: summary),
+            Item(label: "结构", status: outline),
+        ]
+    }
+
+    private var failureSummary: String? {
+        let failed: [(String, String)] = items.compactMap { item in
+            if case let .failed(msg) = item.status { return (item.label, msg) }
+            return nil
+        }
+        guard !failed.isEmpty else { return nil }
+        let messages = Set(failed.map { $0.1 })
+        if messages.count == 1, let only = messages.first {
+            return only
+        }
+        return failed.map { "\($0.0)：\($0.1)" }.joined(separator: " · ")
+    }
 
     var body: some View {
-        HStack(spacing: 4) {
-            badge(label: "标题", status: title)
-            badge(label: "摘要", status: summary)
-            badge(label: "结构", status: outline)
+        HStack(spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(items) { item in
+                    badge(label: item.label, status: item.status)
+                }
+            }
+            if let summary = failureSummary {
+                Text("失败原因：\(summary)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.red)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .help(summary)
+            }
         }
     }
 
     @ViewBuilder
     private func badge(label: String, status: RecordingTranscriptionViewModel.AIBadgeStatus) -> some View {
-        let (symbol, color, tooltip): (String, Color, String?) = {
+        let (symbol, color, tooltip, failedMessage): (String, Color, String?, String?) = {
             switch status {
-            case .idle:        return ("circle.dashed", .gray, nil)
-            case .running:     return ("ellipsis.circle", .orange, nil)
-            case .succeeded:   return ("checkmark.circle.fill", .green, nil)
-            case .failed(let msg): return ("xmark.octagon.fill", .red, msg)
+            case .idle:        return ("circle.dashed", .gray, nil, nil)
+            case .running:     return ("ellipsis.circle", .orange, nil, nil)
+            case .succeeded:   return ("checkmark.circle.fill", .green, nil, nil)
+            case .failed(let msg): return ("xmark.octagon.fill", .red, msg, msg)
             }
         }()
-        HStack(spacing: 3) {
+
+        let chip = HStack(spacing: 3) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(color)
@@ -1529,6 +1572,65 @@ struct AIBadgesView: View {
         .background(
             Capsule().fill(color.opacity(0.12))
         )
+        .contentShape(Capsule())
         .help(tooltip ?? label)
+
+        if let failedMessage {
+            chip
+                .onTapGesture { popoverLabel = label }
+                .popover(
+                    isPresented: Binding(
+                        get: { popoverLabel == label },
+                        set: { if !$0 { popoverLabel = nil } }
+                    ),
+                    arrowEdge: .bottom
+                ) {
+                    FailurePopoverContent(
+                        taskLabel: label,
+                        message: failedMessage,
+                        logURL: markdownURL.flatMap { AIEnhancementLogger.logURL(forMarkdownURL: $0) }
+                    )
+                }
+        } else {
+            chip
+        }
+    }
+}
+
+private struct FailurePopoverContent: View {
+    let taskLabel: String
+    let message: String
+    let logURL: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.octagon.fill")
+                    .foregroundColor(.red)
+                Text("\(taskLabel) · AI 后处理失败")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundColor(.primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: 360, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let logURL, FileManager.default.fileExists(atPath: logURL.path) {
+                HStack {
+                    Spacer()
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([logURL])
+                    } label: {
+                        Label("打开 AI 日志", systemImage: "doc.text.magnifyingglass")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+        }
+        .padding(12)
+        .frame(minWidth: 240)
     }
 }

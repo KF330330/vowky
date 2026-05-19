@@ -83,6 +83,18 @@ final class AIEnhancementLogger: @unchecked Sendable {
         }
     }
 
+    /// 根据 markdown 输出路径推导对应的 AI 日志 URL；与 TranscriptionEnhancementRunner 中的路径规则保持一致。
+    static func logURL(forMarkdownURL markdownURL: URL) -> URL? {
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let base = markdownURL.deletingPathExtension().lastPathComponent
+        return appSupport
+            .appendingPathComponent("VowKy", isDirectory: true)
+            .appendingPathComponent("AILogs", isDirectory: true)
+            .appendingPathComponent("\(base).ai-log.txt")
+    }
+
     func appendHeader(input: EnhancementInput, provider: String, markdownPath: String) {
         var lines: [String] = []
         lines.append("############################################################")
