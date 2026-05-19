@@ -36,7 +36,7 @@ final class RecordingPanel {
 
     private func createPanel() {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 64),
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 64),
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered,
             defer: false
@@ -52,7 +52,7 @@ final class RecordingPanel {
         // Position: top-center of main screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
-            let x = screenFrame.midX - 160 // panel width 320 / 2
+            let x = screenFrame.midX - 120 // panel width 240 / 2
             let y = screenFrame.maxY - 120
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
@@ -63,7 +63,7 @@ final class RecordingPanel {
         )
 
         // 胶囊形 + 对角渐变背景（accentMain → accentDeep）
-        let bg = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 64))
+        let bg = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 64))
         bg.wantsLayer = true
         bg.layer?.cornerRadius = 32  // 高度一半，胶囊形
         bg.layer?.masksToBounds = true
@@ -151,7 +151,7 @@ struct RecordingPanelContent: View {
                 toastView
             }
         }
-        .frame(width: 320, height: 64)
+        .frame(width: 240, height: 64)
     }
 
     private var recordingView: some View {
