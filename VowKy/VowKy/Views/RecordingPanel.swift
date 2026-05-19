@@ -46,7 +46,7 @@ final class RecordingPanel {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        // 锁定 Light Mode 外观：HUD 不管系统亮/暗都呈浅白半透明（不跟随系统转暗）
+        // 锁定 Light Mode 外观：HUD 始终白底，不跟随系统亮/暗（SwiftUI 文字色也会按 Light 渲染）
         panel.appearance = NSAppearance(named: .aqua)
 
         // Position: top-center of main screen
@@ -62,20 +62,26 @@ final class RecordingPanel {
                 .environmentObject(appState)
         )
 
-        // Vibrancy/blur background
-        let visualEffect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 260, height: 80))
-        visualEffect.material = .hudWindow
-        visualEffect.blendingMode = .behindWindow
-        visualEffect.state = .active
-        visualEffect.wantsLayer = true
-        visualEffect.layer?.cornerRadius = 16
-        visualEffect.layer?.masksToBounds = true
+        // 实色白底卡片（用户要求不要半透明毛玻璃）
+        let bg = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 80))
+        bg.wantsLayer = true
+        bg.layer?.backgroundColor = NSColor.white.cgColor
+        bg.layer?.cornerRadius = 16
+        bg.layer?.masksToBounds = true
+        // 浅描边（RecordingTheme.border #DCE6C8 同款），给卡片轮廓
+        bg.layer?.borderColor = NSColor(
+            srgbRed: 0xDC / 255.0,
+            green: 0xE6 / 255.0,
+            blue: 0xC8 / 255.0,
+            alpha: 1.0
+        ).cgColor
+        bg.layer?.borderWidth = 1
 
-        hostingView.frame = visualEffect.bounds
+        hostingView.frame = bg.bounds
         hostingView.autoresizingMask = [.width, .height]
-        visualEffect.addSubview(hostingView)
+        bg.addSubview(hostingView)
 
-        panel.contentView = visualEffect
+        panel.contentView = bg
         self.panel = panel
     }
 
@@ -239,6 +245,9 @@ struct WaveformBars: View {
         Double(i) * 0.83 + sin(Double(i) * 1.7)
     }
 
+    // 临时诊断：每隔约 0.5s 打印一次当前 audioLevel，确认信号是否到 UI（确认后可删）
+    private static var lastLogTime: TimeInterval = 0
+
     var body: some View {
         // GeometryReader 提到 TimelineView 外面：避免 SwiftUI 把内嵌的 GeometryReader 当稳定布局缓存，
         // 每帧 fire 时仍能拿到 geo.size 并真实重算 bar 高度。
@@ -246,6 +255,12 @@ struct WaveformBars: View {
             TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
                 let level = levelProvider()
+                let _: Void = {
+                    if t - Self.lastLogTime > 0.5 {
+                        Self.lastLogTime = t
+                        NSLog("[VowKy][WaveformBars] level=\(level)")
+                    }
+                }()
                 HStack(alignment: .center, spacing: 2) {
                     ForEach(0..<Self.barCount, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 1)
@@ -276,13 +291,13 @@ struct WaveformBars: View {
         let mid = (n - 1) / 2.0
         let centerWeight = 1.0 - abs(Double(index) - mid) / mid * 0.55
         let osc = 0.5 + 0.5 * sin(time * 7.5 + phases[index])
-        // RMS 是平方均方根，正常说话只在 0.05~0.25 区间，线性传入会让 bar 顶多到 22% 看不清。
-        // 用 sqrt 非线性放大 + 2.0x 系数，让说话音量更明显映射到视觉高度。
-        // 系数预期效果：RMS 0.05 → 45%，0.15 → 77%，0.25 → 100%。
+        // RMS 是平方均方根，正常说话只在 0.05~0.25 区间。
+        // sqrt × 2.5 大放大；osc 影响降到 0.85~1.0 区间（弱抑制），让 level 主导 bar 高度。
+        // 预期：RMS 0.04 → 50%，0.10 → 79%，0.16 → 100%。
         let rawLev = Double(min(max(level, 0), 1))
-        let lev = min(1.0, sqrt(rawLev) * 2.0)
+        let lev = min(1.0, sqrt(rawLev) * 2.5)
         let baselineBreath = 0.06 + 0.03 * (0.5 + 0.5 * sin(time * 1.6 + phases[index] * 0.7))
-        let dynamic = lev * centerWeight * (0.45 + 0.55 * osc) * 0.88
+        let dynamic = lev * centerWeight * (0.85 + 0.15 * osc) * 0.95
         let h = min(1.0, baselineBreath + dynamic)
         return maxHeight * CGFloat(h)
     }
