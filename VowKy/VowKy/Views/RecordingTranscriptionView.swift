@@ -1547,15 +1547,15 @@ struct AIBadgesView: View {
                     .truncationMode(.tail)
                     .help(summary)
                 if let onRetry {
-                    Button {
-                        onRetry()
-                    } label: {
-                        Label("重试", systemImage: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
-                            .labelStyle(.titleAndIcon)
+                    Button(action: onRetry) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("重试")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundColor(.red)
+                    .buttonStyle(InlineRetryButtonStyle())
                     .help("重新跑一次 AI 后处理")
                 }
             }
@@ -1660,5 +1660,27 @@ private struct FailurePopoverContent: View {
         }
         .padding(12)
         .frame(minWidth: 240)
+    }
+}
+
+private struct InlineRetryButtonStyle: ButtonStyle {
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(.red)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(Color.red.opacity(isHovering ? 0.18 : 0.10))
+                    .overlay(
+                        Capsule().stroke(Color.red.opacity(0.38), lineWidth: 0.8)
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.15), value: isHovering)
+            .onHover { isHovering = $0 }
     }
 }
