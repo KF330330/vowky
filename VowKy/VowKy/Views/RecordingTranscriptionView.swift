@@ -1070,15 +1070,6 @@ struct RecordingTranscriptionView: View {
 
             Spacer()
 
-            if viewModel.canRunEnhancement {
-                Button {
-                    viewModel.runEnhancement()
-                } label: {
-                    Label("AI 美化", systemImage: "wand.and.stars")
-                }
-                .buttonStyle(RecordingSecondaryButtonStyle())
-            }
-
             if viewModel.enhancementInFlight {
                 HStack(spacing: 4) {
                     ProgressView().controlSize(.small)

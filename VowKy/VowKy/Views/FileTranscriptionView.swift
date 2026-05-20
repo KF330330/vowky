@@ -1299,16 +1299,6 @@ struct FileTranscriptionView: View {
 
                 Spacer()
 
-                if viewModel.canRunEnhancementForSelectedJob {
-                    Button {
-                        viewModel.runEnhancementForSelectedJob()
-                    } label: {
-                        Label("AI 美化", systemImage: "wand.and.stars")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(FileSecondaryButtonStyle())
-                }
-
                 if !viewModel.resultText.isEmpty {
                     Text("\(viewModel.resultText.count) 字")
                         .font(.system(size: 11, weight: .medium))
