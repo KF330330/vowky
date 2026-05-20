@@ -199,12 +199,20 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         }
     }
 
-    /// 是否可以手动触发 AI 美化：AI 已启用 + 转写已完成 + 当前没有进行中的增强 + 还没拿到结果。
+    /// 是否可以手动触发 AI 美化：AI 已启用 + 转写已完成 + 当前没有进行中的增强 + (还没拿到结果 或 上一次失败可重试)。
     var canRunEnhancement: Bool {
         guard state == .completed, !transcriptText.isEmpty else { return false }
         let cfg = aiConfigLoader()
         guard cfg.enabled else { return false }
-        return !enhancementInFlight && enhancementResult == nil
+        guard !enhancementInFlight else { return false }
+        return enhancementResult == nil || anyBadgeFailed
+    }
+
+    private var anyBadgeFailed: Bool {
+        if case .failed = titleStatus { return true }
+        if case .failed = summaryStatus { return true }
+        if case .failed = outlineStatus { return true }
+        return false
     }
 
     /// 是否在 UI 中显示 AI 三任务徽章（已启用就显示）。
@@ -968,7 +976,8 @@ struct RecordingTranscriptionView: View {
                         title: viewModel.titleStatus,
                         summary: viewModel.summaryStatus,
                         outline: viewModel.outlineStatus,
-                        markdownURL: viewModel.output?.textURL
+                        markdownURL: viewModel.output?.textURL,
+                        onRetry: viewModel.canRunEnhancement ? { viewModel.runEnhancement() } : nil
                     )
                 }
 
@@ -1500,6 +1509,8 @@ struct AIBadgesView: View {
     let outline: RecordingTranscriptionViewModel.AIBadgeStatus
     /// 对应转录的 markdown 路径；用于推导 AI 日志位置。nil 时 popover 中不显示"打开日志"按钮。
     var markdownURL: URL? = nil
+    /// 触发重试的回调。nil 时不显示"重试"按钮。
+    var onRetry: (() -> Void)? = nil
 
     @State private var popoverLabel: String?
 
@@ -1544,6 +1555,18 @@ struct AIBadgesView: View {
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .help(summary)
+                if let onRetry {
+                    Button {
+                        onRetry()
+                    } label: {
+                        Label("重试", systemImage: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundColor(.red)
+                    .help("重新跑一次 AI 后处理")
+                }
             }
         }
     }
@@ -1588,7 +1611,10 @@ struct AIBadgesView: View {
                     FailurePopoverContent(
                         taskLabel: label,
                         message: failedMessage,
-                        logURL: markdownURL.flatMap { AIEnhancementLogger.logURL(forMarkdownURL: $0) }
+                        logURL: markdownURL.flatMap { AIEnhancementLogger.logURL(forMarkdownURL: $0) },
+                        onRetry: onRetry.map { retry in
+                            { popoverLabel = nil; retry() }
+                        }
                     )
                 }
         } else {
@@ -1601,6 +1627,7 @@ private struct FailurePopoverContent: View {
     let taskLabel: String
     let message: String
     let logURL: URL?
+    let onRetry: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1617,9 +1644,9 @@ private struct FailurePopoverContent: View {
                 .frame(maxWidth: 360, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let logURL, FileManager.default.fileExists(atPath: logURL.path) {
-                HStack {
-                    Spacer()
+            HStack(spacing: 8) {
+                Spacer()
+                if let logURL, FileManager.default.fileExists(atPath: logURL.path) {
                     Button {
                         NSWorkspace.shared.activateFileViewerSelecting([logURL])
                     } label: {
@@ -1627,6 +1654,16 @@ private struct FailurePopoverContent: View {
                             .font(.system(size: 11, weight: .semibold))
                     }
                     .buttonStyle(.borderless)
+                }
+                if let onRetry {
+                    Button {
+                        onRetry()
+                    } label: {
+                        Label("重试 AI 处理", systemImage: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
             }
         }

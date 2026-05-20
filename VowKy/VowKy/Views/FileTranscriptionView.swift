@@ -101,6 +101,13 @@ struct FileTranscriptionJob: Identifiable, Equatable {
             return false
         }
     }
+
+    var anyBadgeFailed: Bool {
+        if case .failed = titleStatus { return true }
+        if case .failed = summaryStatus { return true }
+        if case .failed = outlineStatus { return true }
+        return false
+    }
 }
 
 // MARK: - View Model
@@ -719,13 +726,13 @@ final class FileTranscriptionViewModel: ObservableObject {
         }
     }
 
-    /// 手动触发选中 job 的 AI 美化。
+    /// 手动触发选中 job 的 AI 美化（或在上次失败后重试）。
     func runEnhancementForSelectedJob() {
         guard let job = selectedJob,
               job.state == .completed,
               !job.resultText.isEmpty,
               !job.enhancementInFlight,
-              job.enhancedMarkdown == nil else { return }
+              (job.enhancedMarkdown == nil || job.anyBadgeFailed) else { return }
         let id = job.id
         let raw = job.resultText
         let url = job.url
@@ -735,10 +742,10 @@ final class FileTranscriptionViewModel: ObservableObject {
     var canRunEnhancementForSelectedJob: Bool {
         guard let job = selectedJob else { return false }
         guard aiConfigLoader().enabled else { return false }
-        return job.state == .completed
-            && !job.resultText.isEmpty
-            && !job.enhancementInFlight
-            && job.enhancedMarkdown == nil
+        guard job.state == .completed,
+              !job.resultText.isEmpty,
+              !job.enhancementInFlight else { return false }
+        return job.enhancedMarkdown == nil || job.anyBadgeFailed
     }
 
     var aiBadgesVisibleForSelectedJob: Bool {
@@ -1281,7 +1288,8 @@ struct FileTranscriptionView: View {
                         title: job.titleStatus,
                         summary: job.summaryStatus,
                         outline: job.outlineStatus,
-                        markdownURL: job.markdownURL
+                        markdownURL: job.markdownURL,
+                        onRetry: viewModel.canRunEnhancementForSelectedJob ? { viewModel.runEnhancementForSelectedJob() } : nil
                     )
                 }
 
