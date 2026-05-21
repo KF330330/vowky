@@ -127,6 +127,7 @@ final class FileTranscriptionViewModel: ObservableObject {
     private let aiConfigLoader: () -> AIProviderConfig
     private var transcriptionTask: Task<Void, Never>?
     private var activeTargetJobIDs: Set<UUID>?
+    private var enhancementTasks: [UUID: Task<Void, Never>] = [:]
 
     init(
         appState: AppState,
@@ -149,7 +150,7 @@ final class FileTranscriptionViewModel: ObservableObject {
     }
 
     var isRunning: Bool {
-        transcriptionTask != nil
+        transcriptionTask != nil || !enhancementTasks.isEmpty
     }
 
     var selectedJob: FileTranscriptionJob? {
@@ -490,7 +491,12 @@ final class FileTranscriptionViewModel: ObservableObject {
                     print("[VowKy][FileTranscription] cfg.enabled=\(cfg.enabled), rawTextLen=\(finalText.count), jobURL=\(jobURL.path)")
                     if cfg.enabled && !finalText.isEmpty {
                         print("[VowKy][FileTranscription] 调用 runEnhancement: jobID=\(jobID)")
-                        await runEnhancement(for: jobID, rawText: finalText, audioURL: jobURL)
+                        let enhTask = Task { [weak self] in
+                            guard let self else { return }
+                            await self.runEnhancement(for: jobID, rawText: finalText, audioURL: jobURL)
+                        }
+                        enhancementTasks[jobID] = enhTask
+                        await enhTask.value
                     } else {
                         print("[VowKy][FileTranscription] 跳过 AI 增强: enabled=\(cfg.enabled), textEmpty=\(finalText.isEmpty)")
                     }
@@ -533,9 +539,32 @@ final class FileTranscriptionViewModel: ObservableObject {
     }
 
     func cancel() {
-        guard transcriptionTask != nil else { return }
+        guard isRunning else { return }
         transcriptionTask?.cancel()
+        for task in enhancementTasks.values {
+            task.cancel()
+        }
+        enhancementTasks.removeAll()
+        for index in jobs.indices where jobs[index].enhancementInFlight {
+            jobs[index].enhancementInFlight = false
+            if case .running = jobs[index].titleStatus { jobs[index].titleStatus = .idle }
+            if case .running = jobs[index].summaryStatus { jobs[index].summaryStatus = .idle }
+            if case .running = jobs[index].outlineStatus { jobs[index].outlineStatus = .idle }
+        }
         markUnfinishedJobsCancelled(targetJobIDs: activeTargetJobIDs)
+    }
+
+    /// 取消单个 job 的 AI 增强（不影响转录队列里其他 job）。
+    func cancelEnhancement(for jobID: UUID) {
+        guard let task = enhancementTasks[jobID] else { return }
+        task.cancel()
+        enhancementTasks.removeValue(forKey: jobID)
+        updateJob(id: jobID) { job in
+            job.enhancementInFlight = false
+            if case .running = job.titleStatus { job.titleStatus = .idle }
+            if case .running = job.summaryStatus { job.summaryStatus = .idle }
+            if case .running = job.outlineStatus { job.outlineStatus = .idle }
+        }
     }
 
     func clear() {
@@ -694,6 +723,10 @@ final class FileTranscriptionViewModel: ObservableObject {
 
     /// 对单个已转写完成的 job 跑 AI 后处理。在 transcriptionTask 内串行调用。
     func runEnhancement(for jobID: UUID, rawText: String, audioURL: URL) async {
+        defer { enhancementTasks.removeValue(forKey: jobID) }
+
+        guard !Task.isCancelled else { return }
+
         updateJob(id: jobID) { job in
             job.enhancementInFlight = true
             job.titleStatus = .running
@@ -718,6 +751,17 @@ final class FileTranscriptionViewModel: ObservableObject {
             }
         )
 
+        if Task.isCancelled {
+            print("[VowKy][FileTranscription] runEnhancement 已取消: jobID=\(jobID)")
+            updateJob(id: jobID) { job in
+                job.enhancementInFlight = false
+                if case .running = job.titleStatus { job.titleStatus = .idle }
+                if case .running = job.summaryStatus { job.summaryStatus = .idle }
+                if case .running = job.outlineStatus { job.outlineStatus = .idle }
+            }
+            return
+        }
+
         print("[VowKy][FileTranscription] runEnhancement 完成: jobID=\(jobID), title=\(result.titleSucceeded), summary=\(result.summarySucceeded), outline=\(result.outlineSucceeded), warnings=\(result.warnings)")
 
         updateJob(id: jobID) { job in
@@ -732,11 +776,16 @@ final class FileTranscriptionViewModel: ObservableObject {
               job.state == .completed,
               !job.resultText.isEmpty,
               !job.enhancementInFlight,
+              enhancementTasks[job.id] == nil,
               (job.enhancedMarkdown == nil || job.anyBadgeFailed) else { return }
         let id = job.id
         let raw = job.resultText
         let url = job.url
-        Task { await runEnhancement(for: id, rawText: raw, audioURL: url) }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runEnhancement(for: id, rawText: raw, audioURL: url)
+        }
+        enhancementTasks[id] = task
     }
 
     var canRunEnhancementForSelectedJob: Bool {
@@ -1295,6 +1344,29 @@ struct FileTranscriptionView: View {
 
                 if let job = viewModel.selectedJob, job.enhancementInFlight {
                     ProgressView().controlSize(.small)
+                    Button {
+                        viewModel.cancelEnhancement(for: job.id)
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("取消")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundColor(FileTranscriptionTheme.textMuted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(FileTranscriptionTheme.cardBackground.opacity(0.92))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(FileTranscriptionTheme.border, lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help("取消当前文件的 AI 增强")
                 }
 
                 Spacer()
