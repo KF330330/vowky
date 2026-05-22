@@ -138,12 +138,57 @@ enum ReleaseNotesLoader {
     }
 }
 
+// MARK: - Markdown Rendering
+// 简单的块级 markdown 解析：足够覆盖 release notes 用到的 # / ## / ### / - / 段落 / 空行；
+// 内联格式（**bold** / *italic* / [link] / `code`）由 SwiftUI 自带的 AttributedString(markdown:) 处理。
+enum MarkdownBlock: Equatable {
+    case h1(String)
+    case h2(String)
+    case h3(String)
+    case bullet(String)
+    case paragraph(String)
+    case spacer
+}
+
+enum MarkdownParser {
+    static func parse(_ text: String) -> [MarkdownBlock] {
+        var blocks: [MarkdownBlock] = []
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine).trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                blocks.append(.spacer)
+            } else if line.hasPrefix("### ") {
+                blocks.append(.h3(String(line.dropFirst(4))))
+            } else if line.hasPrefix("## ") {
+                blocks.append(.h2(String(line.dropFirst(3))))
+            } else if line.hasPrefix("# ") {
+                blocks.append(.h1(String(line.dropFirst(2))))
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                blocks.append(.bullet(String(line.dropFirst(2))))
+            } else {
+                blocks.append(.paragraph(line))
+            }
+        }
+        return blocks
+    }
+
+    /// SwiftUI Text 渲染 inline markdown（**bold** / *italic* / [link](url) / `code`）。
+    static func inlineText(_ s: String) -> Text {
+        if let attr = try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return Text(attr)
+        }
+        return Text(s)
+    }
+}
+
 // MARK: - What's New View
 
 struct WhatsNewView: View {
     let version: String
     let notes: String
     let onClose: () -> Void
+
+    private var blocks: [MarkdownBlock] { MarkdownParser.parse(notes) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -168,13 +213,15 @@ struct WhatsNewView: View {
             Divider()
 
             ScrollView {
-                Text(notes)
-                    .font(.system(size: 13))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                        blockView(block)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .textSelection(.enabled)
             }
 
             Divider()
@@ -188,6 +235,43 @@ struct WhatsNewView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
+        }
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: MarkdownBlock) -> some View {
+        switch block {
+        case .h1(let s):
+            Text(s)
+                .font(.system(size: 18, weight: .bold))
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+        case .h2(let s):
+            Text(s)
+                .font(.system(size: 15, weight: .semibold))
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+        case .h3(let s):
+            Text(s)
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.top, 4)
+        case .bullet(let s):
+            HStack(alignment: .top, spacing: 6) {
+                Text("•")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                MarkdownParser.inlineText(s)
+                    .font(.system(size: 13))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        case .paragraph(let s):
+            MarkdownParser.inlineText(s)
+                .font(.system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .spacer:
+            Color.clear.frame(height: 4)
         }
     }
 }
