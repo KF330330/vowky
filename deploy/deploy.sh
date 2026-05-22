@@ -128,8 +128,16 @@ if [ -n "$SPARKLE_SIGNATURE" ]; then
     EDDSA_ATTR=" ${EDDSA_SIG}"
 fi
 
-# 把 release notes 原文嵌入 appcast description（CDATA 包裹避免 XML 实体转义问题）
-RELEASE_NOTES_CONTENT="$(cat "${RELEASE_NOTES_PATH}")"
+# 把 release notes 转成 HTML 嵌入 appcast description
+# Sparkle 弹窗的 WebView 直接渲染 HTML：纯 markdown 会挤成一坨没有断行/列表
+if command -v pandoc >/dev/null 2>&1; then
+    RELEASE_NOTES_CONTENT="$(pandoc -f markdown -t html "${RELEASE_NOTES_PATH}")"
+    log_info "release notes 已转为 HTML (pandoc)"
+else
+    # 没 pandoc 兜底：用 <pre> 包裹纯文本，至少保留断行
+    RELEASE_NOTES_CONTENT="<pre>$(cat "${RELEASE_NOTES_PATH}")</pre>"
+    log_warn "未安装 pandoc，release notes 用 <pre> 兜底（建议 brew install pandoc）"
+fi
 
 # 生成 appcast.xml
 APPCAST_PATH="${BUILD_DIR}/appcast.xml"
