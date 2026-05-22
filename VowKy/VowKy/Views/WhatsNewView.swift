@@ -190,28 +190,38 @@ struct WhatsNewView: View {
 
     private var blocks: [MarkdownBlock] { MarkdownParser.parse(notes) }
 
+    // 取系统已注册的 app icon（NSImage.applicationIconName 拿到当前 app 的 AppIcon）。
+    // 失败回退到 SF 符号，保证至少不空白。
+    private var appIcon: NSImage {
+        if let icon = NSImage(named: NSImage.applicationIconName) {
+            return icon
+        }
+        return NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 32))
-                    .foregroundColor(.accentColor)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("VowKy 已更新")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    Text("版本 \(version)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
+        VStack(spacing: 0) {
+            // === Hero：居中 logo + 标题 + 版本号 ===
+            VStack(spacing: 8) {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 72, height: 72)
+                    .shadow(color: Color.black.opacity(0.10), radius: 6, y: 3)
+                Text("VowKy 已更新")
+                    .font(.system(size: 19, weight: .bold))
+                    .kerning(-0.3)
+                Text("版本 \(version)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 24)
+            .padding(.bottom, 14)
 
-            Divider()
+            Divider().opacity(0.6)
 
+            // === 内容：滚动区，markdown 渲染 ===
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
@@ -219,21 +229,23 @@ struct WhatsNewView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 22)
                 .padding(.vertical, 16)
                 .textSelection(.enabled)
             }
 
-            Divider()
+            Divider().opacity(0.6)
 
+            // === 底栏：右下 [好的] ===
             HStack {
                 Spacer()
                 Button("好的") {
                     onClose()
                 }
                 .keyboardShortcut(.defaultAction)
+                .controlSize(.large)
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 22)
             .padding(.vertical, 12)
         }
     }
