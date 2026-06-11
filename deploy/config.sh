@@ -27,7 +27,9 @@ BUILD_DIR="${REPO_ROOT}/deploy/build"
 # ============================================================
 # 签名 & 公证
 # ============================================================
-DEV_IDENTITY="Apple Development"
+# Archive 默认用 Apple Development；本机没有该证书时可用环境变量覆盖
+# （如 DEV_IDENTITY="Developer ID Application" make deploy）
+DEV_IDENTITY="${DEV_IDENTITY:-Apple Development}"
 # PROD_IDENTITY, TEAM_ID, NOTARY_PROFILE 从 config.local.sh 加载
 
 # ============================================================

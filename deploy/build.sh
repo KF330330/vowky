@@ -138,8 +138,10 @@ log_ok "Xcode 项目已生成"
 # 2. xcodebuild archive
 # ============================================================
 log_info "构建 Archive (Release)..."
-# Archive 始终用 Apple Development（避免 Developer ID 的 timestamp 问题）
-# prod 环境在后续 step 4 重签为 Developer ID
+# Archive 默认用 Apple Development（避免 Developer ID 的 timestamp 问题）
+# prod 环境在后续 step 4 重签为 Developer ID。
+# 本机没有 Apple Development 证书时，用 DEV_IDENTITY="Developer ID Application"
+# DEV_CODE_SIGN_STYLE=Manual 覆盖（手动指定身份必须配 Manual，否则与自动签名冲突）
 xcodebuild archive \
     -project "${VOWKY_DIR}/VowKy.xcodeproj" \
     -scheme VowKy \
@@ -147,6 +149,7 @@ xcodebuild archive \
     -destination "generic/platform=macOS" \
     -archivePath "${ARCHIVE_PATH}" \
     CODE_SIGN_IDENTITY="${DEV_IDENTITY}" \
+    CODE_SIGN_STYLE="${DEV_CODE_SIGN_STYLE:-Automatic}" \
     DEVELOPMENT_TEAM="${TEAM_ID}" \
     ARCHS="arm64 x86_64" \
     ONLY_ACTIVE_ARCH=NO \
