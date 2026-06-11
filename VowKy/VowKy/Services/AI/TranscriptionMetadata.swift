@@ -15,9 +15,3 @@ struct TranscriptionMetadata: Codable, Equatable {
     var aiEnhancementSucceeded: Bool
     var warnings: [String]
 }
-
-struct ProcessedTranscription: Equatable {
-    let rawText: String
-    let formattedMarkdown: String
-    let metadata: TranscriptionMetadata
-}

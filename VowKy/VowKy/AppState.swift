@@ -104,9 +104,38 @@ final class AppState: ObservableObject {
         if !skipHotkey {
             startHotkey()
         }
+        #if DEBUG
+        setupDebugRecordingHooks()
+        #endif
         CrashLogger.log("[AppState] setup() complete")
         print("[VowKy][AppState] setup() complete, skipHotkey: \(skipHotkey)")
     }
+
+    #if DEBUG
+    /// 自动化 E2E 钩子（仅 Debug 构建）：通过分布式通知远程驱动录音转写窗，
+    /// 供脚本化验证字幕/转写行为，不依赖脆弱的 GUI 自动化。
+    private func setupDebugRecordingHooks() {
+        let center = DistributedNotificationCenter.default()
+        let pairs: [(String, (RecordingTranscriptionViewModel) -> Void)] = [
+            ("com.vowky.debug.recording.start", { $0.setSubtitleEnabled(true); $0.start() }),
+            ("com.vowky.debug.recording.stop", { $0.stop() }),
+            ("com.vowky.debug.recording.cancel", { $0.cancel() }),
+        ]
+        for (name, action) in pairs {
+            center.addObserver(
+                forName: Notification.Name(name), object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    RecordingTranscriptionWindowController.shared.showWindow(appState: self)
+                    if let viewModel = RecordingTranscriptionWindowController.shared.activeViewModel {
+                        action(viewModel)
+                    }
+                }
+            }
+        }
+    }
+    #endif
 
     /// 创建并启动热键管理器（新手引导完成后调用）
     func startHotkey() {

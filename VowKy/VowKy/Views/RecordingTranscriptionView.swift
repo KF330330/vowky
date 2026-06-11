@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 // MARK: - Recording Transcription Window Controller
@@ -89,13 +90,54 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     @Published private(set) var finalizationProgress: RecordingFinalizationProgress?
     @Published private(set) var finalizationElapsedSeconds: TimeInterval = 0
 
-    // AI 后处理
-    @Published private(set) var enhancementInFlight: Bool = false
-    @Published private(set) var enhancementResult: EnhancementResult?
-    @Published private(set) var titleStatus: AIBadgeStatus = .idle
-    @Published private(set) var summaryStatus: AIBadgeStatus = .idle
-    @Published private(set) var outlineStatus: AIBadgeStatus = .idle
-    @Published private(set) var formattedMarkdown: String?
+    // MARK: 翻译
+
+    @Published private(set) var translationConfig: TranslationConfig = TranslationConfigStore.load()
+    @Published private(set) var translationCoordinator: TranslationCoordinator?
+    private(set) var translationProvider: TranslationProviding?
+    /// 最近一次流式更新的快照，供录音中途开启翻译时立即补译
+    private var lastStreamingUpdate: StreamingRecognitionUpdate?
+    /// 翻译终态落盘订阅：全部段落到达终态后把双语对照写到原文旁的「(双语).md」
+    private var bilingualSaveCancellable: AnyCancellable?
+
+    // MARK: 字幕浮窗
+
+    @Published private(set) var subtitleEnabled: Bool =
+        UserDefaults.standard.object(forKey: SubtitleDefaults.enabled) as? Bool ?? false
+    private lazy var subtitleController: SubtitleOverlayController = {
+        let controller = SubtitleOverlayController()
+        controller.requestDisable = { [weak self] in self?.setSubtitleEnabled(false) }
+        return controller
+    }()
+    private var subtitleCancellable: AnyCancellable?
+    /// 字幕节奏调度：排队按序上屏，杜绝一次更新跨多句时跳句
+    private lazy var subtitlePacer: SubtitlePacer = {
+        let pacer = SubtitlePacer()
+        pacer.onDisplay = { [weak self] paragraph in
+            Self.debugSubtitleTrace("DISPLAY", paragraph.text)
+            self?.subtitleController.update(paragraph: paragraph)
+        }
+        return pacer
+    }()
+
+    /// E2E 自动化验证用追踪（仅 Debug 构建）：字幕上屏与段落流写入 /tmp 日志，
+    /// 供脚本断言「零漏句、零重排」。Release 构建为空实现。
+    nonisolated static func debugSubtitleTrace(_ kind: String, _ payload: String) {
+        #if DEBUG
+        let path = "/tmp/vowky_subtitle_trace.log"
+        let line = "\(Date().timeIntervalSince1970)\t\(kind)\t"
+            + payload.replacingOccurrences(of: "\n", with: "⏎") + "\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if !FileManager.default.fileExists(atPath: path) {
+            FileManager.default.createFile(atPath: path, contents: nil)
+        }
+        if let handle = FileHandle(forWritingAtPath: path) {
+            defer { try? handle.close() }
+            handle.seekToEndOfFile()
+            handle.write(data)
+        }
+        #endif
+    }
 
     nonisolated private static let waveformBandCount = 64
     nonisolated private static var silentWaveformBands: [RecordingWaveformBand] {
@@ -104,21 +146,15 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
     private let appState: AppState
     private var audioRecorder: AudioRecorderProtocol
-    private let recognizerFactory: () -> StreamingSpeechRecognizerProtocol
     private let finalRecognizer: SpeechRecognizerProtocol
     private let punctuationService: PunctuationServiceProtocol?
     private let outputStore: RecordingTranscriptionOutputStore
     private let resultRecorder: (String) -> Void
-    private let enhancementService: TranscriptionEnhancing
-    private let enhancementRunner: TranscriptionEnhancementRunner
-    private let aiConfigLoader: () -> AIProviderConfig
 
-    private var activeRecognizer: StreamingSpeechRecognizerProtocol?
     private var activePreparedOutput: PreparedRecordingTranscriptionOutput?
     private var sampleContinuation: AsyncStream<[Float]>.Continuation?
     private var startupTask: Task<Void, Never>?
     private var workerTask: Task<Void, Never>?
-    private var enhancementTask: Task<Void, Never>?
     private var timer: Timer?
     private var finalizationTimer: Timer?
     private var finalizationStartedAt: Date?
@@ -128,35 +164,19 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     init(
         appState: AppState,
         audioRecorder: AudioRecorderProtocol? = nil,
-        recognizerFactory: (() -> StreamingSpeechRecognizerProtocol)? = nil,
         finalRecognizer: SpeechRecognizerProtocol? = nil,
         punctuationService: PunctuationServiceProtocol? = nil,
         outputStore: RecordingTranscriptionOutputStore = RecordingTranscriptionOutputStore(),
-        resultRecorder: ((String) -> Void)? = nil,
-        enhancementService: TranscriptionEnhancing = EnhancementRouter(),
-        aiConfigLoader: @escaping () -> AIProviderConfig = { AIProviderFactory.load() }
+        resultRecorder: ((String) -> Void)? = nil
     ) {
         self.appState = appState
         self.audioRecorder = audioRecorder ?? appState.audioRecorder
-        self.recognizerFactory = recognizerFactory ?? {
-            appState.makeRecordingStreamingRecognizer()
-        }
         self.finalRecognizer = finalRecognizer ?? appState.finalSpeechRecognizerForRecordingTranscription()
         self.punctuationService = punctuationService ?? appState.punctuationServiceForRecordingTranscription()
         self.outputStore = outputStore
         self.resultRecorder = resultRecorder ?? { text in
             appState.recordRecognitionResult(text: text, sourceType: "recording")
         }
-        self.enhancementService = enhancementService
-        self.enhancementRunner = TranscriptionEnhancementRunner(service: enhancementService)
-        self.aiConfigLoader = aiConfigLoader
-    }
-
-    enum AIBadgeStatus: Equatable {
-        case idle
-        case running
-        case succeeded
-        case failed(String)
     }
 
     var canStart: Bool {
@@ -197,27 +217,6 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         case .idle, .completed, .cancelled, .failed:
             return false
         }
-    }
-
-    /// 是否可以手动触发 AI 美化：AI 已启用 + 转写已完成 + 当前没有进行中的增强 + (还没拿到结果 或 上一次失败可重试)。
-    var canRunEnhancement: Bool {
-        guard state == .completed, !transcriptText.isEmpty else { return false }
-        let cfg = aiConfigLoader()
-        guard cfg.enabled else { return false }
-        guard !enhancementInFlight else { return false }
-        return enhancementResult == nil || anyBadgeFailed
-    }
-
-    private var anyBadgeFailed: Bool {
-        if case .failed = titleStatus { return true }
-        if case .failed = summaryStatus { return true }
-        if case .failed = outlineStatus { return true }
-        return false
-    }
-
-    /// 是否在 UI 中显示 AI 三任务徽章（已启用就显示）。
-    var aiBadgesVisible: Bool {
-        aiConfigLoader().enabled
     }
 
     var durationText: String {
@@ -268,22 +267,22 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         audioLevel = 0
         waveformBands = Self.silentWaveformBands
         state = .loadingModel
-        resetEnhancementState()
-        enhancementTask?.cancel()
-        enhancementTask = nil
-
-        let recognizer = recognizerFactory()
-        activeRecognizer = recognizer
+        lastStreamingUpdate = nil
+        bilingualSaveCancellable = nil
+        refreshTranslationSetup(resetCoordinator: true)
 
         startupTask = Task { [weak self] in
             guard let self else { return }
-            await self.loadModelAndStartRecording(recognizer: recognizer, operationID: operationID)
+            await self.startRecordingPipeline(operationID: operationID)
         }
     }
 
     func stop() {
         guard state == .recording else { return }
         state = .finishing
+        subtitleController.hide()
+        subtitleCancellable = nil
+        subtitlePacer.reset()
         stopTimer()
         startFinalizationTimer()
         _ = audioRecorder.stopRecording()
@@ -300,10 +299,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         activeOperationID = nil
         startupTask?.cancel()
         workerTask?.cancel()
-        enhancementTask?.cancel()
         startupTask = nil
         workerTask = nil
-        enhancementTask = nil
 
         if state == .recording || state == .finishing {
             _ = audioRecorder.stopRecording()
@@ -311,8 +308,6 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         audioRecorder.onSamplesCaptured = nil
         sampleContinuation?.finish()
         sampleContinuation = nil
-        activeRecognizer?.reset()
-        activeRecognizer = nil
         stopTimer()
         resetFinalizationState()
         deletePreparedOutput(preparedOutput)
@@ -323,22 +318,13 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         statusMessage = nil
         audioLevel = 0
         waveformBands = Self.silentWaveformBands
-        resetEnhancementState()
-    }
-
-    /// 手动触发 AI 美化（Settings 关闭自动触发时使用）。
-    func runEnhancement() {
-        guard canRunEnhancement else { return }
-        triggerEnhancement(rawText: transcriptText)
-    }
-
-    /// 复制 Markdown 文档（带 frontmatter）到剪贴板；若没有 AI 结果则复制原文。
-    func copyMarkdown() {
-        let toCopy = formattedMarkdown ?? transcriptText
-        guard !toCopy.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(toCopy, forType: .string)
-        AnalyticsService.shared.trackHistoryCopy()
+        translationCoordinator?.shutdown()
+        translationCoordinator = nil
+        lastStreamingUpdate = nil
+        bilingualSaveCancellable = nil
+        subtitleController.close()
+        subtitleCancellable = nil
+        subtitlePacer.reset()
     }
 
     func copyResult() {
@@ -362,21 +348,170 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     /// View 据此显示遮罩；窗口的 willClose 据此跳过 cancel，避免误删保存中的文件。
     func markFinalizingForQuit() {
         isFinalizingForQuit = true
+        subtitleController.hide()
+        subtitleCancellable = nil
+        subtitlePacer.reset()
     }
 
-    private func loadModelAndStartRecording(
-        recognizer: StreamingSpeechRecognizerProtocol,
-        operationID: UUID
-    ) async {
-        await Task.detached(priority: .userInitiated) {
-            recognizer.loadModel()
-        }.value
+    // MARK: - 翻译
 
-        guard isActive(operationID) else { return }
-        guard recognizer.isReady else {
-            fail(operationID: operationID, message: "流式语音模型未找到或加载失败")
+    /// 双语对照视图是否生效
+    var bilingualViewActive: Bool {
+        translationConfig.enabled && translationCoordinator != nil
+    }
+
+    func setTranslationEnabled(_ enabled: Bool) {
+        var config = TranslationConfigStore.load()
+        config.enabled = enabled
+        TranslationConfigStore.save(config)
+        refreshTranslationSetup(resetCoordinator: false)
+        // coordinator 可能已重建/销毁，字幕订阅需重新绑定到新数据源
+        if subtitleEnabled, state == .recording {
+            syncSubtitle()
+        }
+        guard enabled, let coordinator = translationCoordinator else { return }
+        // 中途开启：把已有文字立即补译
+        if state == .completed || state == .finishing {
+            let text = transcriptText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { coordinator.ingestFinal(text: text) }
+            // finishing 阶段不挂订阅：complete() 送终稿时会重新调度，避免把预览稿写盘
+            if state == .completed { scheduleBilingualTranscriptSave() }
+        } else if let lastStreamingUpdate {
+            coordinator.ingest(update: lastStreamingUpdate)
+        }
+    }
+
+    func setTranslationTarget(_ target: TranslationTarget) {
+        guard target != translationConfig.target else { return }
+        var config = translationConfig
+        config.target = target
+        translationConfig = config
+        TranslationConfigStore.save(config)
+        translationCoordinator?.setTarget(target)
+    }
+
+    /// 从 UserDefaults 重载翻译配置，按需重建 provider/coordinator。
+    /// - Parameter resetCoordinator: true 时（每次开始录音）强制换新 coordinator，清掉上一轮状态。
+    private func refreshTranslationSetup(resetCoordinator: Bool) {
+        let newConfig = TranslationConfigStore.load()
+        let configChanged = newConfig != translationConfig
+        translationConfig = newConfig
+
+        guard newConfig.enabled else {
+            translationCoordinator?.shutdown()
+            translationCoordinator = nil
+            translationProvider = nil
+            bilingualSaveCancellable = nil
             return
         }
+
+        if translationProvider == nil || configChanged {
+            translationProvider = Self.makeTranslationProvider(config: newConfig)
+        }
+        if resetCoordinator || translationCoordinator == nil || configChanged {
+            translationCoordinator?.shutdown()
+            if let provider = translationProvider {
+                translationCoordinator = TranslationCoordinator(provider: provider, target: newConfig.target)
+            }
+        }
+    }
+
+    /// 完成后订阅段落流：全部段落到达终态（无 pending）即把双语对照写到原文旁。
+    /// 之后重试/换目标语言引发的再翻译会触发原子覆写，文件始终反映最新终态。
+    /// 全部同语言跳过或全部失败时不产出文件。
+    private func scheduleBilingualTranscriptSave() {
+        bilingualSaveCancellable = nil
+        guard let coordinator = translationCoordinator,
+              let textURL = (activePreparedOutput ?? lastPreparedFromOutput())?.textURL else { return }
+        let bilingualURL = BilingualTranscriptComposer.outputURL(for: textURL)
+        let store = outputStore
+        bilingualSaveCancellable = coordinator.$paragraphs
+            .removeDuplicates()
+            .filter { BilingualTranscriptComposer.isReadyToWrite($0) }
+            .sink { paragraphs in
+                do {
+                    try store.writeTranscript(
+                        BilingualTranscriptComposer.compose(paragraphs: paragraphs),
+                        to: bilingualURL
+                    )
+                } catch {
+                    NSLog("[VowKy][Translation] 双语文件写入失败: \(error.localizedDescription)")
+                }
+            }
+    }
+
+    private static func makeTranslationProvider(config: TranslationConfig) -> TranslationProviding {
+        #if canImport(Translation)
+        if config.engine == .apple, #available(macOS 15.0, *) {
+            return AppleTranslationProvider()
+        }
+        #endif
+        return OpenAICompatibleTranslationProvider(config: config)
+    }
+
+    // MARK: - 字幕浮窗
+
+    func setSubtitleEnabled(_ enabled: Bool) {
+        subtitleEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: SubtitleDefaults.enabled)
+        syncSubtitle()
+    }
+
+    /// 开关 + 状态 + 最新段三因素合一：决定字幕显示/隐藏/更新。
+    private func syncSubtitle() {
+        let shouldShow = subtitleEnabled && state == .recording
+        if shouldShow {
+            pushSubtitleContent()
+            subtitleController.show()
+            bindSubtitleStream()
+        } else {
+            subtitleController.hide()
+            subtitleCancellable = nil
+            subtitlePacer.reset()
+        }
+    }
+
+    /// 翻译开 → 订阅 coordinator 全部段落，交给 pacer 调度上屏（含译文状态刷新）。
+    private func bindSubtitleStream() {
+        subtitleCancellable = translationCoordinator?.$paragraphs
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] paragraphs in
+                let worthy = Self.subtitleWorthy(paragraphs)
+                Self.debugSubtitleTrace("PARAS", worthy.map(\.text).joined(separator: "|"))
+                self?.subtitlePacer.ingest(worthy)
+            }
+    }
+
+    /// 翻译开 → 喂 coordinator 段落；翻译关 → 把转写全文合成「只显原文」段落喂 pacer。
+    private func pushSubtitleContent() {
+        if let coordinator = translationCoordinator {
+            subtitlePacer.ingest(Self.subtitleWorthy(coordinator.paragraphs))
+        } else {
+            subtitlePacer.ingest(Self.subtitleWorthy(
+                Self.plainParagraphs(of: lastStreamingUpdate?.displayText ?? transcriptText)
+            ))
+        }
+    }
+
+    /// 字幕只播有实际内容的句子：纯标点/数字（静音噪声）一律过滤。
+    private static func subtitleWorthy(_ paragraphs: [TranscriptParagraph]) -> [TranscriptParagraph] {
+        paragraphs.filter { !TranslationCoordinator.isTrivialText($0.text) }
+    }
+
+    /// 翻译关时的字幕数据源：按句拆分全文，标记为跳过翻译（字幕不渲染译文行）。
+    private static func plainParagraphs(of text: String) -> [TranscriptParagraph] {
+        TranslationCoordinator.splitParagraphs(text).enumerated().map { index, piece in
+            TranscriptParagraph(
+                id: "plain-\(index)",
+                text: piece,
+                isPartial: true,
+                translation: .skippedSameLanguage
+            )
+        }
+    }
+
+    private func startRecordingPipeline(operationID: UUID) async {
+        guard isActive(operationID) else { return }
         guard finalRecognizer.isReady else {
             fail(operationID: operationID, message: "语音模型未加载，无法生成最终转录稿")
             return
@@ -393,7 +528,6 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             sampleContinuation = continuation
             activePreparedOutput = preparedOutput
 
-            recognizer.startSession()
             audioRecorder.onSamplesCaptured = { [weak self] samples in
                 continuation.yield(samples)
                 let waveformBands = Self.displayWaveformBands(from: samples)
@@ -412,9 +546,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             recordingStartedAt = preparedOutput.startedAt
             state = .recording
             startTimer()
+            syncSubtitle()
 
             let engine = RecordingTranscriptionEngine(
-                previewRecognizer: recognizer,
                 finalRecognizer: finalRecognizer,
                 writer: writer,
                 sampleRate: 16_000
@@ -445,6 +579,14 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private func apply(update: StreamingRecognitionUpdate, operationID: UUID) {
         guard isActive(operationID) else { return }
         transcriptText = update.displayText
+        lastStreamingUpdate = update
+        translationCoordinator?.ingest(update: update)
+        // 翻译关时无 coordinator 订阅驱动字幕，这里把按句拆分的全文喂给 pacer 调度
+        if subtitleEnabled, state == .recording, translationCoordinator == nil {
+            let paragraphs = Self.subtitleWorthy(Self.plainParagraphs(of: update.displayText))
+            Self.debugSubtitleTrace("PARAS", paragraphs.map(\.text).joined(separator: "|"))
+            subtitlePacer.ingest(paragraphs)
+        }
     }
 
     private func applyFinalization(progress: RecordingFinalizationProgress, operationID: UUID) {
@@ -459,6 +601,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         resetFinalizationState()
         audioRecorder.onSamplesCaptured = nil
         sampleContinuation = nil
+        subtitleController.hide()
+        subtitleCancellable = nil
+        subtitlePacer.reset()
 
         let trimmedText = result.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalText = trimmedText.isEmpty
@@ -484,10 +629,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             state = .completed
             statusMessage = nil
 
-            // AI 后处理：仅在 enabled 且有有效文本时自动触发
-            let cfg = aiConfigLoader()
-            if cfg.enabled && !finalText.isEmpty {
-                triggerEnhancement(rawText: finalText)
+            // 最终稿（加标点后文本变化）整稿重新送译，得到双语终态
+            if !finalText.isEmpty {
+                translationCoordinator?.ingestFinal(text: finalText)
+                scheduleBilingualTranscriptSave()
             }
         } catch {
             state = .failed("保存失败：\(error.localizedDescription)")
@@ -496,68 +641,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         clearActiveOperation(operationID: operationID)
     }
 
-    private func resetEnhancementState() {
-        enhancementInFlight = false
-        enhancementResult = nil
-        titleStatus = .idle
-        summaryStatus = .idle
-        outlineStatus = .idle
-        formattedMarkdown = nil
-    }
-
-    private func triggerEnhancement(rawText: String) {
-        guard let preparedOutput = activePreparedOutput ?? lastPreparedFromOutput() else { return }
-
-        enhancementInFlight = true
-        titleStatus = .running
-        summaryStatus = .running
-        outlineStatus = .running
-        enhancementResult = nil
-
-        let runner = enhancementRunner
-        let textURL = preparedOutput.textURL
-        let audioURL = preparedOutput.audioURL
-        let startedAt = preparedOutput.startedAt
-        let duration = output?.duration
-
-        enhancementTask = Task { @MainActor [weak self] in
-            let result = await runner.run(
-                rawText: rawText,
-                audioURL: audioURL,
-                sourceType: "recording",
-                startedAt: startedAt,
-                durationSeconds: duration,
-                markdownURL: textURL,
-                progress: { progress in
-                    Task { @MainActor in
-                        self?.apply(enhancementProgress: progress)
-                    }
-                }
-            )
-            guard let self else { return }
-            if Task.isCancelled { return }
-
-            self.enhancementInFlight = false
-            self.enhancementResult = result
-            self.formattedMarkdown = result.fullMarkdownDocument
-        }
-    }
-
-    private func apply(enhancementProgress progress: EnhancementProgress) {
-        let status: AIBadgeStatus
-        switch progress.status {
-        case .running:   status = .running
-        case .succeeded: status = .succeeded
-        case .failed(let msg): status = .failed(msg)
-        }
-        switch progress.task {
-        case .title:   titleStatus = status
-        case .summary: summaryStatus = status
-        case .outline: outlineStatus = status
-        }
-    }
-
-    /// `activePreparedOutput` 在 `clearActiveOperation` 中会被清空；用 `output` 重建一个用于增强阶段。
+    /// `activePreparedOutput` 在 `clearActiveOperation` 中会被清空；用 `output` 重建一个供完成后的双语落盘使用。
     private func lastPreparedFromOutput() -> PreparedRecordingTranscriptionOutput? {
         guard let output else { return nil }
         return PreparedRecordingTranscriptionOutput(
@@ -608,9 +692,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         workerTask = nil
         activeOperationID = nil
         activePreparedOutput = nil
-        activeRecognizer?.reset()
-        activeRecognizer = nil
         audioLevel = 0
+        subtitleController.hide()
+        subtitleCancellable = nil
+        subtitlePacer.reset()
         appState.endRecordingTranscription()
     }
 
@@ -772,6 +857,80 @@ struct RecordingTranscriptionView: View {
             if viewModel.isFinalizingForQuit {
                 finalizingForQuitOverlay
             }
+        }
+        .background(translationHost)
+    }
+
+    /// Apple 翻译引擎的 session 宿主（不可见）。LLM 引擎或翻译关闭时为空。
+    @ViewBuilder
+    private var translationHost: some View {
+        #if canImport(Translation)
+        if #available(macOS 15.0, *),
+           viewModel.translationConfig.enabled,
+           viewModel.translationConfig.engine == .apple,
+           let provider = viewModel.translationProvider as? AppleTranslationProvider,
+           let coordinator = viewModel.translationCoordinator {
+            AppleTranslationHostView(
+                provider: provider,
+                coordinator: coordinator,
+                target: viewModel.translationConfig.target
+            )
+        }
+        #endif
+    }
+
+    private var translationControls: some View {
+        HStack(spacing: 8) {
+            Toggle(isOn: Binding(
+                get: { viewModel.translationConfig.enabled },
+                set: { viewModel.setTranslationEnabled($0) }
+            )) {
+                Text("翻译")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(RecordingTheme.textSecondary)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .fixedSize()
+
+            if viewModel.translationConfig.enabled {
+                Menu {
+                    ForEach(TranslationTarget.presets, id: \.target) { preset in
+                        Button {
+                            viewModel.setTranslationTarget(preset.target)
+                        } label: {
+                            if preset.target == viewModel.translationConfig.target {
+                                Label(preset.name, systemImage: "checkmark")
+                            } else {
+                                Text(preset.name)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(viewModel.translationConfig.target.displayName)
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(RecordingTheme.accentDark)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+
+            Toggle(isOn: Binding(
+                get: { viewModel.subtitleEnabled },
+                set: { viewModel.setSubtitleEnabled($0) }
+            )) {
+                Text("字幕")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(RecordingTheme.textSecondary)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .fixedSize()
+            .help("在屏幕上显示可拖动的浮动字幕，开会看共享画面时也能看转写")
         }
     }
 
@@ -971,17 +1130,9 @@ struct RecordingTranscriptionView: View {
                         .tint(RecordingTheme.accentDeep)
                 }
 
-                if viewModel.aiBadgesVisible && viewModel.state == .completed {
-                    AIBadgesView(
-                        title: viewModel.titleStatus,
-                        summary: viewModel.summaryStatus,
-                        outline: viewModel.outlineStatus,
-                        markdownURL: viewModel.output?.textURL,
-                        onRetry: viewModel.canRunEnhancement ? { viewModel.runEnhancement() } : nil
-                    )
-                }
-
                 Spacer()
+
+                translationControls
 
                 if !viewModel.transcriptText.isEmpty {
                     Text("\(viewModel.transcriptText.count) 字")
@@ -998,24 +1149,31 @@ struct RecordingTranscriptionView: View {
                             .stroke(RecordingTheme.borderLight, lineWidth: 1)
                     )
 
-                if viewModel.transcriptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(emptyTranscriptText)
-                        .font(.system(size: 14))
-                        .foregroundColor(RecordingTheme.textMuted)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 13)
-                }
+                if let coordinator = viewModel.translationCoordinator, viewModel.bilingualViewActive {
+                    BilingualTranscriptView(
+                        coordinator: coordinator,
+                        emptyText: emptyTranscriptText
+                    )
+                } else {
+                    if viewModel.transcriptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(emptyTranscriptText)
+                            .font(.system(size: 14))
+                            .foregroundColor(RecordingTheme.textMuted)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 13)
+                    }
 
-                TextEditor(text: Binding(
-                    get: { viewModel.formattedMarkdown ?? viewModel.transcriptText },
-                    set: { _ in }
-                ))
-                .font(.system(size: 14))
-                .foregroundColor(RecordingTheme.textPrimary)
-                .lineSpacing(4)
-                .padding(8)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
+                    TextEditor(text: Binding(
+                        get: { viewModel.transcriptText },
+                        set: { _ in }
+                    ))
+                    .font(.system(size: 14))
+                    .foregroundColor(RecordingTheme.textPrimary)
+                    .lineSpacing(4)
+                    .padding(8)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                }
             }
             .frame(minHeight: 128, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -1070,15 +1228,6 @@ struct RecordingTranscriptionView: View {
 
             Spacer()
 
-            if viewModel.enhancementInFlight {
-                HStack(spacing: 4) {
-                    ProgressView().controlSize(.small)
-                    Text("AI 处理中…")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(RecordingTheme.textMuted)
-                }
-            }
-
             Button {
                 viewModel.copyResult()
             } label: {
@@ -1086,15 +1235,6 @@ struct RecordingTranscriptionView: View {
             }
             .buttonStyle(RecordingSecondaryButtonStyle())
             .disabled(!viewModel.canCopyResult)
-
-            if viewModel.enhancementResult != nil {
-                Button {
-                    viewModel.copyMarkdown()
-                } label: {
-                    Label("复制 Markdown", systemImage: "doc.richtext")
-                }
-                .buttonStyle(RecordingSecondaryButtonStyle())
-            }
 
             Button {
                 viewModel.openOutputFolder()
@@ -1168,7 +1308,7 @@ struct RecordingTranscriptionView: View {
         case .finishing:
             return "高质量转录中"
         case .recording:
-            return "Paraformer 实时预览"
+            return "SenseVoice 实时预览"
         case .failed:
             return "未保存"
         default:
@@ -1463,7 +1603,7 @@ private extension View {
     }
 }
 
-private enum RecordingTheme {
+enum RecordingTheme {
     static let background = color(0xF7FAF0)
     static let secondaryBackground = color(0xF0F5E4)
     static let cardBackground = color(0xFFFFFF)
@@ -1489,198 +1629,5 @@ private enum RecordingTheme {
             blue: Double(hex & 0xFF) / 255.0,
             opacity: opacity
         )
-    }
-}
-
-// MARK: - AI 三任务徽章
-
-struct AIBadgesView: View {
-    let title: RecordingTranscriptionViewModel.AIBadgeStatus
-    let summary: RecordingTranscriptionViewModel.AIBadgeStatus
-    let outline: RecordingTranscriptionViewModel.AIBadgeStatus
-    /// 对应转录的 markdown 路径；用于推导 AI 日志位置。nil 时 popover 中不显示"打开日志"按钮。
-    var markdownURL: URL? = nil
-    /// 触发重试的回调。nil 时不显示"重试"按钮。
-    var onRetry: (() -> Void)? = nil
-
-    @State private var popoverLabel: String?
-
-    private struct Item: Identifiable {
-        let id = UUID()
-        let label: String
-        let status: RecordingTranscriptionViewModel.AIBadgeStatus
-    }
-
-    private var items: [Item] {
-        [
-            Item(label: "标题", status: title),
-            Item(label: "摘要", status: summary),
-            Item(label: "结构", status: outline),
-        ]
-    }
-
-    private var failureSummary: String? {
-        let failed: [(String, String)] = items.compactMap { item in
-            if case let .failed(msg) = item.status { return (item.label, msg) }
-            return nil
-        }
-        guard !failed.isEmpty else { return nil }
-        let messages = Set(failed.map { $0.1 })
-        if messages.count == 1, let only = messages.first {
-            return only
-        }
-        return failed.map { "\($0.0)：\($0.1)" }.joined(separator: " · ")
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            HStack(spacing: 4) {
-                ForEach(items) { item in
-                    badge(label: item.label, status: item.status)
-                }
-            }
-            if let summary = failureSummary {
-                Text("失败原因：\(summary)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.red)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .help(summary)
-                if let onRetry {
-                    Button(action: onRetry) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 10, weight: .bold))
-                            Text("重试")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                    }
-                    .buttonStyle(InlineRetryButtonStyle())
-                    .help("重新跑一次 AI 后处理")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func badge(label: String, status: RecordingTranscriptionViewModel.AIBadgeStatus) -> some View {
-        let (symbol, color, tooltip, failedMessage): (String, Color, String?, String?) = {
-            switch status {
-            case .idle:        return ("circle.dashed", .gray, nil, nil)
-            case .running:     return ("ellipsis.circle", .orange, nil, nil)
-            case .succeeded:   return ("checkmark.circle.fill", .green, nil, nil)
-            case .failed(let msg): return ("xmark.octagon.fill", .red, msg, msg)
-            }
-        }()
-
-        let chip = HStack(spacing: 3) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(color)
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(
-            Capsule().fill(color.opacity(0.12))
-        )
-        .contentShape(Capsule())
-        .help(tooltip ?? label)
-
-        if let failedMessage {
-            chip
-                .onTapGesture { popoverLabel = label }
-                .popover(
-                    isPresented: Binding(
-                        get: { popoverLabel == label },
-                        set: { if !$0 { popoverLabel = nil } }
-                    ),
-                    arrowEdge: .bottom
-                ) {
-                    FailurePopoverContent(
-                        taskLabel: label,
-                        message: failedMessage,
-                        logURL: markdownURL.flatMap { AIEnhancementLogger.logURL(forMarkdownURL: $0) },
-                        onRetry: onRetry.map { retry in
-                            { popoverLabel = nil; retry() }
-                        }
-                    )
-                }
-        } else {
-            chip
-        }
-    }
-}
-
-private struct FailurePopoverContent: View {
-    let taskLabel: String
-    let message: String
-    let logURL: URL?
-    let onRetry: (() -> Void)?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "xmark.octagon.fill")
-                    .foregroundColor(.red)
-                Text("\(taskLabel) · AI 后处理失败")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            Text(message)
-                .font(.system(size: 12))
-                .foregroundColor(.primary)
-                .textSelection(.enabled)
-                .frame(maxWidth: 360, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                Spacer()
-                if let logURL, FileManager.default.fileExists(atPath: logURL.path) {
-                    Button {
-                        NSWorkspace.shared.activateFileViewerSelecting([logURL])
-                    } label: {
-                        Label("打开 AI 日志", systemImage: "doc.text.magnifyingglass")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(.borderless)
-                }
-                if let onRetry {
-                    Button {
-                        onRetry()
-                    } label: {
-                        Label("重试 AI 处理", systemImage: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
-        }
-        .padding(12)
-        .frame(minWidth: 240)
-    }
-}
-
-private struct InlineRetryButtonStyle: ButtonStyle {
-    @State private var isHovering = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundColor(.red)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 3)
-            .background(
-                Capsule()
-                    .fill(Color.red.opacity(isHovering ? 0.18 : 0.10))
-                    .overlay(
-                        Capsule().stroke(Color.red.opacity(0.38), lineWidth: 0.8)
-                    )
-            )
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-            .animation(.easeOut(duration: 0.15), value: isHovering)
-            .onHover { isHovering = $0 }
     }
 }

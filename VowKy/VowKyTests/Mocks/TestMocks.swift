@@ -30,6 +30,28 @@ final class MockSpeechRecognizer: SpeechRecognizerProtocol {
         }
         return recognizeResult
     }
+
+    /// 非空时 recognizeDetailed 依次出队（含 token 时间戳）。
+    var queuedDetailedResults: [DetailedRecognition] = []
+    /// 非 nil 时 recognizeDetailed 返回它（含 token 时间戳）；否则退化为包装 recognize()。
+    var detailedResult: DetailedRecognition?
+
+    func recognizeDetailed(samples: [Float], sampleRate: Int) async -> DetailedRecognition? {
+        if !queuedDetailedResults.isEmpty || detailedResult != nil {
+            recognizeCallCount += 1
+            lastReceivedSamples = samples
+            receivedSamples.append(samples)
+            if recognizeDelay > 0 {
+                try? await Task.sleep(nanoseconds: recognizeDelay)
+            }
+            if !queuedDetailedResults.isEmpty {
+                return queuedDetailedResults.removeFirst()
+            }
+            return detailedResult
+        }
+        guard let text = await recognize(samples: samples, sampleRate: sampleRate) else { return nil }
+        return DetailedRecognition(text: text, tokens: [], timestamps: [])
+    }
 }
 
 final class MockAudioRecorder: AudioRecorderProtocol {
@@ -116,6 +138,36 @@ final class MockStreamingSpeechRecognizer: StreamingSpeechRecognizerProtocol {
 
     func reset() {
         resetCallCount += 1
+    }
+}
+
+final class MockTranslationProvider: TranslationProviding, @unchecked Sendable {
+    /// 模拟引擎是否要求源≠目标（Apple = true，LLM = false）
+    var requiresDistinctSourceLanguage: Bool = false
+    /// 固定结果映射（key = 原文）；没命中时返回 "译:<原文>"
+    var results: [String: String] = [:]
+    /// 指定原文抛错
+    var errors: [String: TranslationError] = [:]
+    /// 模拟延迟（纳秒）
+    var delayNanoseconds: UInt64 = 0
+
+    private let lock = NSLock()
+    private var _requestedTexts: [String] = []
+    var requestedTexts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return _requestedTexts
+    }
+
+    func translate(_ text: String, to target: TranslationTarget) async throws -> String {
+        lock.lock()
+        _requestedTexts.append(text)
+        lock.unlock()
+        if delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        try Task.checkCancellation()
+        if let error = errors[text] { throw error }
+        return results[text] ?? "译:\(text)"
     }
 }
 

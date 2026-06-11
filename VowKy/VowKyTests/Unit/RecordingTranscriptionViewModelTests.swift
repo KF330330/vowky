@@ -6,7 +6,6 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
     private var tempDir: URL!
     private var appState: AppState!
     private var mockRecorder: MockAudioRecorder!
-    private var mockRecognizer: MockStreamingSpeechRecognizer!
     private var mockFinalRecognizer: MockSpeechRecognizer!
 
     override func setUp() {
@@ -16,7 +15,6 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
         mockRecorder = MockAudioRecorder()
-        mockRecognizer = MockStreamingSpeechRecognizer()
         mockFinalRecognizer = MockSpeechRecognizer()
         appState = AppState(
             speechRecognizer: MockSpeechRecognizer(),
@@ -29,7 +27,6 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
         appState = nil
         mockRecorder = nil
-        mockRecognizer = nil
         mockFinalRecognizer = nil
         tempDir = nil
         super.tearDown()
@@ -37,14 +34,6 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
 
     func testStartStopSavesTextAndAudioAndRecordsHistory() async throws {
         mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
-        mockRecognizer.queuedAcceptUpdates = [
-            StreamingRecognitionUpdate(committedText: "", partialText: "实时文本", isFinal: false)
-        ]
-        mockRecognizer.finishUpdate = StreamingRecognitionUpdate(
-            committedText: "Paraformer最终",
-            partialText: "",
-            isFinal: true
-        )
         mockFinalRecognizer.recognizeResult = "SenseVoice最终"
         let punctuation = MockPunctuationService()
         var recordedResults: [String] = []
@@ -59,7 +48,6 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
             viewModel.state == .recording
         }
         XCTAssertTrue(appState.isRecordingTranscriptionInProgress)
-        XCTAssertEqual(viewModel.transcriptText, "实时文本")
 
         viewModel.stop()
         XCTAssertEqual(viewModel.state, .finishing)
@@ -81,11 +69,6 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
 
     func testCancelDeletesPartialOutputsAndSkipsHistory() async throws {
         mockRecorder.samplesToEmitOnStart = [[0.1]]
-        mockRecognizer.finishUpdate = StreamingRecognitionUpdate(
-            committedText: "不应保存",
-            partialText: "",
-            isFinal: true
-        )
         var recordedResults: [String] = []
         let viewModel = makeViewModel(resultRecorder: { recordedResults.append($0) })
 
@@ -104,8 +87,8 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(contents.isEmpty)
     }
 
-    func testModelLoadFailureMarksFailedAndClearsAppGuard() async throws {
-        mockRecognizer.isReady = false
+    func testFinalRecognizerNotReadyMarksFailedAndClearsAppGuard() async throws {
+        mockFinalRecognizer.isReady = false
         let viewModel = makeViewModel()
 
         viewModel.start()
@@ -123,9 +106,6 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
 
     func testStopWaitsForSlowSenseVoiceBeforeCompleting() async throws {
         mockRecorder.samplesToEmitOnStart = [[0.1, 0.2]]
-        mockRecognizer.queuedAcceptUpdates = [
-            StreamingRecognitionUpdate(committedText: "", partialText: "实时预览", isFinal: false)
-        ]
         mockFinalRecognizer.recognizeResult = "慢速最终稿"
         mockFinalRecognizer.recognizeDelay = 300_000_000
         let viewModel = makeViewModel(punctuationService: MockPunctuationService())
@@ -206,7 +186,6 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         RecordingTranscriptionViewModel(
             appState: appState,
             audioRecorder: mockRecorder,
-            recognizerFactory: { self.mockRecognizer },
             finalRecognizer: mockFinalRecognizer,
             punctuationService: punctuationService,
             outputStore: RecordingTranscriptionOutputStore(outputDirectory: tempDir),

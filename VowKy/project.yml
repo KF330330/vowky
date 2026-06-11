@@ -24,11 +24,6 @@ targets:
           - "Resources/**"
       - path: VowKy/Resources
         buildPhase: resources
-        excludes:
-          - "Skills/**"
-      - path: VowKy/Resources/Skills
-        type: folder
-        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vowky.app

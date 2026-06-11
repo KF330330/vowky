@@ -1,8 +1,25 @@
 import Foundation
 
+/// 带 token 级时间戳的识别结果。tokens/timestamps 等长、一一对应;
+/// 模型不支持时间戳时两者为空（消费方据此优雅退化为纯文本逻辑）。
+struct DetailedRecognition {
+    let text: String
+    let tokens: [String]
+    let timestamps: [Float]
+}
+
 protocol SpeechRecognizerProtocol {
     func recognize(samples: [Float], sampleRate: Int) async -> String?
+    func recognizeDetailed(samples: [Float], sampleRate: Int) async -> DetailedRecognition?
     var isReady: Bool { get }
+}
+
+extension SpeechRecognizerProtocol {
+    /// 默认实现：仅文本、无时间戳。实现方可覆盖以提供停顿检测信号。
+    func recognizeDetailed(samples: [Float], sampleRate: Int) async -> DetailedRecognition? {
+        guard let text = await recognize(samples: samples, sampleRate: sampleRate) else { return nil }
+        return DetailedRecognition(text: text, tokens: [], timestamps: [])
+    }
 }
 
 protocol AudioRecorderProtocol {

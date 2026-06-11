@@ -80,4 +80,15 @@ final class LocalSpeechRecognizer: SpeechRecognizerProtocol {
         return text.isEmpty ? nil : text
     }
 
+    func recognizeDetailed(samples: [Float], sampleRate: Int) async -> DetailedRecognition? {
+        guard let rec = recognizer, !samples.isEmpty else { return nil }
+        guard let result = rec.decode(samples: samples, sampleRate: sampleRate) else {
+            CrashLogger.log("[SpeechRecognizer] decode() returned nil")
+            return nil
+        }
+        let text = result.text
+        guard !text.isEmpty else { return nil }
+        return DetailedRecognition(text: text, tokens: result.tokens, timestamps: result.timestamps)
+    }
+
 }
