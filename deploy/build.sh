@@ -237,8 +237,10 @@ if [ "$NOTARIZE" = true ]; then
     APP_ZIP="${NOTARY_UPLOAD_DIR}/VowKy-notarize.zip"
     ditto -c -k --keepParent "${APP_PATH}" "${APP_ZIP}"
 
+    # NOTARY_NO_S3_ACCEL=1：禁用 S3 传输加速端点（国内网络上传大包时加速端点反而易超时）
     xcrun notarytool submit "${APP_ZIP}" \
         --keychain-profile "${NOTARY_PROFILE}" \
+        ${NOTARY_NO_S3_ACCEL:+--no-s3-acceleration} \
         --wait
 
     xcrun stapler staple "${APP_PATH}"
@@ -297,6 +299,7 @@ if [ "$NOTARIZE" = true ]; then
 
     xcrun notarytool submit "${DMG_NOTARY_PATH}" \
         --keychain-profile "${NOTARY_PROFILE}" \
+        ${NOTARY_NO_S3_ACCEL:+--no-s3-acceleration} \
         --wait
 
     xcrun stapler staple "${DMG_PATH}"
