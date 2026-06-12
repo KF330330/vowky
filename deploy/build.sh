@@ -229,6 +229,18 @@ check_helper_signature "${HELPER_PATH}" "vowky-transcribe helper"
 check_app_signature "${APP_PATH}" "VowKy.app"
 
 # ============================================================
+# 公证认证参数：优先用环境变量直传 Apple ID + 专用密码（绕过本机不稳定的
+# keychain，item 会反复消失），否则回退到 keychain profile。
+# 用法：NOTARY_APPLE_ID=... NOTARY_PASSWORD=... make deploy
+# ============================================================
+if [ -n "${NOTARY_APPLE_ID:-}" ] && [ -n "${NOTARY_PASSWORD:-}" ]; then
+    NOTARY_AUTH_ARGS=(--apple-id "${NOTARY_APPLE_ID}" --team-id "${TEAM_ID}" --password "${NOTARY_PASSWORD}")
+    log_info "公证认证：环境变量直传（${NOTARY_APPLE_ID}），已绕过 keychain"
+else
+    NOTARY_AUTH_ARGS=(--keychain-profile "${NOTARY_PROFILE}")
+fi
+
+# ============================================================
 # 5. 公证 App (仅 prod)
 # ============================================================
 if [ "$NOTARIZE" = true ]; then
@@ -239,7 +251,7 @@ if [ "$NOTARIZE" = true ]; then
 
     # NOTARY_NO_S3_ACCEL=1：禁用 S3 传输加速端点（国内网络上传大包时加速端点反而易超时）
     xcrun notarytool submit "${APP_ZIP}" \
-        --keychain-profile "${NOTARY_PROFILE}" \
+        "${NOTARY_AUTH_ARGS[@]}" \
         ${NOTARY_NO_S3_ACCEL:+--no-s3-acceleration} \
         --wait
 
@@ -298,7 +310,7 @@ if [ "$NOTARIZE" = true ]; then
     cp "${DMG_PATH}" "${DMG_NOTARY_PATH}"
 
     xcrun notarytool submit "${DMG_NOTARY_PATH}" \
-        --keychain-profile "${NOTARY_PROFILE}" \
+        "${NOTARY_AUTH_ARGS[@]}" \
         ${NOTARY_NO_S3_ACCEL:+--no-s3-acceleration} \
         --wait
 
