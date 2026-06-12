@@ -94,11 +94,21 @@ final class SubtitlePacer {
         }
     }
 
+    /// 允许定位结果相对 hint 向前（更早）偏移的最大条数。
+    /// 段落流是冻结式追加（committed 只增不改），合法的前移只来自 partial 区
+    /// 重切分的小幅波动；更早的"匹配"只可能是重复口头禅/共享前缀的误匹配。
+    private static let backTolerance = 3
+
     /// 以上次位置为锚点就近定位 displayed：先精确匹配文本，
     /// 再用「一方是另一方前缀」匹配同句的增长/修订形态。
+    /// 只在 hint 前 backTolerance 条以内搜索：若放行远古误匹配，其后全部
+    /// 历史段会被重新入队并加速重放（字幕"回跳重播"bug 的根因）。
     private func locate(_ target: TranscriptParagraph, in paragraphs: [TranscriptParagraph]) -> Int? {
         let hint = min(max(0, displayedIndexHint), paragraphs.count - 1)
-        let order = Array(paragraphs.indices).sorted { abs($0 - hint) < abs($1 - hint) }
+        let earliest = max(0, hint - Self.backTolerance)
+        let order = paragraphs.indices
+            .filter { $0 >= earliest }
+            .sorted { abs($0 - hint) < abs($1 - hint) }
         if let exact = order.first(where: { paragraphs[$0].text == target.text }) {
             return exact
         }
