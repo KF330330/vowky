@@ -40,16 +40,128 @@ final class SettingsWindowController {
     }
 }
 
+// MARK: - Hotkey Recorder
+
+/// 录制快捷键的状态机。必须是引用类型（class + ObservableObject）：
+/// NSEvent 本地监听是逃逸闭包，若用 SettingsView(struct) 的 @State，闭包会按值捕获快照，
+/// 之后写入既不刷新活动视图、暂存值也无法跨回调保存 —— 这正是「点修改后按什么都没反应」的根因。
+/// 与已验证可用的 OnboardingViewModel 同款写法：用 [weak self] 捕获同一对象，@Published 可靠刷新 UI。
+final class HotkeyRecorder: ObservableObject {
+    @Published var isRecording = false
+    @Published var displayName = HotkeyConfig.current.displayName
+
+    private var pendingModifierKeyCode: Int64?
+    private var eventMonitor: Any?
+
+    /// 窗口出现时从 UserDefaults 重新同步当前热键显示
+    func refreshDisplay() {
+        displayName = HotkeyConfig.current.displayName
+    }
+
+    func toggle() {
+        if isRecording {
+            stop()
+        } else {
+            start()
+        }
+    }
+
+    func start() {
+        isRecording = true
+        pendingModifierKeyCode = nil
+        // 同时监听 keyDown 和 flagsChanged，支持单修饰键录入
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+            guard let self else { return event }
+
+            if event.type == .flagsChanged {
+                let keyCode = Int64(event.keyCode)
+                // 只处理修饰键（含 Fn = 63）
+                let modifierKeyCodes: Set<Int64> = [55, 56, 58, 59, 61, 62, 63]
+                guard modifierKeyCodes.contains(keyCode) else { return event }
+
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+                // 修饰键全部释放 → 如果有 pending 修饰键，保存为单修饰键模式
+                if flags.isEmpty, let pending = self.pendingModifierKeyCode {
+                    self.pendingModifierKeyCode = nil
+                    let config = HotkeyConfig(
+                        keyCode: pending,
+                        needsOption: false, needsCommand: false,
+                        needsControl: false, needsShift: false,
+                        isModifierOnly: true,
+                        isHoldMode: HotkeyConfig.current.isHoldMode
+                    )
+                    config.save()
+                    self.displayName = config.displayName
+                    AnalyticsService.shared.trackHotkeyChange()
+                    self.stop()
+                    return nil
+                }
+
+                // 检测是否只有一个修饰键按下 → 记为 pending，等释放后再保存
+                let isSingleModifier = flags == .command || flags == .shift
+                    || flags == .option || flags == .control || flags == .function
+
+                if isSingleModifier {
+                    // 统一左右键：61→58(Option), 62→59(Control)
+                    switch keyCode {
+                    case 61: self.pendingModifierKeyCode = 58
+                    case 62: self.pendingModifierKeyCode = 59
+                    default: self.pendingModifierKeyCode = keyCode
+                    }
+                } else {
+                    self.pendingModifierKeyCode = nil
+                }
+                return event
+
+            } else {
+                // keyDown 事件：清除 pending，走组合键录制逻辑
+                self.pendingModifierKeyCode = nil
+                let keyCode = Int64(event.keyCode)
+
+                // Ignore pure modifier keys (in keyDown they shouldn't appear, but be safe)
+                if [55, 56, 58, 59, 61, 62].contains(keyCode) { return event }
+
+                // Escape without modifiers = cancel
+                if keyCode == 53 && event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
+                    self.stop()
+                    return nil
+                }
+
+                let config = HotkeyConfig(
+                    keyCode: keyCode,
+                    needsOption: event.modifierFlags.contains(.option),
+                    needsCommand: event.modifierFlags.contains(.command),
+                    needsControl: event.modifierFlags.contains(.control),
+                    needsShift: event.modifierFlags.contains(.shift),
+                    isModifierOnly: false,
+                    isHoldMode: HotkeyConfig.current.isHoldMode
+                )
+                config.save()
+                self.displayName = config.displayName
+                AnalyticsService.shared.trackHotkeyChange()
+                self.stop()
+                return nil
+            }
+        }
+    }
+
+    func stop() {
+        isRecording = false
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+    }
+}
+
 // MARK: - Settings View
 
 struct SettingsView: View {
     @State private var isAccessibilityGranted = AXIsProcessTrusted()
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var hotkeyDisplay = HotkeyConfig.current.displayName
     @State private var isHoldMode = HotkeyConfig.current.isHoldMode
-    @State private var isRecording = false
-    @State private var eventMonitor: Any?
-    @State private var pendingModifierKeyCode: Int64?
+    @StateObject private var hotkeyRecorder = HotkeyRecorder()
     @State private var autoCopyToClipboard = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
     @State private var automaticUpdateChecks: Bool = {
         let defaults = UserDefaults.standard
@@ -95,20 +207,16 @@ struct SettingsView: View {
                 HStack {
                     Text("语音输入")
                     Spacer()
-                    if isRecording {
+                    if hotkeyRecorder.isRecording {
                         Text("请按下新快捷键...")
                             .font(.system(.body, design: .monospaced))
                             .foregroundColor(.orange)
                     } else {
-                        Text(hotkeyDisplay)
+                        Text(hotkeyRecorder.displayName)
                             .font(.system(.body, design: .monospaced))
                     }
-                    Button(isRecording ? "取消" : "修改") {
-                        if isRecording {
-                            stopRecordingHotkey()
-                        } else {
-                            startRecordingHotkey()
-                        }
+                    Button(hotkeyRecorder.isRecording ? "取消" : "修改") {
+                        hotkeyRecorder.toggle()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -300,92 +408,12 @@ struct SettingsView: View {
         .onAppear {
             isAccessibilityGranted = AXIsProcessTrusted()
             launchAtLogin = SMAppService.mainApp.status == .enabled
-            hotkeyDisplay = HotkeyConfig.current.displayName
+            hotkeyRecorder.refreshDisplay()
             isHoldMode = HotkeyConfig.current.isHoldMode
         }
         .onDisappear {
-            stopRecordingHotkey()
+            hotkeyRecorder.stop()
             stopPermissionRefresh()
-        }
-    }
-
-    // MARK: - Hotkey Recording
-
-    private func startRecordingHotkey() {
-        isRecording = true
-        pendingModifierKeyCode = nil
-        // 同时监听 keyDown 和 flagsChanged，支持单修饰键录入
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
-            if event.type == .flagsChanged {
-                let keyCode = Int64(event.keyCode)
-                // 只处理修饰键（含 Fn = 63）
-                let modifierKeyCodes: Set<Int64> = [55, 56, 58, 59, 61, 62, 63]
-                guard modifierKeyCodes.contains(keyCode) else { return event }
-
-                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-                // 修饰键全部释放 → 如果有 pending 修饰键，保存为单修饰键模式
-                if flags.isEmpty, let pending = pendingModifierKeyCode {
-                    pendingModifierKeyCode = nil
-                    let config = HotkeyConfig(
-                        keyCode: pending,
-                        needsOption: false, needsCommand: false,
-                        needsControl: false, needsShift: false,
-                        isModifierOnly: true,
-                        isHoldMode: HotkeyConfig.current.isHoldMode
-                    )
-                    config.save()
-                    hotkeyDisplay = config.displayName
-                    AnalyticsService.shared.trackHotkeyChange()
-                    stopRecordingHotkey()
-                    return nil
-                }
-
-                // 检测是否只有一个修饰键按下 → 记为 pending，等释放后再保存
-                let isSingleModifier = flags == .command || flags == .shift
-                    || flags == .option || flags == .control || flags == .function
-
-                if isSingleModifier {
-                    // 统一左右键：61→58(Option), 62→59(Control)
-                    switch keyCode {
-                    case 61: pendingModifierKeyCode = 58
-                    case 62: pendingModifierKeyCode = 59
-                    default: pendingModifierKeyCode = keyCode
-                    }
-                } else {
-                    pendingModifierKeyCode = nil
-                }
-                return event
-
-            } else {
-                // keyDown 事件：清除 pending，走组合键录制逻辑
-                pendingModifierKeyCode = nil
-                let keyCode = Int64(event.keyCode)
-
-                // Ignore pure modifier keys (in keyDown they shouldn't appear, but be safe)
-                if [55, 56, 58, 59, 61, 62].contains(keyCode) { return event }
-
-                // Escape without modifiers = cancel
-                if keyCode == 53 && event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty {
-                    stopRecordingHotkey()
-                    return nil
-                }
-
-                let config = HotkeyConfig(
-                    keyCode: keyCode,
-                    needsOption: event.modifierFlags.contains(.option),
-                    needsCommand: event.modifierFlags.contains(.command),
-                    needsControl: event.modifierFlags.contains(.control),
-                    needsShift: event.modifierFlags.contains(.shift),
-                    isModifierOnly: false,
-                    isHoldMode: HotkeyConfig.current.isHoldMode
-                )
-                config.save()
-                hotkeyDisplay = config.displayName
-                AnalyticsService.shared.trackHotkeyChange()
-                stopRecordingHotkey()
-                return nil
-            }
         }
     }
 
@@ -407,14 +435,6 @@ struct SettingsView: View {
     private func stopPermissionRefresh() {
         permissionRefreshTimer?.invalidate()
         permissionRefreshTimer = nil
-    }
-
-    private func stopRecordingHotkey() {
-        isRecording = false
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-            eventMonitor = nil
-        }
     }
 
     private func saveTranslationConfig() {
