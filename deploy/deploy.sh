@@ -250,6 +250,25 @@ REMOTE_UPLOAD
 
 # 确保该版本为 latest（两个 tag 指向同一 commit 时 GitHub 的 latest 判定会有歧义）
 gh release edit "v${VERSION}" --latest >/dev/null
+
+# 校验两个 asset 均已就绪——服务器中转上传若某个 asset 静默漏传，这里会拦下。
+# 注意：GitHub 上传完成后 API/CDN 同步有数十秒延迟，立即查可能误判缺失，故带重试。
+log_info "校验 Release assets（含同步延迟重试）..."
+for verify_name in "${DMG_NAME}" "VowKy.dmg"; do
+    asset_ok=false
+    for _attempt in 1 2 3 4 5 6; do
+        asset_state="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" \
+            --jq ".[] | select(.name==\"${verify_name}\") | .state" 2>/dev/null | head -1)"
+        if [ "${asset_state}" = "uploaded" ]; then asset_ok=true; break; fi
+        sleep 10
+    done
+    if [ "${asset_ok}" = true ]; then
+        log_ok "asset 就绪: ${verify_name}"
+    else
+        log_error "asset 缺失或未就绪: ${verify_name} (state='${asset_state:-none}')，请手动补传后再发布"
+        exit 1
+    fi
+done
 log_ok "GitHub Release 完成（DMG 经服务器中转）"
 
 # ============================================================
