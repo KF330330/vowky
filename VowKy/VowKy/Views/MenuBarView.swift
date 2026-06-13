@@ -128,6 +128,19 @@ struct MenuBarView: View {
             .padding(.vertical, 4)
             .disabled(appState.state != .idle || appState.isFileTranscriptionInProgress || appState.isRecordingTranscriptionInProgress)
 
+            // Check for Updates（用户主动检查，不计入自动提醒次数）
+            Button {
+                updateCoordinator.userInitiatedCheck(updater: updater)
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("检查更新")
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+
             // Settings
             Button {
                 SettingsWindowController.shared.showWindow(updater: updater, updateCoordinator: updateCoordinator)
