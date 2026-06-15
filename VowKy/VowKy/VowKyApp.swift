@@ -8,7 +8,8 @@ struct VowKyApp: App {
     static let automaticUpdateChecksDefaultsKey = "automaticUpdateChecksEnabled"
 
     private let updateCoordinator = UpdateReminderCoordinator()
-    private let updaterController: SPUStandardUpdaterController
+    private let updater: SPUUpdater
+    private let userDriver: VowKyUpdaterUserDriver
 
     // ONNX 推理已移出主进程:语音/标点都通过共享的 HelperTransport 转发给常驻 helper(vowky-speechd)。
     // 主进程不再链接 onnxruntime,活签名保持有效,Sparkle 自更新得以通过 Sequoia/Tahoe 校验。
@@ -22,28 +23,52 @@ struct VowKyApp: App {
 
     init() {
         let coordinator = updateCoordinator
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: coordinator,
-            userDriverDelegate: nil
+
+        // 自定义 user driver:只替换「发现新版本」窗口为 VowKy 自绘弹窗,
+        // 下载/解压/安装/重启/错误等仍走 Sparkle 标准 UI(继承自 SPUStandardUserDriver)。
+        let driver = VowKyUpdaterUserDriver(hostBundle: .main, delegate: nil)
+        let updater = SPUUpdater(
+            hostBundle: .main,
+            applicationBundle: .main,
+            userDriver: driver,
+            delegate: coordinator
         )
+        driver.presentUpdate = { appcastItem, reply in
+            // Sparkle 在主线程回调 user driver
+            MainActor.assumeIsolated {
+                let current = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? ""
+                UpdateAvailableWindowController.shared.present(
+                    appcastItem: appcastItem,
+                    currentVersion: current,
+                    updater: updater,
+                    reply: reply
+                )
+            }
+        }
 
         // 默认开启自动检查；用户在 Settings 关闭后从 UserDefaults 读取
         let defaults = UserDefaults.standard
         if defaults.object(forKey: Self.automaticUpdateChecksDefaultsKey) == nil {
             defaults.set(true, forKey: Self.automaticUpdateChecksDefaultsKey)
         }
-        let autoEnabled = defaults.bool(forKey: Self.automaticUpdateChecksDefaultsKey)
+        updater.automaticallyChecksForUpdates = defaults.bool(forKey: Self.automaticUpdateChecksDefaultsKey)
+        updater.updateCheckInterval = 86400 // 每天检查一次
 
-        updaterController.updater.automaticallyChecksForUpdates = autoEnabled
-        updaterController.updater.updateCheckInterval = 86400 // 每天检查一次
+        do {
+            try updater.start()
+        } catch {
+            CrashLogger.log("[Update] startUpdater failed: \(error.localizedDescription)")
+        }
+
+        self.userDriver = driver
+        self.updater = updater
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarView(
                 appState: appState,
-                updater: updaterController.updater,
+                updater: updater,
                 updateCoordinator: updateCoordinator
             )
         } label: {

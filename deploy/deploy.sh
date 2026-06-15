@@ -151,44 +151,54 @@ md_to_html_fragment() {
         while (match(rest,/https?:\/\/[^ \t"<>]+/)){ url=substr(rest,RSTART,RLENGTH); prev=(RSTART>1)?substr(rest,RSTART-1,1):""; if(prev=="\""){ out=out substr(rest,1,RSTART-1+RLENGTH) } else { out=out substr(rest,1,RSTART-1) "<a href=\"" url "\">" url "</a>" } rest=substr(rest,RSTART+RLENGTH) }
         return out rest
     }
-    BEGIN{ inlist=0; started=0 }
+    function flushlist(){ if(inlist){ print "</ul>"; inlist=0 } }
+    function flushcard(){ flushlist(); if(incard){ print "</div>"; incard=0 } }
+    BEGIN{ incard=0; inlist=0; started=0 }
     {
         line=$0
-        if(!started && line ~ /^#{0,3}[ ]*VowKy /){ next }   # 剥掉首行标题
+        if(!started && line ~ /^#{0,3}[ ]*VowKy /){ next }   # 剥掉首行版本标题(窗口已提供)
         if(!started && line ~ /^[ \t]*$/){ next }             # 跳过开头空行
         started=1
-        if(line ~ /^[ \t]*$/){ if(inlist){print "</ul>"; inlist=0} next }
-        if(line ~ /^[ \t]*[-*] /){ sub(/^[ \t]*[-*] /,"",line); if(!inlist){print "<ul>"; inlist=1} print "<li>" inl(esc(line)) "</li>"; next }
-        if(inlist){print "</ul>"; inlist=0}
-        if(line ~ /^### /){ sub(/^### /,"",line); print "<h3>" inl(esc(line)) "</h3>"; next }
-        if(line ~ /^#{1,2} /){ sub(/^#{1,2} /,"",line); print "<h2>" inl(esc(line)) "</h2>"; next }
-        print "<p>" inl(esc(line)) "</p>"
+        if(line ~ /^[ \t]*$/){ flushlist(); next }
+        if(line ~ /^#{1,3} /){ sub(/^#{1,3} /,"",line); flushcard(); print "<div class=\"card\"><div class=\"card-title\">" inl(esc(line)) "</div>"; incard=1; next }
+        if(line ~ /^[ \t]*[-*] /){ sub(/^[ \t]*[-*] /,"",line); if(!inlist){ print "<ul>"; inlist=1 } print "<li>" inl(esc(line)) "</li>"; next }
+        flushcard(); print "<p class=\"foot\">" inl(esc(line)) "</p>"   # 小节外段落(如「如有问题…」)
     }
-    END{ if(inlist) print "</ul>" }
+    END{ flushcard() }
     ' "$1"
 }
 
 build_release_notes_html() {
-    local md="$1" version="$2" body
+    # 输出「卡片化」发布说明 HTML —— 进 appcast <description>,运行时显示在 VowKy 更新弹窗的 WebView 里。
+    # 不含标题/标语/按钮(那些由自绘窗口提供);只把更新内容排成清爽的分节卡片,暗色适配,滚动条样式化。
+    local md="$1" body
     body="$(md_to_html_fragment "$md")"
     cat <<HTMLDOC
 <style>
 :root{color-scheme:light dark}
-body{font-family:-apple-system,"PingFang SC",sans-serif;margin:18px 20px;line-height:1.6;color:#1d1d1f;-webkit-font-smoothing:antialiased}
-.tag{display:inline-block;font-size:11px;font-weight:600;color:#fff;background:#34c759;border-radius:5px;padding:2px 8px;letter-spacing:.3px}
-h1{font-size:18px;font-weight:700;margin:10px 0 2px}
-h2{font-size:15px;font-weight:600;margin:16px 0 6px}
-h3{font-size:13px;font-weight:600;margin:12px 0 4px}
-.sub{font-size:12px;color:#86868b;margin:0 0 14px}
-ul{padding-left:1.15em;margin:0}
-li{font-size:13px;margin:0 0 9px}
-p{font-size:13px;margin:0 0 10px}
+*{box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;padding:14px 16px;line-height:1.6;color:#1d1d1f;background:transparent;-webkit-font-smoothing:antialiased}
+.card{background:rgba(0,0,0,.035);border:.5px solid rgba(0,0,0,.07);border-radius:10px;padding:12px 14px 13px;margin-bottom:10px}
+.card:last-child{margin-bottom:2px}
+.card-title{font-size:14px;font-weight:700;margin-bottom:9px}
+ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+li{position:relative;padding-left:15px;font-size:12.5px;color:#5f5f64;line-height:1.6}
+li::before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:50%;background:#8a8a8e}
+li strong{color:#1d1d1f;font-weight:600}
+.foot{font-size:12px;color:#86868b;margin:6px 2px 0}
 a{color:#0a84ff;text-decoration:none}
-@media (prefers-color-scheme:dark){body{color:#f5f5f7}.sub{color:#98989d}}
+@media (prefers-color-scheme:dark){
+  body{color:#f5f5f7}
+  .card{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.09)}
+  li{color:#aeaeb3}
+  li strong{color:#f5f5f7}
+  .foot{color:#98989d}
+}
+::-webkit-scrollbar{width:11px}
+::-webkit-scrollbar-thumb{background:rgba(0,0,0,.26);border-radius:6px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.4);background-clip:padding-box}
+@media (prefers-color-scheme:dark){::-webkit-scrollbar-thumb{background:rgba(255,255,255,.26)}}
 </style>
-<span class="tag">新版本可更新</span>
-<h1>🦋 VowKy ${version} 已发布</h1>
-<p class="sub">点下方「安装更新」即可升级到最新版</p>
 ${body}
 HTMLDOC
 }
