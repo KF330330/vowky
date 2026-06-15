@@ -183,7 +183,7 @@ h2:first-child,h3:first-child{margin-top:0}
 p{margin:0 0 11px}
 ul{margin:0 0 13px;padding:0;list-style:none}
 li{margin:0 0 5px;padding-left:1.5em;text-indent:-1.5em}
-li::before{content:"– "}
+li::before{content:"•  "}
 li strong{font-weight:700}
 a{color:#0a66c2;text-decoration:none}
 @media (prefers-color-scheme:dark){
