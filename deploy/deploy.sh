@@ -151,53 +151,49 @@ md_to_html_fragment() {
         while (match(rest,/https?:\/\/[^ \t"<>]+/)){ url=substr(rest,RSTART,RLENGTH); prev=(RSTART>1)?substr(rest,RSTART-1,1):""; if(prev=="\""){ out=out substr(rest,1,RSTART-1+RLENGTH) } else { out=out substr(rest,1,RSTART-1) "<a href=\"" url "\">" url "</a>" } rest=substr(rest,RSTART+RLENGTH) }
         return out rest
     }
-    function flushlist(){ if(inlist){ print "</ul>"; inlist=0 } }
-    function flushcard(){ flushlist(); if(incard){ print "</div>"; incard=0 } }
-    BEGIN{ incard=0; inlist=0; started=0 }
+    BEGIN{ inlist=0; started=0 }
     {
         line=$0
         if(!started && line ~ /^#{0,3}[ ]*VowKy /){ next }   # 剥掉首行版本标题(窗口已提供)
         if(!started && line ~ /^[ \t]*$/){ next }             # 跳过开头空行
         started=1
-        if(line ~ /^[ \t]*$/){ flushlist(); next }
-        if(line ~ /^#{1,3} /){ sub(/^#{1,3} /,"",line); flushcard(); print "<div class=\"card\"><div class=\"card-title\">" inl(esc(line)) "</div>"; incard=1; next }
+        if(line ~ /^[ \t]*$/){ if(inlist){ print "</ul>"; inlist=0 } next }
         if(line ~ /^[ \t]*[-*] /){ sub(/^[ \t]*[-*] /,"",line); if(!inlist){ print "<ul>"; inlist=1 } print "<li>" inl(esc(line)) "</li>"; next }
-        flushcard(); print "<p class=\"foot\">" inl(esc(line)) "</p>"   # 小节外段落(如「如有问题…」)
+        if(inlist){ print "</ul>"; inlist=0 }
+        if(line ~ /^### /){ sub(/^### /,"",line); print "<h3>" inl(esc(line)) "</h3>"; next }
+        if(line ~ /^#{1,2} /){ sub(/^#{1,2} /,"",line); print "<h2>" inl(esc(line)) "</h2>"; next }
+        print "<p>" inl(esc(line)) "</p>"
     }
-    END{ flushcard() }
+    END{ if(inlist) print "</ul>" }
     ' "$1"
 }
 
 build_release_notes_html() {
-    # 输出「卡片化」发布说明 HTML —— 进 appcast <description>,运行时显示在 VowKy 更新弹窗的 WebView 里。
-    # 不含标题/标语/按钮(那些由自绘窗口提供);只把更新内容排成清爽的分节卡片,暗色适配,滚动条样式化。
+    # 输出「.md 文档风(等宽)」发布说明 HTML —— 进 appcast <description>,运行时显示在 VowKy 更新弹窗的 WebView 里。
+    # 不含标题/标语/按钮(那些由自绘窗口提供);等宽字体 + 纸张底色 + 纯文档排版,像在看一份 markdown 文件。暗色适配。
     local md="$1" body
     body="$(md_to_html_fragment "$md")"
     cat <<HTMLDOC
 <style>
 :root{color-scheme:light dark}
 *{box-sizing:border-box}
-body{font-family:-apple-system,"PingFang SC",sans-serif;margin:0;padding:14px 16px;line-height:1.6;color:#1d1d1f;background:transparent;-webkit-font-smoothing:antialiased}
-.card{background:rgba(0,0,0,.035);border:.5px solid rgba(0,0,0,.07);border-radius:10px;padding:12px 14px 13px;margin-bottom:10px}
-.card:last-child{margin-bottom:2px}
-.card-title{font-size:14px;font-weight:700;margin-bottom:9px}
-ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-li{position:relative;padding-left:15px;font-size:12.5px;color:#5f5f64;line-height:1.6}
-li::before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:50%;background:#8a8a8e}
-li strong{color:#1d1d1f;font-weight:600}
-.foot{font-size:12px;color:#86868b;margin:6px 2px 0}
-a{color:#0a84ff;text-decoration:none}
+body{margin:0;padding:18px 20px;font-family:ui-monospace,"SF Mono",Menlo,Monaco,"Courier New",monospace;font-size:12px;line-height:1.75;color:#1d1d1f;background:#fcfcfb;-webkit-font-smoothing:antialiased}
+h2,h3{font-size:12px;font-weight:700;margin:15px 0 7px;letter-spacing:.2px}
+h2:first-child,h3:first-child{margin-top:0}
+p{margin:0 0 11px}
+ul{margin:0 0 13px;padding:0;list-style:none}
+li{margin:0 0 5px;padding-left:1.5em;text-indent:-1.5em}
+li::before{content:"– "}
+li strong{font-weight:700}
+a{color:#0a66c2;text-decoration:none}
 @media (prefers-color-scheme:dark){
-  body{color:#f5f5f7}
-  .card{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.09)}
-  li{color:#aeaeb3}
-  li strong{color:#f5f5f7}
-  .foot{color:#98989d}
+  body{color:#e4e4e6;background:#1d1d1f}
+  a{color:#6cb4ff}
 }
 ::-webkit-scrollbar{width:11px}
-::-webkit-scrollbar-thumb{background:rgba(0,0,0,.26);border-radius:6px;border:3px solid transparent;background-clip:padding-box}
-::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.4);background-clip:padding-box}
-@media (prefers-color-scheme:dark){::-webkit-scrollbar-thumb{background:rgba(255,255,255,.26)}}
+::-webkit-scrollbar-thumb{background:rgba(0,0,0,.22);border-radius:6px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.36);background-clip:padding-box}
+@media (prefers-color-scheme:dark){::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22)}}
 </style>
 ${body}
 HTMLDOC

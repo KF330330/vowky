@@ -196,13 +196,23 @@ private struct UpdateAvailableView: View {
 private struct NotesWebView: NSViewRepresentable {
     let html: String
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> WKWebView {
         let webView = WKWebView(frame: .zero)
-        // 透明背景:让窗口/容器底色透出,HTML 里的卡片提供自身底色
+        // 透明背景:让 HTML 的纸张底色透出(等宽文档风)
         webView.setValue(false, forKey: "drawsBackground")
+        webView.navigationDelegate = context.coordinator
         webView.loadHTMLString(html, baseURL: nil)
         return webView
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {}
+
+    /// 加载完成后强制滚到顶部 —— 否则 WebView 会把焦点落到说明末尾的链接而自动滚到底。
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            webView.evaluateJavaScript("window.scrollTo(0,0)", completionHandler: nil)
+        }
+    }
 }
