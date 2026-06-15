@@ -27,6 +27,22 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VowKy 需要麦克风权限用于语音输入</string>
+	<key>NSUpdateSecurityPolicy</key>
+	<dict>
+		<key>AllowPackages</key>
+		<array>
+			<string>M7T6PJ8YJZ</string>
+		</array>
+		<key>AllowProcesses</key>
+		<dict>
+			<key>M7T6PJ8YJZ</key>
+			<array>
+				<string>org.sparkle-project.Sparkle.Updater</string>
+				<string>org.sparkle-project.InstallerLauncher</string>
+				<string>Autoupdate</string>
+			</array>
+		</dict>
+	</dict>
 	<key>SUFeedURL</key>
 	<string>https://vowky.com/appcast.xml</string>
 	<key>SUPublicEDKey</key>
