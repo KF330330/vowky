@@ -161,6 +161,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         CrashLogger.log("[App] applicationWillTerminate — graceful exit")
+        // 关闭常驻语音 helper,避免子进程持有 app bundle 妨碍 Sparkle 原地替换,或残留僵尸。
+        HelperTransport.shared.shutdown()
     }
 
     // MARK: - Launch Diagnostics

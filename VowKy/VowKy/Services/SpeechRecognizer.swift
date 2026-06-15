@@ -1,5 +1,10 @@
 import Foundation
 import AVFoundation
+// 多 target 复用:测试 bundle 里 Protocols/CrashLogger 在 host 模块,需 @testable import;
+// 在 tool target(helper/transcribe)里这些类型同模块,不可 import。
+#if VOWKY_TEST_HOST
+@testable import VowKy
+#endif
 
 final class LocalSpeechRecognizer: SpeechRecognizerProtocol {
 

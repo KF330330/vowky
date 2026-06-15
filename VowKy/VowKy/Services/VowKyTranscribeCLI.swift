@@ -1,4 +1,10 @@
 import Foundation
+// 本文件被 VowKyTranscribe / VowKySpeechHelper / VowKyTests 多 target 复用。
+// 在测试 bundle 里编译时,Protocols/FileTranscriptionService 等类型在 host 模块,
+// 需显式 @testable import;在各 tool target 里这些类型在同模块,不可 import(无 VowKy 模块)。
+#if VOWKY_TEST_HOST
+@testable import VowKy
+#endif
 
 struct VowKyTranscribeCLIOptions: Equatable {
     let outputDirectory: URL
@@ -242,78 +248,6 @@ private struct VowKyFileTranscriptionRunner: VowKyTranscriptionRunning {
         progress: @escaping @MainActor (FileTranscriptionProgress) -> Void
     ) async throws -> String {
         try await service.transcribe(url: url, progress: progress)
-    }
-}
-
-struct VowKyModelLocator {
-    private let fileManager: FileManager
-
-    init(fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-    }
-
-    func modelDirectory(executablePath: String?) throws -> URL {
-        let searchBases = modelSearchBases(executablePath: executablePath)
-
-        for base in searchBases {
-            for modelDirectory in appModelDirectories(for: base) {
-                if hasRequiredModelFiles(in: modelDirectory) {
-                    return modelDirectory
-                }
-            }
-        }
-
-        for modelDirectory in bundleModelDirectories() {
-            if hasRequiredModelFiles(in: modelDirectory) {
-                return modelDirectory
-            }
-        }
-
-        let path = executablePath ?? Bundle.main.bundlePath
-        throw VowKyTranscribeCLIError.modelFilesNotFound(path)
-    }
-
-    private func modelSearchBases(executablePath: String?) -> [URL] {
-        var bases: [URL] = []
-
-        if let executablePath {
-            var url = URL(fileURLWithPath: executablePath).standardizedFileURL
-            while url.path != "/" {
-                if url.pathExtension == "app" {
-                    bases.append(url)
-                    break
-                }
-                url.deleteLastPathComponent()
-            }
-        }
-
-        let bundleURL = Bundle.main.bundleURL.standardizedFileURL
-        if bundleURL.pathExtension == "app" {
-            bases.append(bundleURL)
-        }
-
-        return bases
-    }
-
-    private func appModelDirectories(for appURL: URL) -> [URL] {
-        let resources = appURL.appendingPathComponent("Contents/Resources")
-        return [
-            resources.appendingPathComponent("Models"),
-            resources
-        ]
-    }
-
-    private func bundleModelDirectories() -> [URL] {
-        guard let resources = Bundle.main.resourceURL else { return [] }
-        return [
-            resources.appendingPathComponent("Models"),
-            resources
-        ]
-    }
-
-    private func hasRequiredModelFiles(in directory: URL) -> Bool {
-        fileManager.fileExists(atPath: directory.appendingPathComponent("model.int8.onnx").path)
-            && fileManager.fileExists(atPath: directory.appendingPathComponent("tokens.txt").path)
     }
 }
 

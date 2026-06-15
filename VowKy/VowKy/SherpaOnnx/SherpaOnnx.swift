@@ -2,6 +2,11 @@
 /// Copyright (c)  2023  Xiaomi Corporation
 
 import Foundation  // For NSString
+// 多 target 复用:测试 bundle 里 CrashLogger 在 host 模块,需 @testable import;
+// 在 tool target(helper/transcribe)里 CrashLogger 同模块,不可 import。
+#if VOWKY_TEST_HOST
+@testable import VowKy
+#endif
 
 /// Convert a String from swift to a `const char*` so that we can pass it to
 /// the C language.

@@ -28,6 +28,7 @@ DMG_DIR="${BUILD_DIR}/dmg"
 ARCHIVE_PATH="${ARCHIVE_DIR}/VowKy.xcarchive"
 APP_PATH="${APP_DIR}/VowKy.app"
 HELPER_PATH="${APP_PATH}/Contents/Helpers/vowky-transcribe"
+SPEECH_HELPER_PATH="${APP_PATH}/Contents/Helpers/vowky-speechd"
 DMG_PATH="${DMG_DIR}/${DMG_NAME}"
 NOTARY_UPLOAD_DIR=""
 
@@ -75,8 +76,10 @@ check_app_signature() {
         log_error "${label} 缺少麦克风 entitlement"
         exit 1
     fi
-    if ! grep -q "com.apple.security.cs.allow-unsigned-executable-memory" <<< "$entitlements"; then
-        log_error "${label} 缺少 ONNX runtime entitlement"
+    # 主 app 不再持有 allow-unsigned-executable-memory(ONNX 已移出主进程到 vowky-speechd helper)。
+    # 若主 app 仍带此 entitlement,说明 ONNX 又被链回主进程 —— 视为治本回退,直接失败。
+    if grep -q "com.apple.security.cs.allow-unsigned-executable-memory" <<< "$entitlements"; then
+        log_error "${label} 不应再包含 ONNX runtime entitlement(ONNX 应只在 helper 进程)"
         exit 1
     fi
 
@@ -109,7 +112,9 @@ verify_dmg_contents() {
     hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "$DMG_PATH" >/dev/null
     check_binary_archs "${mount_dir}/VowKy.app/Contents/MacOS/VowKy" "DMG 内 VowKy 主程序"
     check_binary_archs "${mount_dir}/VowKy.app/Contents/Helpers/vowky-transcribe" "DMG 内 vowky-transcribe helper"
+    check_binary_archs "${mount_dir}/VowKy.app/Contents/Helpers/vowky-speechd" "DMG 内 vowky-speechd helper"
     check_helper_signature "${mount_dir}/VowKy.app/Contents/Helpers/vowky-transcribe" "DMG 内 vowky-transcribe helper"
+    check_helper_signature "${mount_dir}/VowKy.app/Contents/Helpers/vowky-speechd" "DMG 内 vowky-speechd helper"
     check_app_signature "${mount_dir}/VowKy.app" "DMG 内 VowKy.app"
     hdiutil detach "$mount_dir" >/dev/null
     rmdir "$mount_dir"
@@ -167,6 +172,7 @@ log_ok "App 导出到 ${APP_PATH}"
 # 防止在 Apple Silicon 构建机上误产出 arm64-only 包，导致 Intel Mac 无法打开。
 check_binary_archs "${APP_PATH}/Contents/MacOS/VowKy" "VowKy 主程序"
 check_binary_archs "${HELPER_PATH}" "vowky-transcribe helper"
+check_binary_archs "${SPEECH_HELPER_PATH}" "vowky-speechd helper"
 check_binary_archs "${APP_PATH}/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle" "Sparkle.framework"
 check_binary_archs "${APP_PATH}/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate" "Sparkle Autoupdate"
 
@@ -207,25 +213,41 @@ sign_transcribe_helper() {
     fi
 }
 
-if [ "$NOTARIZE" = true ]; then
-    # prod: 从内到外递归签名所有二进制（公证要求每个二进制都有 Developer ID + timestamp）
+sign_speech_helper() {
+    # 常驻语音 helper：只需要 ONNX runtime entitlement，不需要麦克风。
+    if [ "$NOTARIZE" = true ]; then
+        codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKySpeechHelper.entitlements" "${SPEECH_HELPER_PATH}"
+    else
+        codesign --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKySpeechHelper.entitlements" "${SPEECH_HELPER_PATH}"
+    fi
+}
+
+sign_sparkle_internals() {
+    # Sparkle 内嵌的 XPC 服务/辅助 app 必须带 Developer ID + matching team ID，
+    # 否则 Sequoia/Tahoe 上进度代理(Updater.app)的 XPC 连接会因 team ID 不匹配失败。
+    # 公证与非公证都要签（仅 timestamp 区别）——这正是之前 SKIP_NOTARIZE 测试版没法测更新的 bug。
+    local ts_flag
+    if [ "$NOTARIZE" = true ]; then ts_flag="--timestamp"; else ts_flag="--timestamp=none"; fi
     # 1. 签名 Sparkle 内嵌的 XPC 服务和辅助 app
     find "${APP_PATH}/Contents/Frameworks" -name "*.xpc" -o -name "*.app" -o -name "Autoupdate" | sort -r | while read -r item; do
-        [ -e "$item" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "$item"
+        [ -e "$item" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime "$ts_flag" "$item"
     done
     # 2. 签名 framework 顶层
     for fw in "${APP_PATH}/Contents/Frameworks/"*.framework; do
-        [ -d "$fw" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp "$fw"
+        [ -d "$fw" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime "$ts_flag" "$fw"
     done
-    # 3. 签名 helper
-fi
+}
+
+# 由内到外签名：Sparkle 内部 → 两个 helper → 主 app。Sparkle 内部不再受 NOTARIZE 门控。
+sign_sparkle_internals
+sign_speech_helper
 sign_transcribe_helper
-# 4. 签名主 app（必须传 --entitlements，否则重签会丢失 entitlements）
 sign_main_app
 log_ok "代码签名完成"
 
 # 验证签名
 check_helper_signature "${HELPER_PATH}" "vowky-transcribe helper"
+check_helper_signature "${SPEECH_HELPER_PATH}" "vowky-speechd helper"
 check_app_signature "${APP_PATH}" "VowKy.app"
 
 # ============================================================
@@ -262,10 +284,12 @@ if [ "$NOTARIZE" = true ]; then
     # 在部分同步目录或钥匙串状态下，staple 后 CMS 可能变成不可验证。
     # 重新签主 app 不改变 CodeDirectory/CDHash，保留公证票据，但能恢复可验证证书链。
     log_info "重新签名并验证 stapled App..."
+    sign_speech_helper
     sign_transcribe_helper
     sign_main_app
     xcrun stapler validate "${APP_PATH}"
     check_helper_signature "${HELPER_PATH}" "stapled vowky-transcribe helper"
+    check_helper_signature "${SPEECH_HELPER_PATH}" "stapled vowky-speechd helper"
     check_app_signature "${APP_PATH}" "stapled VowKy.app"
 fi
 

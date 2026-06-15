@@ -1,4 +1,8 @@
 import Foundation
+// 多 target 复用:测试 bundle 里 PunctuationServiceProtocol 在 host 模块,需 @testable import。
+#if VOWKY_TEST_HOST
+@testable import VowKy
+#endif
 
 final class PunctuationService: PunctuationServiceProtocol {
 

@@ -79,6 +79,13 @@ final class UpdateReminderCoordinator: NSObject, SPUUpdaterDelegate {
         isUserInitiatedCheck = false
     }
 
+    /// Sparkle 即将重启 app 安装更新前,先关掉常驻语音 helper。
+    /// helper 持有 app bundle 内的可执行/模型 mmap,若存活会妨碍 `/Applications/VowKy.app` 的原地替换。
+    /// (applicationWillTerminate 也会兜底关闭,这里是更靠前的显式保险。)
+    func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        HelperTransport.shared.shutdown()
+    }
+
     // MARK: - Decision Logic (testable)
 
     /// 判断后台自动检查是否应该把"发现新版"的弹窗递给用户。

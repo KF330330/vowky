@@ -69,16 +69,14 @@ final class AppState: ObservableObject {
         CrashLogger.log("[AppState] HistoryStore opened")
         startApplicationFocusTracking()
 
-        // 1. Load speech model + punctuation model in background
+        // 1. 预热进程外语音 helper(spawn + 加载模型)。helper 自行加载模型,
+        //    warmUp() 会等到 handshake 就绪;就绪后再切到 .idle 并尝试崩溃恢复。
         state = .loading
-        CrashLogger.log("[AppState] Loading speech model...")
-        if let recognizer = speechRecognizer as? LocalSpeechRecognizer {
-            let punctService = punctuationService as? PunctuationService
+        CrashLogger.log("[AppState] Warming up speech helper...")
+        if let remote = speechRecognizer as? RemoteSpeechRecognizer {
             Task.detached(priority: .userInitiated) {
-                recognizer.loadModel()
-                CrashLogger.log("[AppState] Speech model loaded")
-                punctService?.loadModel()
-                CrashLogger.log("[AppState] Punctuation model loaded")
+                await remote.warmUp()
+                CrashLogger.log("[AppState] Speech helper ready")
                 await MainActor.run {
                     self.state = .idle
                     self.checkForRecovery()
@@ -418,10 +416,6 @@ final class AppState: ObservableObject {
 
     func endRecordingTranscription() {
         isRecordingTranscriptionInProgress = false
-    }
-
-    func makeRecordingStreamingRecognizer() -> StreamingSpeechRecognizerProtocol {
-        LocalStreamingSpeechRecognizer()
     }
 
     func finalSpeechRecognizerForRecordingTranscription() -> SpeechRecognizerProtocol {

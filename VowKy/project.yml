@@ -22,29 +22,34 @@ targets:
       - path: VowKy
         excludes:
           - "Resources/**"
+          # ONNX 推理已移出主进程。下列文件触碰 sherpa C API 或引用具体识别器类型,
+          # 只编进 helper / transcribe / 测试 bundle,主 app 不再链接 onnxruntime。
+          - "SherpaOnnx/**"
+          - "Services/SpeechRecognizer.swift"
+          - "Services/PunctuationService.swift"
+          - "Services/VowKyTranscribeCLI.swift"
+          - "Services/VowKyModelLocator.swift"
       - path: VowKy/Resources
         buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.vowky.app
         INFOPLIST_FILE: VowKy/Info.plist
-        SWIFT_OBJC_BRIDGING_HEADER: VowKy/SherpaOnnx/SherpaOnnx-Bridging-Header.h
-        OTHER_LDFLAGS:
-          - "-lc++"
-          - "-L$(PROJECT_DIR)/Libraries"
-          - "-lonnxruntime"
-        HEADER_SEARCH_PATHS:
-          - "$(PROJECT_DIR)/Libraries/sherpa-onnx.xcframework/macos-arm64_x86_64/Headers"
         CODE_SIGN_IDENTITY: "Apple Development"
         DEVELOPMENT_TEAM: "M7T6PJ8YJZ"
         ENABLE_APP_SANDBOX: NO
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: VowKy/VowKy.entitlements
         MACOSX_DEPLOYMENT_TARGET: "13.0"
+      configs:
+        # Debug/测试:测试 bundle 把识别器源编进来并在测试宿主进程内跑 ONNX(W^X)。
+        # 宿主(主 app)已移除 allow-unsigned-executable-memory entitlement,故 Debug 关 hardened runtime
+        # 让测试进程可分配 W^X;Release 保持 hardened runtime,主 app 也不含 ONNX,签名干净。
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
     entitlements:
       path: VowKy/VowKy.entitlements
       properties:
-        com.apple.security.cs.allow-unsigned-executable-memory: true
         com.apple.security.device.audio-input: true
     dependencies:
       - target: VowKyTranscribe
@@ -52,8 +57,11 @@ targets:
         copy:
           destination: wrapper
           subpath: Contents/Helpers
-      - framework: Libraries/sherpa-onnx.xcframework
-        embed: false
+      - target: VowKySpeechHelper
+        embed: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
       - sdk: Accelerate.framework
       - sdk: Foundation.framework
       - sdk: AVFoundation.framework
@@ -65,8 +73,19 @@ targets:
     platform: macOS
     sources:
       - path: VowKyTests
+      # 识别器相关源已从主 app 排除,这里直接编进测试 bundle 并链接 onnxruntime(测试不分发,可链)。
+      # VOWKY_TEST_HOST 让这些文件 @testable import VowKy 取到 host 模块里的 Protocols/Service 类型。
+      - path: VowKy/SherpaOnnx/SherpaOnnx.swift
+      - path: VowKy/Services/SpeechRecognizer.swift
+      - path: VowKy/Services/PunctuationService.swift
+      - path: VowKy/Services/VowKyTranscribeCLI.swift
+      - path: VowKy/Services/VowKyModelLocator.swift
     dependencies:
       - target: VowKy
+      - framework: Libraries/sherpa-onnx.xcframework
+        embed: false
+      - sdk: Accelerate.framework
+      - sdk: AVFoundation.framework
     settings:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"
@@ -74,6 +93,14 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_IDENTITY: "Apple Development"
         DEVELOPMENT_TEAM: "M7T6PJ8YJZ"
+        SWIFT_OBJC_BRIDGING_HEADER: VowKy/SherpaOnnx/SherpaOnnx-Bridging-Header.h
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VOWKY_TEST_HOST"
+        OTHER_LDFLAGS:
+          - "-lc++"
+          - "-L$(PROJECT_DIR)/Libraries"
+          - "-lonnxruntime"
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/Libraries/sherpa-onnx.xcframework/macos-arm64_x86_64/Headers"
 
   VowKyTranscribe:
     type: tool
@@ -89,6 +116,7 @@ targets:
       - path: VowKy/Services/FileTranscriptionService.swift
       - path: VowKy/Services/TranscriptionOutputNamer.swift
       - path: VowKy/Services/VowKyTranscribeCLI.swift
+      - path: VowKy/Services/VowKyModelLocator.swift
     settings:
       base:
         PRODUCT_NAME: vowky-transcribe
@@ -106,6 +134,46 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: "13.0"
     entitlements:
       path: VowKyTranscribe.entitlements
+      properties:
+        com.apple.security.cs.allow-unsigned-executable-memory: true
+    dependencies:
+      - framework: Libraries/sherpa-onnx.xcframework
+        embed: false
+      - sdk: Accelerate.framework
+      - sdk: Foundation.framework
+      - sdk: AVFoundation.framework
+
+  # 常驻语音 helper:进程外跑 ONNX(SenseVoice 识别 + CT-Transformer 标点),
+  # 主 app 通过 stdin/stdout 二进制帧与它通信。保留 allow-unsigned-executable-memory entitlement。
+  VowKySpeechHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: VowKySpeechHelper                         # main.swift + SpeechIPCServer.swift
+      - path: VowKy/Services/IPC/SpeechIPCWire.swift    # 共享线协议(主 app 也用)
+      - path: VowKy/SherpaOnnx/SherpaOnnx.swift
+      - path: VowKy/Services/CrashLogger.swift
+      - path: VowKy/Services/Protocols.swift
+      - path: VowKy/Services/SpeechRecognizer.swift
+      - path: VowKy/Services/PunctuationService.swift
+      - path: VowKy/Services/VowKyModelLocator.swift
+    settings:
+      base:
+        PRODUCT_NAME: vowky-speechd
+        SWIFT_OBJC_BRIDGING_HEADER: VowKy/SherpaOnnx/SherpaOnnx-Bridging-Header.h
+        OTHER_LDFLAGS:
+          - "-lc++"
+          - "-L$(PROJECT_DIR)/Libraries"
+          - "-lonnxruntime"
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/Libraries/sherpa-onnx.xcframework/macos-arm64_x86_64/Headers"
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: "M7T6PJ8YJZ"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: VowKySpeechHelper.entitlements
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+    entitlements:
+      path: VowKySpeechHelper.entitlements
       properties:
         com.apple.security.cs.allow-unsigned-executable-memory: true
     dependencies:
