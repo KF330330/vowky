@@ -131,16 +131,70 @@ if [ -n "$SPARKLE_SIGNATURE" ]; then
     EDDSA_ATTR=" ${EDDSA_SIG}"
 fi
 
-# 把 release notes 转成 HTML 嵌入 appcast description
-# Sparkle 弹窗的 WebView 直接渲染 HTML：纯 markdown 会挤成一坨没有断行/列表
-if command -v pandoc >/dev/null 2>&1; then
-    RELEASE_NOTES_CONTENT="$(pandoc -f markdown -t html "${RELEASE_NOTES_PATH}")"
-    log_info "release notes 已转为 HTML (pandoc)"
-else
-    # 没 pandoc 兜底：用 <pre> 包裹纯文本，至少保留断行
-    RELEASE_NOTES_CONTENT="<pre>$(cat "${RELEASE_NOTES_PATH}")</pre>"
-    log_warn "未安装 pandoc，release notes 用 <pre> 兜底（建议 brew install pandoc）"
-fi
+# 把 release notes 渲染成「清晰、暗色适配、带『新版本可更新』框定」的 HTML，嵌入 appcast description。
+# Sparkle 更新弹窗的 WebView 直接渲染这段 HTML（弹窗标题栏/按钮是 Sparkle 自带，不可改）。
+# 不依赖 pandoc：内置 awk 转换器对 release notes 的 markdown 子集（标题/列表/段落/链接/加粗）
+# 确定性产出合规 HTML —— 杜绝旧版「没装 pandoc 就退化成 <pre> 等宽纯文本」的丑排版。
+
+# .md 子集 → HTML 片段（剥掉冗余的「VowKy x.y 更新内容」首行，因为下面自带 <h1>）
+md_to_html_fragment() {
+    awk '
+    function esc(s){ gsub(/&/,"\\&amp;",s); gsub(/</,"\\&lt;",s); gsub(/>/,"\\&gt;",s); return s }
+    function inl(s,  out,rest,url,inner,m,tb,txt,prev){
+        while (match(s,/\*\*[^*]+\*\*/)){ inner=substr(s,RSTART+2,RLENGTH-4); s=substr(s,1,RSTART-1) "<strong>" inner "</strong>" substr(s,RSTART+RLENGTH) }
+        # markdown 链接 [text](url)
+        out=""; rest=s
+        while (match(rest,/\[[^]]+\]\([^)]+\)/)){ m=substr(rest,RSTART,RLENGTH); tb=index(m,"]("); txt=substr(m,2,tb-2); url=substr(m,tb+2,length(m)-tb-2); out=out substr(rest,1,RSTART-1) "<a href=\"" url "\">" txt "</a>"; rest=substr(rest,RSTART+RLENGTH) }
+        s=out rest
+        # 裸 URL（跳过已在 href="..." 里的）
+        out=""; rest=s
+        while (match(rest,/https?:\/\/[^ \t"<>]+/)){ url=substr(rest,RSTART,RLENGTH); prev=(RSTART>1)?substr(rest,RSTART-1,1):""; if(prev=="\""){ out=out substr(rest,1,RSTART-1+RLENGTH) } else { out=out substr(rest,1,RSTART-1) "<a href=\"" url "\">" url "</a>" } rest=substr(rest,RSTART+RLENGTH) }
+        return out rest
+    }
+    BEGIN{ inlist=0; started=0 }
+    {
+        line=$0
+        if(!started && line ~ /^#{0,3}[ ]*VowKy /){ next }   # 剥掉首行标题
+        if(!started && line ~ /^[ \t]*$/){ next }             # 跳过开头空行
+        started=1
+        if(line ~ /^[ \t]*$/){ if(inlist){print "</ul>"; inlist=0} next }
+        if(line ~ /^[ \t]*[-*] /){ sub(/^[ \t]*[-*] /,"",line); if(!inlist){print "<ul>"; inlist=1} print "<li>" inl(esc(line)) "</li>"; next }
+        if(inlist){print "</ul>"; inlist=0}
+        if(line ~ /^### /){ sub(/^### /,"",line); print "<h3>" inl(esc(line)) "</h3>"; next }
+        if(line ~ /^#{1,2} /){ sub(/^#{1,2} /,"",line); print "<h2>" inl(esc(line)) "</h2>"; next }
+        print "<p>" inl(esc(line)) "</p>"
+    }
+    END{ if(inlist) print "</ul>" }
+    ' "$1"
+}
+
+build_release_notes_html() {
+    local md="$1" version="$2" body
+    body="$(md_to_html_fragment "$md")"
+    cat <<HTMLDOC
+<style>
+:root{color-scheme:light dark}
+body{font-family:-apple-system,"PingFang SC",sans-serif;margin:18px 20px;line-height:1.6;color:#1d1d1f;-webkit-font-smoothing:antialiased}
+.tag{display:inline-block;font-size:11px;font-weight:600;color:#fff;background:#34c759;border-radius:5px;padding:2px 8px;letter-spacing:.3px}
+h1{font-size:18px;font-weight:700;margin:10px 0 2px}
+h2{font-size:15px;font-weight:600;margin:16px 0 6px}
+h3{font-size:13px;font-weight:600;margin:12px 0 4px}
+.sub{font-size:12px;color:#86868b;margin:0 0 14px}
+ul{padding-left:1.15em;margin:0}
+li{font-size:13px;margin:0 0 9px}
+p{font-size:13px;margin:0 0 10px}
+a{color:#0a84ff;text-decoration:none}
+@media (prefers-color-scheme:dark){body{color:#f5f5f7}.sub{color:#98989d}}
+</style>
+<span class="tag">新版本可更新</span>
+<h1>🦋 VowKy ${version} 已发布</h1>
+<p class="sub">点下方「安装更新」即可升级到最新版</p>
+${body}
+HTMLDOC
+}
+
+RELEASE_NOTES_CONTENT="$(build_release_notes_html "${RELEASE_NOTES_PATH}" "${VERSION}")"
+log_info "release notes 已生成样式化 HTML（内置渲染，无需 pandoc）"
 
 # 生成 appcast.xml
 APPCAST_PATH="${BUILD_DIR}/appcast.xml"
