@@ -25,4 +25,17 @@ final class VowKyUpdaterUserDriver: SPUStandardUserDriver {
         }
         presentUpdate(appcastItem, reply)
     }
+
+    /// 「已是最新版」提示。Sparkle 标准实现用的是 Sparkle 自带按系统语言挑的文案，
+    /// 会出现「App 设英文但弹窗中文」的混杂。这里改用 VowKy 自己的本地化文案（跟随 App 内语言）。
+    override func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        let current = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? ""
+        let alert = NSAlert()
+        alert.messageText = LL("update.upToDate.title")
+        alert.informativeText = LL("update.upToDate.message", current)
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: LL("common.ok"))
+        alert.runModal()
+        acknowledgement()
+    }
 }

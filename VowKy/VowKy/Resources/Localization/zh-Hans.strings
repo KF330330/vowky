@@ -405,3 +405,7 @@
 "bilingual.export.translationFailed" = "（翻译失败）";
 "bilingual.export.filenameSuffix" = "双语";
 "history.export.csvHeader" = "时间,内容,类型";
+
+/* Update: already up to date (Sparkle no-update dialog, overridden) */
+"update.upToDate.title" = "您使用的就是最新版！";
+"update.upToDate.message" = "您使用的已是最新版本（当前运行 %@）。";

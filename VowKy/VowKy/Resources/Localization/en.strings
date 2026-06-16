@@ -405,3 +405,7 @@
 "bilingual.export.translationFailed" = "(translation failed)";
 "bilingual.export.filenameSuffix" = "Bilingual";
 "history.export.csvHeader" = "Time,Content,Type";
+
+/* Update: already up to date (Sparkle no-update dialog, overridden) */
+"update.upToDate.title" = "You're up to date!";
+"update.upToDate.message" = "You're already on the latest version (you're running %@).";
