@@ -225,7 +225,12 @@ codesign_timestamped() {
 # 不让这种包出门；ALLOW_NO_TIMESTAMP=1 时降级为警告(仅供本地非更新测试)。
 assert_secure_timestamp() {
     local target="$1"; local label="${2:-$1}"
-    if codesign -dvv "$target" 2>&1 | grep -q '^Timestamp='; then
+    # 用变量捕获 + bash 匹配，不要用 `| grep -q`：pipefail 下 grep -q 命中即关管道 →
+    # codesign 收到 SIGPIPE 退非零 → 整条管道非零 → 即使有时间戳也被误判为「无」。
+    # 给 $info 前置换行，使「行首 Timestamp=」无论在首行还是中间都能匹配。
+    local info
+    info="$(codesign -dvv "$target" 2>&1 || true)"
+    if [[ $'\n'"$info" == *$'\n'"Timestamp="* ]]; then
         log_ok "  安全时间戳 ✓ ${label}"
         return 0
     fi
