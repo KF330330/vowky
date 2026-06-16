@@ -195,46 +195,91 @@ codesign_with_retry() {
     return 1
 }
 
+# 始终带 Apple 安全时间戳签名（自更新的硬性要求，与「公证」解耦）。
+#
+# 为什么：安全时间戳(codesign --timestamp，走 Apple TSA timestamp.apple.com)与公证(notarytool)
+# 是两件事。没有安全时间戳的签名(只有 Signed Time)拿不到 macOS Sequoia/Tahoe「App 管理」的
+# 「同开发者自更新豁免」→ Sparkle 原地替换被系统拦 → 用户点更新报「更新错误」。
+# 这是历史上「SKIP_NOTARIZE 测试版没法自更新」的真因，所以 SKIP_NOTARIZE 也必须带时间戳。
+#
+# 时间戳是轻量 TSA 调用，夜里也能成；万一 TSA 真不可达，默认硬失败(不让无时间戳的包出门)，
+# 只有显式 ALLOW_NO_TIMESTAMP=1 才允许回退到 --timestamp=none(并醒目警告，仅供本地非更新测试)。
+# 用法: codesign_timestamped <codesign 参数...>（不要自己带 --timestamp / --timestamp=none）
+codesign_timestamped() {
+    if codesign_with_retry --timestamp "$@"; then
+        return 0
+    fi
+    if [ "${ALLOW_NO_TIMESTAMP:-}" = "1" ]; then
+        log_warn "⚠️⚠️ Apple 时间戳服务器不可达——按 ALLOW_NO_TIMESTAMP=1 回退为【无安全时间戳】签名。"
+        log_warn "⚠️⚠️ 此产物不能用于自更新测试或分发(macOS「App 管理」会拦截原地更新)。仅供本地非更新测试。"
+        codesign --timestamp=none "$@"
+        return $?
+    fi
+    log_error "Apple 时间戳服务器(timestamp.apple.com)不可达，无法生成可自更新的签名。"
+    log_error "请检查网络/代理后重试；若确需无时间戳的本地测试包，用 ALLOW_NO_TIMESTAMP=1 重跑。"
+    exit 1
+}
+
+# 自更新护栏：断言单个组件带有 Apple 安全时间戳(Timestamp=)，而非仅本地 Signed Time=。
+# 缺时间戳会被 macOS「App 管理」拦截原地自更新(点更新报「更新错误」)，所以默认 exit 1，
+# 不让这种包出门；ALLOW_NO_TIMESTAMP=1 时降级为警告(仅供本地非更新测试)。
+assert_secure_timestamp() {
+    local target="$1"; local label="${2:-$1}"
+    if codesign -dvv "$target" 2>&1 | grep -q '^Timestamp='; then
+        log_ok "  安全时间戳 ✓ ${label}"
+        return 0
+    fi
+    if [ "${ALLOW_NO_TIMESTAMP:-}" = "1" ]; then
+        log_warn "  安全时间戳 ✗ ${label}（仅 Signed Time）——ALLOW_NO_TIMESTAMP=1 放行；此包不可自更新。"
+        return 0
+    fi
+    log_error "  安全时间戳 ✗ ${label}：缺少 Apple 可信时间戳(仅 Signed Time)。"
+    log_error "  此包会被 macOS「App 管理」拦截原地自更新(用户点更新报「更新错误」)。中止构建。"
+    exit 1
+}
+
+# 自更新护栏总入口：逐个校验主 app、两个 helper、Sparkle 全部内部组件都带安全时间戳。
+verify_secure_timestamps_bundle() {
+    log_info "校验安全时间戳(自更新必需)..."
+    assert_secure_timestamp "${APP_PATH}" "VowKy.app"
+    assert_secure_timestamp "${SPEECH_HELPER_PATH}" "vowky-speechd"
+    assert_secure_timestamp "${HELPER_PATH}" "vowky-transcribe"
+    # Sparkle 内部组件(与 sign_sparkle_internals 同一清单)
+    while IFS= read -r item; do
+        [ -e "$item" ] && assert_secure_timestamp "$item" "$(basename "$item")"
+    done < <(find "${APP_PATH}/Contents/Frameworks" -name "*.xpc" -o -name "*.app" -o -name "Autoupdate")
+    for fw in "${APP_PATH}/Contents/Frameworks/"*.framework; do
+        [ -d "$fw" ] && assert_secure_timestamp "$fw" "$(basename "$fw")"
+    done
+    log_ok "全部组件均带安全时间戳"
+}
+
 sign_main_app() {
     # 主 app 必须带 entitlements；否则麦克风权限会被 TCC 静默拒绝。
-    if [ "$NOTARIZE" = true ]; then
-        codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
-    else
-        codesign --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
-    fi
+    codesign_timestamped --force --sign "${SIGN_IDENTITY}" --options runtime --entitlements "${VOWKY_DIR}/VowKy/VowKy.entitlements" "${APP_PATH}"
 }
 
 sign_transcribe_helper() {
     # helper 不需要麦克风权限，只需要 ONNX runtime entitlement。
-    if [ "$NOTARIZE" = true ]; then
-        codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKyTranscribe.entitlements" "${HELPER_PATH}"
-    else
-        codesign --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKyTranscribe.entitlements" "${HELPER_PATH}"
-    fi
+    codesign_timestamped --force --sign "${SIGN_IDENTITY}" --options runtime --entitlements "${VOWKY_DIR}/VowKyTranscribe.entitlements" "${HELPER_PATH}"
 }
 
 sign_speech_helper() {
     # 常驻语音 helper：只需要 ONNX runtime entitlement，不需要麦克风。
-    if [ "$NOTARIZE" = true ]; then
-        codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp --entitlements "${VOWKY_DIR}/VowKySpeechHelper.entitlements" "${SPEECH_HELPER_PATH}"
-    else
-        codesign --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none --entitlements "${VOWKY_DIR}/VowKySpeechHelper.entitlements" "${SPEECH_HELPER_PATH}"
-    fi
+    codesign_timestamped --force --sign "${SIGN_IDENTITY}" --options runtime --entitlements "${VOWKY_DIR}/VowKySpeechHelper.entitlements" "${SPEECH_HELPER_PATH}"
 }
 
 sign_sparkle_internals() {
     # Sparkle 内嵌的 XPC 服务/辅助 app 必须带 Developer ID + matching team ID，
     # 否则 Sequoia/Tahoe 上进度代理(Updater.app)的 XPC 连接会因 team ID 不匹配失败。
-    # 公证与非公证都要签（仅 timestamp 区别）——这正是之前 SKIP_NOTARIZE 测试版没法测更新的 bug。
-    local ts_flag
-    if [ "$NOTARIZE" = true ]; then ts_flag="--timestamp"; else ts_flag="--timestamp=none"; fi
+    # 公证与非公证都要签、且都必须带安全时间戳(见 codesign_timestamped 注释)。
     # 1. 签名 Sparkle 内嵌的 XPC 服务和辅助 app
     find "${APP_PATH}/Contents/Frameworks" -name "*.xpc" -o -name "*.app" -o -name "Autoupdate" | sort -r | while read -r item; do
-        [ -e "$item" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime "$ts_flag" "$item"
+        [ -e "$item" ] && codesign_timestamped --force --sign "${SIGN_IDENTITY}" --options runtime "$item"
     done
     # 2. 签名 framework 顶层
     for fw in "${APP_PATH}/Contents/Frameworks/"*.framework; do
-        [ -d "$fw" ] && codesign_with_retry --force --sign "${SIGN_IDENTITY}" --options runtime "$ts_flag" "$fw"
+        [ -d "$fw" ] && codesign_timestamped --force --sign "${SIGN_IDENTITY}" --options runtime "$fw"
     done
 }
 
@@ -244,6 +289,9 @@ sign_speech_helper
 sign_transcribe_helper
 sign_main_app
 log_ok "代码签名完成"
+
+# 自更新护栏：所有组件必须带 Apple 安全时间戳，否则原地自更新会被系统拦截。
+verify_secure_timestamps_bundle
 
 # 验证签名
 check_helper_signature "${HELPER_PATH}" "vowky-transcribe helper"
@@ -318,12 +366,10 @@ log_ok "DMG 创建完成: ${DMG_PATH}"
 # 7. 签名 DMG
 # ============================================================
 log_info "签名 DMG..."
-if [ "$NOTARIZE" = true ]; then
-    codesign_with_retry --force --sign "${SIGN_IDENTITY}" --timestamp "${DMG_PATH}"
-else
-    codesign --force --sign "${SIGN_IDENTITY}" --timestamp=none "${DMG_PATH}"
-fi
+codesign_timestamped --force --sign "${SIGN_IDENTITY}" "${DMG_PATH}"
 log_ok "DMG 签名完成"
+# 自更新护栏：DMG 也必须带安全时间戳
+assert_secure_timestamp "${DMG_PATH}" "DMG"
 
 # ============================================================
 # 8. 公证 DMG (仅 prod)

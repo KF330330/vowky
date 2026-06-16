@@ -50,6 +50,7 @@ enum UpdateLogger {
         log("自检 检查间隔               = \(Int(interval))s")
         if let lastCheck { log("自检 上次检查时间           = \(lastCheck)") }
         log("自检 主进程代码签名         = \(selfCodeSignatureStatus())   // 必须 VALID；INVALID 会被 macOS「App 管理」拦截原地自更新")
+        log("自检 安全时间戳             = \(selfSecureTimestampStatus())   // 自更新硬性要求；无安全时间戳则点更新报「更新错误」")
     }
 
     /// 单条带时间戳的日志。
@@ -71,6 +72,35 @@ enum UpdateLogger {
         }
         let checkStatus = SecCodeCheckValidity(code, SecCSFlags(rawValue: 0), nil)
         return checkStatus == errSecSuccess ? "VALID" : "INVALID (OSStatus \(checkStatus))"
+    }
+
+    /// 检查「主进程自身代码签名是否带 Apple 安全时间戳」。
+    /// 无安全时间戳（只有本地 Signed Time）的包，会被 macOS Sequoia/Tahoe「App 管理」拒绝
+    /// 「同开发者自更新豁免」→ Sparkle 原地替换被拦 → 用户点更新报「更新错误」。这是历史上
+    /// SKIP_NOTARIZE 测试包「能下载、装不上」的真因。通过 spawn `codesign -dvv` 读自身签名信息
+    /// （与 `AppDelegate.logLaunchDiagnostics` 同一手法；本 App 未沙箱，允许 Process）。
+    static func selfSecureTimestampStatus() -> String {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["-dvv", Bundle.main.bundlePath]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = pipe   // codesign 的 -d 信息写到 stderr
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let out = String(data: data, encoding: .utf8) ?? ""
+            if out.contains("\nTimestamp=") || out.hasPrefix("Timestamp=") {
+                return "✅ 有（可自更新）"
+            }
+            if out.contains("Signed Time=") {
+                return "❌ 无安全时间戳（仅 Signed Time → 会被 App 管理拦截自更新）"
+            }
+            return "未知（codesign 输出无 Timestamp/Signed Time 字段）"
+        } catch {
+            return "未知（codesign 调用失败: \(error.localizedDescription)）"
+        }
     }
 
     // MARK: - Private
