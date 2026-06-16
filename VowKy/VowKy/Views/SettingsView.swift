@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import ServiceManagement
 import Combine
+import Sparkle
 
 // MARK: - Settings Window Controller
 
@@ -11,15 +12,20 @@ final class SettingsWindowController {
 
     private var window: NSWindow?
     private var titleObserver: AnyCancellable?
+    private weak var updater: SPUUpdater?
+    private weak var updateCoordinator: UpdateReminderCoordinator?
 
-    func showWindow() {
+    /// 由 MenuBarView 调用时传入 updater + coordinator，让设置页的「自动检查更新」开关与「检查更新」按钮可用。
+    func showWindow(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil) {
+        if let updater { self.updater = updater }
+        if let updateCoordinator { self.updateCoordinator = updateCoordinator }
         if let window = window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let settingsView = SettingsView()
+        let settingsView = SettingsView(updater: self.updater, updateCoordinator: self.updateCoordinator)
             .environmentObject(LocalizationManager.shared)
         let hostingController = NSHostingController(rootView: settingsView)
 
@@ -163,9 +169,20 @@ struct SettingsView: View {
     @State private var isHoldMode = HotkeyConfig.current.isHoldMode
     @StateObject private var hotkeyRecorder = HotkeyRecorder()
     @State private var autoCopyToClipboard = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
+    @State private var automaticUpdateChecks: Bool = {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: VowKyApp.automaticUpdateChecksDefaultsKey) == nil {
+            return true
+        }
+        return defaults.bool(forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
+    }()
     @State private var permissionRefreshTimer: Timer?
     /// 待确认切换的目标语言（非 nil 时弹「需重启」确认框）。
     @State private var pendingLanguage: AppLanguage?
+
+    private weak var updater: SPUUpdater?
+    private weak var updateCoordinator: UpdateReminderCoordinator?
+    @ObservedObject private var updateViewModel: CheckForUpdatesViewModel
 
     // 翻译
     @State private var translationEnabled: Bool
@@ -177,7 +194,11 @@ struct SettingsView: View {
     @State private var translationTestResult: String?
     @State private var translationTestInProgress: Bool = false
 
-    init() {
+    init(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil) {
+        self.updater = updater
+        self.updateCoordinator = updateCoordinator
+        self.updateViewModel = CheckForUpdatesViewModel(updater: updater)
+
         let translationConfig = TranslationConfigStore.load()
         _translationEnabled     = State(initialValue: translationConfig.enabled)
         _translationEngine      = State(initialValue: translationConfig.engine)
@@ -279,6 +300,22 @@ struct SettingsView: View {
                     .onChange(of: autoCopyToClipboard) { newValue in
                         UserDefaults.standard.set(newValue, forKey: "autoCopyToClipboard")
                     }
+                Toggle(loc.string("settings.update.autoCheck"), isOn: $automaticUpdateChecks)
+                    .onChange(of: automaticUpdateChecks) { newValue in
+                        UserDefaults.standard.set(newValue, forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
+                        updater?.automaticallyChecksForUpdates = newValue
+                    }
+                HStack {
+                    Text(loc.string("settings.update.checkNowLabel"))
+                    Spacer()
+                    Button(loc.string("settings.update.checkButton")) {
+                        guard let updater else { return }
+                        updateCoordinator?.userInitiatedCheck(updater: updater)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(updater == nil || !updateViewModel.canCheckForUpdates)
+                }
             }
 
             // Language

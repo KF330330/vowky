@@ -15,7 +15,6 @@
 "menu.returnToRecording" = "Return to recording window";
 "menu.record" = "Record";
 "menu.transcribeFile" = "Transcribe file…";
-"menu.checkUpdates" = "Check for Updates";
 "menu.settings" = "Settings";
 "menu.quit" = "Quit VowKy";
 "menu.status.recording" = "Recording…";
@@ -54,6 +53,9 @@
 "settings.section.general" = "General";
 "settings.general.launchAtLogin" = "Launch at login";
 "settings.general.autoCopy" = "Copy to clipboard after recognition";
+"settings.update.autoCheck" = "Automatically check for updates";
+"settings.update.checkNowLabel" = "Check for updates";
+"settings.update.checkButton" = "Check";
 
 /* ===== Settings: Language ===== */
 "settings.section.language" = "Language";

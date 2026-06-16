@@ -15,7 +15,6 @@
 "menu.returnToRecording" = "返回录音窗口";
 "menu.record" = "录音";
 "menu.transcribeFile" = "转录文件...";
-"menu.checkUpdates" = "检查更新";
 "menu.settings" = "设置";
 "menu.quit" = "退出 VowKy";
 "menu.status.recording" = "录音中...";
@@ -54,6 +53,9 @@
 "settings.section.general" = "通用";
 "settings.general.launchAtLogin" = "开机自启";
 "settings.general.autoCopy" = "识别后自动复制到剪贴板";
+"settings.update.autoCheck" = "自动检查更新";
+"settings.update.checkNowLabel" = "检查更新";
+"settings.update.checkButton" = "检查";
 
 /* ===== 设置：语言 ===== */
 "settings.section.language" = "语言";
