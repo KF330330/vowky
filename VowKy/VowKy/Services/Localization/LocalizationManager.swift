@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 /// 全 App 唯一的本地化中枢。`@Published language` 改变时，所有观察它的 SwiftUI 视图
 /// （含各个独立 NSHostingController 窗口 + 菜单栏 popover）同时失效重渲染 → 切换语言实时生效、无需重启。
@@ -21,15 +22,27 @@ final class LocalizationManager: ObservableObject {
         self.table = LocalizationManager.loadTable(for: lang)
     }
 
-    /// 切换语言：持久化 + 重载字符串表 + 触发全量重渲染。
-    func setLanguage(_ lang: AppLanguage) {
+    /// 切换语言：持久化偏好 + 写 AppleLanguages（让 Sparkle / 系统标准 UI 也跟随）+ **重启 App**。
+    /// 为什么重启：Sparkle 弹窗（含「检查中…」「下载中…」进度窗）的语言在进程启动时由 AppleLanguages 固定，
+    /// 无法热切；重启后自绘 UI + Sparkle + 系统对话框统一为新语言，彻底避免中英混杂。
+    func applyLanguageAndRestart(_ lang: AppLanguage) {
         guard lang != language else { return }
         LanguagePreferenceStore.save(lang)
-        // 同步 AppleLanguages：让 Sparkle 进度/安装窗口、系统标准 UI 在下次启动也跟随新语言。
-        // （我们自绘 UI 立即切换；Sparkle/系统这类无法热切的部分在重启后对齐。）
         UserDefaults.standard.set([lang.rawValue], forKey: "AppleLanguages")
-        table = LocalizationManager.loadTable(for: lang)
-        language = lang   // @Published → objectWillChange → 所有依赖视图重算 body
+        UserDefaults.standard.synchronize()
+        Self.relaunch()
+    }
+
+    /// 干净重启：detached shell 先等当前进程退出、再 `open -n`，避免新旧实例重叠
+    /// （重叠会让全局热键 tap、常驻语音 helper 端口冲突）。
+    private static func relaunch() {
+        let bundlePath = Bundle.main.bundlePath
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "while /bin/kill -0 \(pid) >/dev/null 2>&1; do sleep 0.1; done; /usr/bin/open -n \"\(bundlePath)\""]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 
     /// 查表取本地化串；命中后用 String(format:) 处理 %@ / %lld 等占位符。查不到回退 key 本身（保证不空白、不崩）。

@@ -164,6 +164,8 @@ struct SettingsView: View {
     @StateObject private var hotkeyRecorder = HotkeyRecorder()
     @State private var autoCopyToClipboard = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
     @State private var permissionRefreshTimer: Timer?
+    /// 待确认切换的目标语言（非 nil 时弹「需重启」确认框）。
+    @State private var pendingLanguage: AppLanguage?
 
     // 翻译
     @State private var translationEnabled: Bool
@@ -283,7 +285,10 @@ struct SettingsView: View {
             Section(loc.string("settings.section.language")) {
                 Picker(loc.string("settings.language.picker"), selection: Binding(
                     get: { loc.language },
-                    set: { LocalizationManager.shared.setLanguage($0) }
+                    set: { newLang in
+                        // 不立即切换：先弹确认，确认后写偏好并重启（见 onChange/alert 处理）。
+                        if newLang != loc.language { pendingLanguage = newLang }
+                    }
                 )) {
                     ForEach(AppLanguage.allCases) { lang in
                         Text(lang.displayName).tag(lang)
@@ -395,6 +400,24 @@ struct SettingsView: View {
         .onDisappear {
             hotkeyRecorder.stop()
             stopPermissionRefresh()
+        }
+        .alert(
+            loc.string("settings.language.restartTitle"),
+            isPresented: Binding(
+                get: { pendingLanguage != nil },
+                set: { if !$0 { pendingLanguage = nil } }
+            )
+        ) {
+            Button(loc.string("settings.language.restartConfirm")) {
+                if let lang = pendingLanguage {
+                    LocalizationManager.shared.applyLanguageAndRestart(lang)
+                }
+            }
+            Button(loc.string("common.cancel"), role: .cancel) {
+                pendingLanguage = nil
+            }
+        } message: {
+            Text(loc.string("settings.language.restartMessage"))
         }
     }
 

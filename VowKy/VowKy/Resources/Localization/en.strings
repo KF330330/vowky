@@ -406,7 +406,7 @@
 "bilingual.export.filenameSuffix" = "Bilingual";
 "history.export.csvHeader" = "Time,Content,Type";
 
-/* Update: already up to date (Sparkle no-update dialog, overridden) */
-"update.upToDate.title" = "You're up to date!";
-"update.upToDate.message" = "You're already on the latest version (you're running %@).";
-"update.error.title" = "Update Error";
+/* Language switch restart confirmation */
+"settings.language.restartTitle" = "Restart Required";
+"settings.language.restartMessage" = "Switching the language will restart VowKy so the change applies everywhere.";
+"settings.language.restartConfirm" = "Restart";
