@@ -5,6 +5,7 @@ import SwiftUI
 /// 翻译启用时替换转写卡片里的 TextEditor：每段原文下方紧跟弱化样式的译文，
 /// partial 段半透明，失败段显示角标 + 重试。
 struct BilingualTranscriptView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var coordinator: TranslationCoordinator
     let emptyText: String
 
@@ -121,6 +122,7 @@ private struct ViewportHeightKey: PreferenceKey {
 }
 
 private struct JumpToBottomButton: View {
+    @EnvironmentObject private var loc: LocalizationManager
     let action: () -> Void
 
     var body: some View {
@@ -133,11 +135,12 @@ private struct JumpToBottomButton: View {
                 .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
-        .help("回到最新")
+        .help(loc.string("bilingual.jumpToBottom"))
     }
 }
 
 private struct BilingualParagraphRow: View {
+    @EnvironmentObject private var loc: LocalizationManager
     let paragraph: TranscriptParagraph
     let onRetry: () -> Void
 
@@ -179,7 +182,7 @@ private struct BilingualParagraphRow: View {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.mini)
-                    Text("翻译中…")
+                    Text(loc.string("bilingual.translating"))
                         .font(.system(size: 11))
                         .foregroundColor(RecordingTheme.textMuted)
                 }
@@ -194,7 +197,7 @@ private struct BilingualParagraphRow: View {
                     .font(.system(size: 11))
                     .foregroundColor(RecordingTheme.textMuted)
                     .lineLimit(1)
-                Button("重试", action: onRetry)
+                Button(loc.string("bilingual.retry"), action: onRetry)
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(RecordingTheme.accentDark)

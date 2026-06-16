@@ -1,0 +1,407 @@
+/* VowKy localized strings — English (default) */
+
+/* ===== Common ===== */
+"common.ok" = "OK";
+"common.cancel" = "Cancel";
+
+/* ===== Window titles ===== */
+"window.settings.title" = "VowKy Settings";
+"window.whatsNew.title" = "What's New in VowKy";
+
+/* ===== Menu bar ===== */
+"menu.recentResults" = "History";
+"menu.copyToClipboard" = "Copy to clipboard";
+"menu.viewAllHistory" = "View all history";
+"menu.returnToRecording" = "Return to recording window";
+"menu.record" = "Record";
+"menu.transcribeFile" = "Transcribe file…";
+"menu.checkUpdates" = "Check for Updates";
+"menu.settings" = "Settings";
+"menu.quit" = "Quit VowKy";
+"menu.status.recording" = "Recording…";
+"menu.status.transcribingFile" = "Transcribing file…";
+"menu.status.loadingModel" = "Loading model…";
+"menu.status.needAccessibility" = "Accessibility permission required";
+"menu.status.ready" = "Ready (Option+Space)";
+"menu.status.recognizing" = "Recognizing…";
+"menu.status.outputting" = "Outputting…";
+
+/* ===== Settings: Hotkey ===== */
+"settings.section.hotkey" = "Hotkey";
+"settings.hotkey.voiceInput" = "Voice input";
+"settings.hotkey.recording" = "Press new shortcut…";
+"settings.hotkey.modify" = "Change";
+"settings.hotkey.trigger" = "Trigger mode";
+"settings.hotkey.trigger.toggle" = "Toggle";
+"settings.hotkey.trigger.hold" = "Hold to talk";
+
+/* ===== Settings: Model ===== */
+"settings.section.model" = "Speech Model";
+"settings.model.label" = "Model";
+"settings.model.engine" = "Engine";
+"settings.model.engine.value" = "sherpa-onnx (local)";
+
+/* ===== Settings: Permissions ===== */
+"settings.section.permissions" = "Permissions";
+"settings.permission.accessibility" = "Accessibility";
+"settings.permission.granted" = "Granted";
+"settings.permission.denied" = "Not granted";
+"settings.permission.openSettings" = "Open Settings";
+"settings.permission.microphone" = "Microphone";
+"settings.permission.systemManaged" = "Managed by system";
+
+/* ===== Settings: General ===== */
+"settings.section.general" = "General";
+"settings.general.launchAtLogin" = "Launch at login";
+"settings.general.autoCopy" = "Copy to clipboard after recognition";
+
+/* ===== Settings: Language ===== */
+"settings.section.language" = "Language";
+"settings.language.picker" = "Display language";
+
+/* ===== Settings: Translation ===== */
+"settings.section.translation" = "Translation (recording window)";
+"settings.translation.enable" = "Enable real-time translation";
+"settings.translation.enable.subtitle" = "Show a live translation under each line of the transcript while recording";
+"settings.translation.engine" = "Translation engine";
+"settings.translation.engine.apple" = "System offline translation";
+"settings.translation.targetLang" = "Target language";
+"settings.translation.apple.note" = "Fully offline, translated by macOS. The system downloads an offline language pack the first time you use a language.";
+"settings.translation.quickFill" = "Quick fill";
+"settings.translation.selectProvider" = "Choose provider";
+"settings.translation.llm.recommend" = "Recommended: Alibaba Qwen-MT — a dedicated translation model that is fast, high-quality, cheap, and reachable from mainland China. After filling it in, just add your API Key below.";
+"settings.translation.llm.baseURL" = "API URL";
+"settings.translation.llm.model" = "Model";
+"settings.translation.llm.apiKey" = "API Key";
+"settings.translation.llm.note" = "Any service compatible with the OpenAI Chat Completions format (DeepSeek, Qwen, OpenAI, etc.). Your text is sent to that service — mind your privacy.";
+"settings.translation.llm.test" = "Test connection";
+"settings.translation.llm.testSuccess" = "✓ Connected: %@";
+"settings.translation.llm.testFail" = "✗ %@";
+
+/* ===== What's New ===== */
+"whatsNew.updated" = "VowKy Updated";
+"whatsNew.version" = "Version %@";
+"releaseNotes.fallback" = "No detailed notes for this update.\n\nVisit https://github.com/KF330330/vowky/releases for the full release notes.";
+
+/* Onboarding */
+"window.onboarding.title" = "VowKy Setup Wizard";
+
+"onboarding.nav.previous" = "Back";
+"onboarding.nav.next" = "Next";
+"onboarding.nav.finish" = "Done";
+
+"onboarding.welcome.title" = "Welcome to VowKy";
+"onboarding.welcome.subtitle" = "A macOS menu bar voice input tool\nPress the hotkey to speak, and your text appears right at the cursor";
+"onboarding.welcome.featureOffline" = "Fully offline, no internet required";
+"onboarding.welcome.featurePrivacy" = "Privacy-first, your voice never leaves the device";
+"onboarding.welcome.featureChinese" = "Supports Chinese speech recognition";
+"onboarding.welcome.featureGlobal" = "Global hotkey, works in any app";
+
+"onboarding.permission.title" = "Grant Accessibility";
+"onboarding.permission.description" = "VowKy needs Accessibility permission to register the global hotkey and type text.\n\nAfter clicking the button below, find VowKy in System Settings and turn on the switch.";
+"onboarding.permission.granted" = "Accessibility permission granted";
+"onboarding.permission.openSettings" = "Open System Settings";
+"onboarding.permission.waiting" = "Waiting for authorization...";
+"onboarding.permission.skipHint" = "You can also click \"Next\" to set this up later";
+
+"onboarding.hotkey.title" = "Set Up the Hotkey";
+"onboarding.hotkey.currentLabel" = "Current voice input hotkey:";
+"onboarding.hotkey.pressNew" = "Press the new hotkey...";
+"onboarding.hotkey.cancelRecord" = "Cancel";
+"onboarding.hotkey.changeButton" = "Change Hotkey";
+"onboarding.hotkey.conflictTitle" = "Hotkey Conflict";
+"onboarding.hotkey.conflictMessage" = "The system's \"Select the previous input source\" shortcut also uses Option+Space, which conflicts with VowKy.\nPlease change or disable it in \"System Settings > Keyboard > Keyboard Shortcuts > Input Sources\".";
+"onboarding.hotkey.openKeyboardSettings" = "Open Keyboard Settings";
+
+"onboarding.tryIt.title" = "Try It Out";
+"onboarding.tryIt.modelLoading" = "Loading the speech model, please wait...";
+"onboarding.tryIt.pressToStart" = "Press %@ to start speaking";
+"onboarding.tryIt.pressToStop" = "Press %@ again when you're done";
+"onboarding.tryIt.listening" = "Listening...";
+"onboarding.tryIt.pressToStopShort" = "Press %@ when you're done";
+"onboarding.tryIt.recognizing" = "Recognizing...";
+"onboarding.tryIt.success" = "Recognition succeeded!";
+"onboarding.tryIt.tryAgain" = "Try Again";
+"onboarding.tryIt.noVoice" = "No voice detected";
+"onboarding.tryIt.noVoiceHint" = "Make sure your microphone works, then try again";
+"onboarding.tryIt.retry" = "Retry";
+
+"onboarding.menuBar.title" = "Menu Bar";
+"onboarding.menuBar.description" = "VowKy lives in the menu bar at the top-right of your screen\nClick the icon to view status, recognition history, and settings";
+
+/* File transcription */
+"window.fileTranscription.title" = "VowKy File Transcription";
+
+"file.title" = "File Transcription";
+"file.subtitle" = "Batch audio & video, processed locally offline";
+"file.selectFile" = "Select a file";
+
+"file.action.transcribeAll" = "Transcribe All";
+"file.action.chooseFile" = "Choose File";
+"file.action.retry" = "Retry";
+"file.action.cancel" = "Cancel";
+"file.action.clear" = "Clear";
+"file.action.saveAs" = "Save As";
+"file.action.revealInFinder" = "Show in Finder";
+
+"file.help.transcribeAll" = "Transcribe all waiting or cancelled files in the queue";
+"file.help.transcribeThis" = "Transcribe only this file";
+"file.help.removeFromQueue" = "Remove from queue";
+"file.help.transcribingNow" = "This file is being transcribed";
+"file.help.revealMarkdown" = "Open the location of the auto-saved .md file";
+"file.help.noMarkdownYet" = "No .md file generated yet";
+
+"file.drop.prompt" = "Drop audio or video files here";
+"file.drop.release" = "Release to add to queue";
+"file.drop.formats" = "Supports batch selection of MP3, M4A, MP4, MOV, WAV, FLAC and more — all processed locally.";
+
+"file.queue.title" = "Queue";
+"file.queue.fileCount" = "%lld files";
+
+"file.result.title" = "Transcription Result";
+"file.result.charCount" = "%lld characters";
+
+"file.row.waiting" = "Waiting";
+"file.row.completed" = "Done";
+"file.row.cancelled" = "Cancelled";
+"file.row.failed" = "Failed";
+
+"file.summary.chooseOrDrop" = "Choose or drop files";
+"file.summary.completedOfTotal" = "%lld / %lld completed";
+"file.summary.completedFailed" = "%lld done · %lld failed";
+"file.summary.allCompleted" = "All completed";
+"file.summary.cancelledCanRestart" = "Cancelled · can restart";
+"file.summary.pendingCount" = "%lld to transcribe";
+
+"file.header.transcribingCanAdd" = "Transcribing — you can keep adding files";
+"file.header.cancelledCanRestart" = "Cancelled — you can restart";
+"file.header.readyToTranscribe" = "Ready to transcribe";
+
+"file.status.chooseOrDropMedia" = "Choose or drop audio/video files";
+"file.status.transcribingProgress" = "Transcribing · %lld / %lld";
+"file.status.completedFailedCount" = "%lld completed, %lld failed";
+"file.status.allCompleted" = "All transcriptions completed";
+"file.status.cancelled" = "Cancelled";
+"file.status.readingAudio" = "Reading audio track...";
+"file.status.transcribing" = "Transcribing...";
+"file.status.transcribingSegment" = "Transcribing segment %lld / %lld";
+"file.status.transcribeCompleted" = "Transcription completed";
+"file.status.cancelledKeptResult" = "Cancelled — current result kept";
+
+"file.badge.waitingContent" = "Waiting";
+"file.badge.editableResult" = "Editable result";
+"file.badge.done" = "Done";
+"file.badge.noResult" = "No result";
+"file.badge.editableDraft" = "Editable draft";
+"file.badge.livePreview" = "Live preview";
+"file.badge.notGenerated" = "Not generated";
+"file.badge.keptDraft" = "Kept draft";
+
+"file.empty.selectFile" = "Select a file to see its transcription result.";
+"file.empty.queued" = "Click “Transcribe All” to process all waiting files, or click the inline play button on the left to transcribe just this file.";
+"file.empty.reading" = "Reading the audio track — recognition results will appear shortly.";
+"file.empty.transcribing" = "Transcribing — recognized content will appear here in real time.";
+"file.empty.completedNoText" = "This file produced no text.";
+"file.empty.cancelledNoDraft" = "Transcription cancelled — no draft available.";
+"file.empty.failed" = "No usable text was generated. You can fix the file or retry.";
+
+"file.picker.chooseMedia" = "Choose audio or video to transcribe";
+"file.picker.chooseFolder" = "Choose a folder to save the transcribed text";
+
+"file.error.saveFailed" = "Save failed: %@";
+
+"file.defaultName" = "VowKy Transcript";
+
+/* Recording + Bilingual */
+
+/* Window */
+"window.recording.title" = "VowKy Recording";
+
+/* ViewModel status (statusText) */
+"recording.status.idle" = "Ready to record";
+"recording.status.loadingModel" = "Loading recording model...";
+"recording.status.recording" = "Recording with live preview";
+"recording.status.finishing" = "Recording finished, generating high-quality transcript...";
+"recording.status.completed" = "Text and audio saved";
+"recording.status.cancelled" = "Cancelled";
+
+/* ViewModel errors */
+"recording.error.modelNotReady" = "Speech model not loaded; cannot generate final transcript";
+"recording.error.saveFailed" = "Save failed: %@";
+
+/* Finalization ETA */
+"recording.eta.estimating" = "Estimating…";
+"recording.eta.almostDone" = "Almost done";
+"recording.eta.seconds" = "About %lld sec left";
+"recording.eta.minutes" = "About %lld min left";
+"recording.eta.minutesSeconds" = "About %lld min %lld sec left";
+
+/* Finalization segment */
+"recording.segment.preparing" = "Preparing audio…";
+"recording.segment.progress" = "Segment %lld / %lld";
+
+/* Header */
+"recording.header.title" = "Recording";
+"recording.header.subtitle" = "Live preview, high-quality final transcript saved automatically";
+"recording.headerSubtitle.segmentETA" = "%@ · %@";
+
+/* Translation / subtitle controls */
+"recording.translation.toggle" = "Translate";
+"recording.subtitle.toggle" = "Subtitles";
+"recording.subtitle.help" = "Show a draggable floating subtitle on screen, so you can see the transcript even while viewing a shared screen in a meeting";
+
+/* Quit overlay */
+"recording.quitOverlay.title" = "VowKy is saving the recording and finishing transcription...";
+"recording.quitOverlay.subtitle" = "Please don't force quit; the final transcript is being generated";
+
+/* Recording card */
+"recording.finishing.hint" = "Re-transcribing with the high-quality model. Please don't close the window; it will save automatically when done.";
+
+/* Transcript card */
+"recording.transcript.title" = "Transcript";
+"recording.transcript.charCount" = "%lld chars";
+
+/* Footer buttons */
+"recording.button.cancel" = "Cancel";
+"recording.button.reRecord" = "Record Again";
+"recording.button.finish" = "Finish & Generate Final Transcript";
+"recording.button.copy" = "Copy";
+"recording.button.openFolder" = "Open Folder";
+
+/* Status badge */
+"recording.badge.ready" = "READY";
+"recording.badge.loading" = "LOADING";
+"recording.badge.live" = "LIVE";
+"recording.badge.finalizing" = "FINALIZING";
+"recording.badge.saved" = "SAVED";
+"recording.badge.cancelled" = "CANCELLED";
+"recording.badge.failed" = "FAILED";
+
+/* Card title */
+"recording.cardTitle.idle" = "Ready to Start";
+"recording.cardTitle.loadingModel" = "Preparing Model";
+"recording.cardTitle.recording" = "Listening";
+"recording.cardTitle.finishing" = "Generating Final Transcript";
+"recording.cardTitle.completed" = "Recording Saved";
+"recording.cardTitle.cancelled" = "Recording Cancelled";
+"recording.cardTitle.failed" = "Recording Failed";
+
+/* Duration caption */
+"recording.durationCaption.total" = "Total";
+"recording.durationCaption.processing" = "Processing time";
+"recording.durationCaption.current" = "Elapsed";
+
+/* Transcript badge */
+"recording.transcriptBadge.completed" = "SenseVoice final transcript";
+"recording.transcriptBadge.finishing" = "High-quality transcribing";
+"recording.transcriptBadge.recording" = "SenseVoice live preview";
+"recording.transcriptBadge.failed" = "Not saved";
+"recording.transcriptBadge.waiting" = "Waiting for content";
+
+/* Empty transcript hints */
+"recording.empty.loadingModel" = "Preparing the offline model; recording will start automatically when ready.";
+"recording.empty.recording" = "Once you start speaking, a live preview appears here. It will be replaced by the high-quality final transcript when done.";
+"recording.empty.finishing" = "Waiting for SenseVoice to finish the final transcription.";
+"recording.empty.completed" = "The final transcript is empty.";
+"recording.empty.failedNoAudio" = "No transcript content was generated to save.";
+"recording.empty.failedWithAudio" = "Recognition failed, but the recorded audio was kept. Find it via \"Open Folder\" below.";
+"recording.empty.cancelled" = "This recording was cancelled.";
+"recording.empty.idle" = "Recording starts automatically after you click Record in the menu.";
+
+/* Output path */
+"recording.outputPath.default" = "Saved automatically to Documents/VowKy Recordings when done";
+
+/* Bilingual transcript view */
+"bilingual.jumpToBottom" = "Back to latest";
+"bilingual.translating" = "Translating…";
+"bilingual.retry" = "Retry";
+
+/* History */
+"history.window.title" = "VowKy Recognition History";
+"history.search.placeholder" = "Search history...";
+"history.empty.noRecords" = "No input records yet";
+"history.empty.noResults" = "No matching records found";
+"history.empty.hint" = "Press the hotkey to start voice input";
+"history.count" = "%lld records";
+"history.export" = "Export";
+"history.export.panelTitle" = "Export Recognition History";
+"history.export.defaultFilename" = "VowKy History";
+"history.copy" = "Copy";
+"history.delete" = "Delete";
+"history.date.today" = "Today %@";
+"history.date.yesterday" = "Yesterday %@";
+
+/* Update Available popup */
+"window.update.title" = "VowKy Update";
+"update.available.heading" = "VowKy %@ is available";
+"update.available.currentVersion" = "You're currently using %@";
+"update.autoDownload" = "Automatically download and install future updates";
+"update.skipVersion" = "Skip This Version";
+"update.remindLater" = "Remind Me Later";
+"update.install" = "Install Update";
+
+
+/* Common (round3) */
+"common.gotIt" = "Got it";
+
+/* AppState errors */
+"appState.error.fileTranscribingBusy" = "Transcribing a file — please wait or cancel it";
+"appState.error.recordingBusy" = "Recording — please wait or finish it";
+"appState.error.modelLoading" = "Loading the speech model...";
+"appState.error.voiceInputBusy" = "Voice input is in progress — please try again shortly";
+"appState.error.needAccessibility" = "Please grant Accessibility permission in System Settings";
+"appState.error.noVoice" = "No sound detected — check microphone permission or your system input device";
+"appState.error.fileTaskRunning" = "A file transcription task is already running";
+"appState.error.recordingTaskRunning" = "A recording task is already running";
+
+/* AppDelegate alerts */
+"alert.recovery.title" = "Unfinished recording detected";
+"alert.recovery.extra" = " and %lld more";
+"alert.recovery.message" = "VowKy was still recording when it last quit, so %1$lld audio file(s) were kept (%2$@%3$@).\n\nThey're saved in “Documents/VowKy Recordings”.";
+"alert.recovery.reveal" = "Show in Finder";
+"alert.recovery.later" = "Later";
+"alert.quitRecording.title" = "VowKy is recording";
+"alert.quitRecording.message" = "Before quitting, VowKy will finish transcribing and saving the current recording. Continue?";
+"alert.quitRecording.finishAndQuit" = "Finish and Quit";
+"alert.quitRecording.keepRecording" = "Keep Recording";
+"alert.crashLoop.title" = "VowKy detected a launch problem";
+"alert.crashLoop.message" = "VowKy restarted several times in quick succession, possibly due to a hotkey conflict. The hotkey has been reset to its default (%@).\n\nYou can customize it again in Settings.";
+"alert.accessibility.title" = "VowKy needs Accessibility permission";
+"alert.accessibility.message" = "VowKy uses a global hotkey (%@) to trigger voice input and needs Accessibility permission to work.\n\nAfter clicking “Open System Settings”, find VowKy in the list and turn on its switch.";
+"alert.accessibility.openSettings" = "Open System Settings";
+"alert.accessibility.later" = "Set Up Later";
+"alert.conflict.title" = "Hotkey Conflict";
+"alert.conflict.message" = "The system's “Select the previous input source” shortcut also uses Option+Space, which conflicts with VowKy's voice input hotkey.\n\nGo to “System Settings > Keyboard > Keyboard Shortcuts > Input Sources” to change or disable it.";
+"alert.conflict.openKeyboardSettings" = "Open Keyboard Settings";
+
+/* Recording panel (floating toast) */
+"recordingPanel.listening" = "Listening...";
+"recordingPanel.recognizing" = "Recognizing...";
+"recordingPanel.noVoice" = "No voice detected — please try again";
+
+/* Translation errors */
+"translation.error.sessionInvalidated" = "Translation session expired";
+"translation.error.http" = "Translation service returned HTTP %lld";
+"translation.error.timeout" = "Translation request timed out";
+"translation.error.emptyResult" = "Translation result was empty";
+"translation.error.notConfigured" = "Please fill in the LLM translation API URL, model, and key in Settings first";
+"translation.error.invalidBaseURL" = "Invalid API URL";
+"translation.failed.generic" = "Translation failed";
+"translation.cancelled" = "Cancelled";
+
+/* LLM provider presets (quick fill) */
+"llm.preset.qwenMt" = "Alibaba Qwen-MT-Turbo (Recommended)";
+"llm.preset.deepseek" = "DeepSeek";
+"llm.preset.glm" = "Zhipu GLM-4-Flash (Free)";
+"llm.preset.doubao" = "ByteDance Doubao (bring your own endpoint)";
+"llm.preset.groq" = "Groq (overseas, fastest)";
+
+/* Update popup */
+"update.notesUnavailable" = "Release notes for this update are not available.";
+
+
+/* Main-app-only services (round4) */
+"transcribe.noTextRecognized" = "No text recognized";
+"bilingual.export.translationFailed" = "(translation failed)";
+"bilingual.export.filenameSuffix" = "Bilingual";
+"history.export.csvHeader" = "Time,Content,Type";

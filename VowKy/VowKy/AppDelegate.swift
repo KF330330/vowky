@@ -43,19 +43,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func showRecordingRecoveryAlert(for artifacts: [RecoveredRecordingArtifact]) {
         let alert = NSAlert()
-        alert.messageText = "检测到未完成的录音"
+        alert.messageText = LL("alert.recovery.title")
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "MM-dd HH:mm"
         let summary = artifacts
             .prefix(3)
             .map { formatter.string(from: $0.startedAt) }
             .joined(separator: "、")
-        let extra = artifacts.count > 3 ? " 等 \(artifacts.count) 个" : ""
-        alert.informativeText = "VowKy 上次退出时还在录音，已为你保留 \(artifacts.count) 个音频（\(summary)\(extra)）。\n\n音频保存在「文稿/VowKy Recordings」。"
+        let extra = artifacts.count > 3 ? LL("alert.recovery.extra", artifacts.count) : ""
+        alert.informativeText = LL("alert.recovery.message", artifacts.count, summary, extra)
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "在 Finder 中显示")
-        alert.addButton(withTitle: "稍后处理")
+        alert.addButton(withTitle: LL("alert.recovery.reveal"))
+        alert.addButton(withTitle: LL("alert.recovery.later"))
 
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
@@ -74,11 +73,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         CrashLogger.log("[Quit] Recording in progress, asking user confirmation")
         let alert = NSAlert()
-        alert.messageText = "VowKy 正在录音中"
-        alert.informativeText = "退出前会先完成当前录音的转录并保存。是否继续？"
+        alert.messageText = LL("alert.quitRecording.title")
+        alert.informativeText = LL("alert.quitRecording.message")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "完成并退出")
-        alert.addButton(withTitle: "继续录音")
+        alert.addButton(withTitle: LL("alert.quitRecording.finishAndQuit"))
+        alert.addButton(withTitle: LL("alert.quitRecording.keepRecording"))
 
         let response = alert.runModal()
         if response != .alertFirstButtonReturn {
@@ -152,10 +151,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showCrashLoopAlert() {
         let config = HotkeyConfig.current
         let alert = NSAlert()
-        alert.messageText = "VowKy 检测到启动异常"
-        alert.informativeText = "VowKy 在短时间内多次重启，可能是快捷键冲突导致。已将快捷键重置为默认值（\(config.displayName)）。\n\n您可以在设置中重新自定义快捷键。"
+        alert.messageText = LL("alert.crashLoop.title")
+        alert.informativeText = LL("alert.crashLoop.message", config.displayName)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "我知道了")
+        alert.addButton(withTitle: LL("common.gotIt"))
         alert.runModal()
     }
 
@@ -237,12 +236,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showAccessibilityGuide() {
         let alert = NSAlert()
-        alert.messageText = "VowKy 需要辅助功能权限"
         let hotkeyName = HotkeyConfig.current.displayName
-        alert.informativeText = "VowKy 使用全局快捷键（\(hotkeyName)）来触发语音输入，需要辅助功能权限才能正常工作。\n\n点击「打开系统设置」后，请在列表中找到 VowKy 并开启开关。"
+        alert.messageText = LL("alert.accessibility.title")
+        alert.informativeText = LL("alert.accessibility.message", hotkeyName)
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "打开系统设置")
-        alert.addButton(withTitle: "稍后设置")
+        alert.addButton(withTitle: LL("alert.accessibility.openSettings"))
+        alert.addButton(withTitle: LL("alert.accessibility.later"))
 
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
@@ -286,11 +285,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showConflictAlert() {
         let alert = NSAlert()
-        alert.messageText = "快捷键冲突"
-        alert.informativeText = "系统的「选择上一个输入法」快捷键也使用了 Option+Space，这会与 VowKy 的语音输入快捷键冲突。\n\n请前往「系统设置 > 键盘 > 键盘快捷键 > 输入法」中修改或关闭该快捷键。"
+        alert.messageText = LL("alert.conflict.title")
+        alert.informativeText = LL("alert.conflict.message")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "打开键盘设置")
-        alert.addButton(withTitle: "我知道了")
+        alert.addButton(withTitle: LL("alert.conflict.openKeyboardSettings"))
+        alert.addButton(withTitle: LL("common.gotIt"))
 
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {

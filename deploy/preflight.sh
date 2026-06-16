@@ -70,18 +70,23 @@ else
     check_fail "可用空间 ${AVAIL_GB}GB (<5GB)"
 fi
 
-# 7. Release notes
+# 7. Release notes（中英双语：{ver}.md=中文，{ver}.en.md=英文）
 echo ""
-echo "[7/8] 检查当前版本 release notes..."
+echo "[7/8] 检查当前版本 release notes（中英双语）..."
 VERSION_FOR_CHECK="$(get_version)"
-RELEASE_NOTES_FILE="${VOWKY_DIR}/VowKy/Resources/ReleaseNotes/${VERSION_FOR_CHECK}.md"
-if [ ! -f "${RELEASE_NOTES_FILE}" ]; then
-    check_fail "缺少 release notes: ${RELEASE_NOTES_FILE}"
-elif [ ! -s "${RELEASE_NOTES_FILE}" ]; then
-    check_fail "release notes 为空: ${RELEASE_NOTES_FILE}"
-else
-    check_pass "release notes 已就绪 (${VERSION_FOR_CHECK}.md)"
-fi
+RN_DIR_CHECK="${VOWKY_DIR}/VowKy/Resources/ReleaseNotes"
+for rn_pair in "${VERSION_FOR_CHECK}.md|中文" "${VERSION_FOR_CHECK}.en.md|英文"; do
+    rn_name="${rn_pair%%|*}"
+    rn_label="${rn_pair##*|}"
+    rn_file="${RN_DIR_CHECK}/${rn_name}"
+    if [ ! -f "${rn_file}" ]; then
+        check_fail "缺少${rn_label} release notes: ${rn_file}"
+    elif [ ! -s "${rn_file}" ]; then
+        check_fail "${rn_label} release notes 为空: ${rn_file}"
+    else
+        check_pass "${rn_label} release notes 已就绪 (${rn_name})"
+    fi
+done
 
 # 8. Sparkle sign_update
 echo ""

@@ -197,7 +197,7 @@ final class AppStateTests: XCTestCase {
         appState.handleHotkeyToggle()
 
         XCTAssertEqual(appState.state, .loading) // state unchanged
-        XCTAssertEqual(appState.errorMessage, "语音模型加载中...")
+        XCTAssertEqual(appState.errorMessage, L("appState.error.modelLoading"))
         XCTAssertEqual(mockRecorder.startCallCount, 0) // no recording started
     }
 
@@ -289,7 +289,7 @@ final class AppStateTests: XCTestCase {
         appState.handleHotkeyToggle()
 
         XCTAssertEqual(appState.state, .idle)
-        XCTAssertEqual(appState.errorMessage, "文件转录中，请稍后或取消转录")
+        XCTAssertEqual(appState.errorMessage, L("appState.error.fileTranscribingBusy"))
         XCTAssertEqual(mockRecorder.startCallCount, 0)
 
         appState.endFileTranscription()
@@ -305,9 +305,9 @@ final class AppStateTests: XCTestCase {
         appState.handleHotkeyToggle()
 
         XCTAssertEqual(appState.state, .idle)
-        XCTAssertEqual(appState.errorMessage, "录音中，请稍后或完成录音")
+        XCTAssertEqual(appState.errorMessage, L("appState.error.recordingBusy"))
         XCTAssertEqual(mockRecorder.startCallCount, 0)
-        XCTAssertEqual(appState.beginFileTranscription(), "录音中，请稍后或完成录音")
+        XCTAssertEqual(appState.beginFileTranscription(), L("appState.error.recordingBusy"))
 
         appState.endRecordingTranscription()
         appState.handleHotkeyToggle()

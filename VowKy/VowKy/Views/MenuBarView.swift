@@ -3,6 +3,7 @@ import AppKit
 import Sparkle
 
 struct MenuBarView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var appState: AppState
     private let updater: SPUUpdater
     private let updateCoordinator: UpdateReminderCoordinator
@@ -30,7 +31,7 @@ struct MenuBarView: View {
             // Recent results
             if !appState.recentResults.isEmpty {
                 Divider()
-                Text("识别历史")
+                Text(loc.string("menu.recentResults"))
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 12)
@@ -51,7 +52,7 @@ struct MenuBarView: View {
                                 .font(.system(size: 10))
                         }
                         .buttonStyle(.plain)
-                        .help("复制到剪贴板")
+                        .help(loc.string("menu.copyToClipboard"))
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 2)
@@ -62,7 +63,7 @@ struct MenuBarView: View {
                 } label: {
                     HStack {
                         Image(systemName: "clock.arrow.circlepath")
-                        Text("查看全部历史")
+                        Text(loc.string("menu.viewAllHistory"))
                     }
                     .font(.system(size: 12))
                 }
@@ -92,7 +93,7 @@ struct MenuBarView: View {
                 } label: {
                     HStack {
                         Image(systemName: "arrow.uturn.backward.circle.fill")
-                        Text("返回录音窗口")
+                        Text(loc.string("menu.returnToRecording"))
                     }
                     .foregroundColor(.accentColor)
                 }
@@ -105,7 +106,7 @@ struct MenuBarView: View {
                 } label: {
                     HStack {
                         Image(systemName: "record.circle")
-                        Text("录音")
+                        Text(loc.string("menu.record"))
                     }
                 }
                 .buttonStyle(.plain)
@@ -120,7 +121,7 @@ struct MenuBarView: View {
             } label: {
                 HStack {
                     Image(systemName: "waveform")
-                    Text("转录文件...")
+                    Text(loc.string("menu.transcribeFile"))
                 }
             }
             .buttonStyle(.plain)
@@ -134,7 +135,7 @@ struct MenuBarView: View {
             } label: {
                 HStack {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                    Text("检查更新")
+                    Text(loc.string("menu.checkUpdates"))
                 }
             }
             .buttonStyle(.plain)
@@ -143,11 +144,11 @@ struct MenuBarView: View {
 
             // Settings
             Button {
-                SettingsWindowController.shared.showWindow(updater: updater, updateCoordinator: updateCoordinator)
+                SettingsWindowController.shared.showWindow()
             } label: {
                 HStack {
                     Image(systemName: "gear")
-                    Text("Settings")
+                    Text(loc.string("menu.settings"))
                 }
             }
             .buttonStyle(.plain)
@@ -160,7 +161,7 @@ struct MenuBarView: View {
             } label: {
                 HStack {
                     Image(systemName: "power")
-                    Text("Quit VowKy")
+                    Text(loc.string("menu.quit"))
                 }
             }
             .buttonStyle(.plain)
@@ -175,25 +176,25 @@ struct MenuBarView: View {
 
     private var statusText: String {
         if appState.isRecordingTranscriptionInProgress {
-            return "Recording..."
+            return loc.string("menu.status.recording")
         }
         if appState.isFileTranscriptionInProgress {
-            return "Transcribing file..."
+            return loc.string("menu.status.transcribingFile")
         }
         switch appState.state {
         case .loading:
-            return "Loading model..."
+            return loc.string("menu.status.loadingModel")
         case .idle:
             if let hm = appState.hotkeyManager, !hm.isRunning {
-                return "需要辅助功能权限"
+                return loc.string("menu.status.needAccessibility")
             }
-            return "Ready (Option+Space)"
+            return loc.string("menu.status.ready")
         case .recording:
-            return "Recording..."
+            return loc.string("menu.status.recording")
         case .recognizing:
-            return "Recognizing..."
+            return loc.string("menu.status.recognizing")
         case .outputting:
-            return "Outputting..."
+            return loc.string("menu.status.outputting")
         }
     }
 

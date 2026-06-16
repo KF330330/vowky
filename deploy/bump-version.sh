@@ -106,22 +106,35 @@ echo "  文件: ${INFOPLIST}"
 # 这里 bump 完顺手生成 stub，避免用户漏写 → 等到 preflight 才报错。
 # ============================================================
 RELEASE_NOTES_DIR="${VOWKY_DIR}/VowKy/Resources/ReleaseNotes"
-RELEASE_NOTES_PATH="${RELEASE_NOTES_DIR}/${NEW_VERSION}.md"
+ZH_NOTES_PATH="${RELEASE_NOTES_DIR}/${NEW_VERSION}.md"       # 中文（默认文件名）
+EN_NOTES_PATH="${RELEASE_NOTES_DIR}/${NEW_VERSION}.en.md"    # 英文（.en.md 后缀）
 
 mkdir -p "${RELEASE_NOTES_DIR}"
 
-if [ -f "${RELEASE_NOTES_PATH}" ]; then
-    echo ""
-    log_info "release notes 已存在，未覆盖：${RELEASE_NOTES_PATH}"
+echo ""
+if [ -f "${ZH_NOTES_PATH}" ]; then
+    log_info "release notes（中文）已存在，未覆盖：${ZH_NOTES_PATH}"
 else
-    cat > "${RELEASE_NOTES_PATH}" <<EOF
+    cat > "${ZH_NOTES_PATH}" <<EOF
 VowKy ${NEW_VERSION} 更新内容
 
 - TODO：在此填写本次更新的用户可见变化（3-6 条要点）
 
 如有问题，欢迎到 https://github.com/KF330330/vowky/issues 反馈。
 EOF
-    echo ""
-    log_warn "已生成 release notes stub：${RELEASE_NOTES_PATH}"
-    log_warn "请编辑该文件填写本次更新内容（deploy/preflight 会校验非空）"
+    log_warn "已生成中文 release notes stub：${ZH_NOTES_PATH}"
 fi
+
+if [ -f "${EN_NOTES_PATH}" ]; then
+    log_info "release notes（英文）已存在，未覆盖：${EN_NOTES_PATH}"
+else
+    cat > "${EN_NOTES_PATH}" <<EOF
+VowKy ${NEW_VERSION} Release Notes
+
+- TODO: describe the user-visible changes in this release (3-6 bullet points)
+
+Questions or feedback? Visit https://github.com/KF330330/vowky/issues
+EOF
+    log_warn "已生成英文 release notes stub：${EN_NOTES_PATH}"
+fi
+log_warn "请编辑以上中英文 release notes 填写本次更新内容（deploy/preflight 会校验两者非空）"

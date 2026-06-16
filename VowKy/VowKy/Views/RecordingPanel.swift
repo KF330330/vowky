@@ -60,6 +60,7 @@ final class RecordingPanel {
         let hostingView = NSHostingView(
             rootView: RecordingPanelContent()
                 .environmentObject(appState)
+                .environmentObject(LocalizationManager.shared)
         )
 
         // 胶囊形 + 对角渐变背景（accentMain → accentDeep）
@@ -139,6 +140,7 @@ final class RecordingPanel {
 
 struct RecordingPanelContent: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var loc: LocalizationManager
 
     var body: some View {
         Group {
@@ -158,7 +160,7 @@ struct RecordingPanelContent: View {
         HStack(spacing: 12) {
             ButterflyIcon()
             VStack(alignment: .leading, spacing: 4) {
-                Text("正在聆听...")
+                Text(loc.string("recordingPanel.listening"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
                 WaveformBars(levelProvider: { appState.audioLevel })
@@ -173,7 +175,7 @@ struct RecordingPanelContent: View {
             ProgressView()
                 .controlSize(.small)
                 .colorScheme(.dark)
-            Text("识别中...")
+            Text(loc.string("recordingPanel.recognizing"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.white)
         }
@@ -184,7 +186,7 @@ struct RecordingPanelContent: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.white)
-            Text("未识别到语音，请重试")
+            Text(loc.string("recordingPanel.noVoice"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.white)
         }

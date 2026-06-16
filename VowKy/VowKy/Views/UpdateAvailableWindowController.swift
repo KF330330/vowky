@@ -34,7 +34,7 @@ final class UpdateAvailableWindowController {
 
         let icon = NSImage(named: NSImage.applicationIconName)
             ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
-        let notesHTML = appcastItem.itemDescription ?? "<p>本次更新的发布说明暂不可用。</p>"
+        let notesHTML = appcastItem.itemDescription ?? "<p>\(L("update.notesUnavailable"))</p>"
 
         let view = UpdateAvailableView(
             appIcon: icon,
@@ -48,9 +48,9 @@ final class UpdateAvailableWindowController {
             onSkip: { [weak self] in self?.finish(.skip) }
         )
 
-        let hosting = NSHostingController(rootView: view)
+        let hosting = NSHostingController(rootView: view.environmentObject(LocalizationManager.shared))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "VowKy 更新"
+        window.title = L("window.update.title")
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 540, height: 480))
@@ -94,6 +94,7 @@ final class UpdateAvailableWindowController {
 // MARK: - SwiftUI View(对应定稿方案4:真实图标 + 单行标题 + 卡片化说明 + 勾选 + 三按钮)
 
 private struct UpdateAvailableView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     let appIcon: NSImage
     let newVersion: String
     let currentVersion: String
@@ -140,9 +141,9 @@ private struct UpdateAvailableView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("VowKy \(newVersion) 可更新")
+                    Text(loc.string("update.available.heading", newVersion))
                         .font(.system(size: 18, weight: .bold))
-                    Text("你当前使用的是 \(currentVersion)")
+                    Text(loc.string("update.available.currentVersion", currentVersion))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -163,7 +164,7 @@ private struct UpdateAvailableView: View {
                 .padding(.horizontal, 18)
 
             // 自动更新勾选
-            Toggle("自动下载并安装以后的更新", isOn: $autoUpdate)
+            Toggle(loc.string("update.autoDownload"), isOn: $autoUpdate)
                 .toggleStyle(.checkbox)
                 .font(.system(size: 13))
                 .onChange(of: autoUpdate) { onAutoUpdateChange($0) }
@@ -172,12 +173,12 @@ private struct UpdateAvailableView: View {
 
             // 底栏按钮
             HStack(spacing: 10) {
-                Button("跳过此版本") { onSkip() }
+                Button(loc.string("update.skipVersion")) { onSkip() }
                     .buttonStyle(.link)
                 Spacer(minLength: 0)
-                Button("稍后提醒我") { onLater() }
+                Button(loc.string("update.remindLater")) { onLater() }
                     .controlSize(.large)
-                Button("安装更新") { onInstall() }
+                Button(loc.string("update.install")) { onInstall() }
                     .buttonStyle(.borderedProminent)
                     .tint(brandGreen)
                     .controlSize(.large)

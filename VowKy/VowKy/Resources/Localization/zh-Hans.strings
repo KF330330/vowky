@@ -1,0 +1,407 @@
+/* VowKy 本地化字符串 — 简体中文 */
+
+/* ===== 通用 ===== */
+"common.ok" = "好的";
+"common.cancel" = "取消";
+
+/* ===== 窗口标题 ===== */
+"window.settings.title" = "VowKy 设置";
+"window.whatsNew.title" = "VowKy 新版功能";
+
+/* ===== 菜单栏 ===== */
+"menu.recentResults" = "识别历史";
+"menu.copyToClipboard" = "复制到剪贴板";
+"menu.viewAllHistory" = "查看全部历史";
+"menu.returnToRecording" = "返回录音窗口";
+"menu.record" = "录音";
+"menu.transcribeFile" = "转录文件...";
+"menu.checkUpdates" = "检查更新";
+"menu.settings" = "设置";
+"menu.quit" = "退出 VowKy";
+"menu.status.recording" = "录音中...";
+"menu.status.transcribingFile" = "转录文件中...";
+"menu.status.loadingModel" = "加载模型中...";
+"menu.status.needAccessibility" = "需要辅助功能权限";
+"menu.status.ready" = "就绪 (Option+Space)";
+"menu.status.recognizing" = "识别中...";
+"menu.status.outputting" = "输出中...";
+
+/* ===== 设置：快捷键 ===== */
+"settings.section.hotkey" = "快捷键";
+"settings.hotkey.voiceInput" = "语音输入";
+"settings.hotkey.recording" = "请按下新快捷键...";
+"settings.hotkey.modify" = "修改";
+"settings.hotkey.trigger" = "触发方式";
+"settings.hotkey.trigger.toggle" = "按键切换";
+"settings.hotkey.trigger.hold" = "长按说话";
+
+/* ===== 设置：语音模型 ===== */
+"settings.section.model" = "语音模型";
+"settings.model.label" = "模型";
+"settings.model.engine" = "引擎";
+"settings.model.engine.value" = "sherpa-onnx (本地)";
+
+/* ===== 设置：权限 ===== */
+"settings.section.permissions" = "权限";
+"settings.permission.accessibility" = "辅助功能";
+"settings.permission.granted" = "已授权";
+"settings.permission.denied" = "未授权";
+"settings.permission.openSettings" = "前往设置";
+"settings.permission.microphone" = "麦克风";
+"settings.permission.systemManaged" = "由系统管理";
+
+/* ===== 设置：通用 ===== */
+"settings.section.general" = "通用";
+"settings.general.launchAtLogin" = "开机自启";
+"settings.general.autoCopy" = "识别后自动复制到剪贴板";
+
+/* ===== 设置：语言 ===== */
+"settings.section.language" = "语言";
+"settings.language.picker" = "显示语言";
+
+/* ===== 设置：翻译 ===== */
+"settings.section.translation" = "翻译（录音窗口）";
+"settings.translation.enable" = "启用实时翻译";
+"settings.translation.enable.subtitle" = "录音转写时在每段原文下方实时显示译文";
+"settings.translation.engine" = "翻译引擎";
+"settings.translation.engine.apple" = "系统离线翻译";
+"settings.translation.targetLang" = "目标语言";
+"settings.translation.apple.note" = "完全离线，由 macOS 系统翻译。首次使用某语言时系统会自动下载离线语言包。";
+"settings.translation.quickFill" = "快速填入";
+"settings.translation.selectProvider" = "选择服务商";
+"settings.translation.llm.recommend" = "推荐阿里 Qwen-MT：专用翻译模型，速度快、质量高、便宜、国内直连。填入后在下方补上你的 API Key 即可。";
+"settings.translation.llm.baseURL" = "API 地址";
+"settings.translation.llm.model" = "模型";
+"settings.translation.llm.apiKey" = "API Key";
+"settings.translation.llm.note" = "兼容 OpenAI Chat Completions 格式的服务（DeepSeek、Qwen、OpenAI 等）。译文会发送到该服务，请注意隐私。";
+"settings.translation.llm.test" = "测试连接";
+"settings.translation.llm.testSuccess" = "✓ 连接成功：%@";
+"settings.translation.llm.testFail" = "✗ %@";
+
+/* ===== 新版功能 ===== */
+"whatsNew.updated" = "VowKy 已更新";
+"whatsNew.version" = "版本 %@";
+"releaseNotes.fallback" = "本次更新尚无详细说明。\n\n请访问 https://github.com/KF330330/vowky/releases 查看完整发布说明。";
+
+/* Onboarding */
+"window.onboarding.title" = "VowKy 设置向导";
+
+"onboarding.nav.previous" = "上一步";
+"onboarding.nav.next" = "下一步";
+"onboarding.nav.finish" = "完成";
+
+"onboarding.welcome.title" = "欢迎使用 VowKy";
+"onboarding.welcome.subtitle" = "macOS 菜单栏语音输入工具\n按下快捷键说话，文字即刻出现在光标位置";
+"onboarding.welcome.featureOffline" = "完全离线，无需联网";
+"onboarding.welcome.featurePrivacy" = "隐私优先，语音不出设备";
+"onboarding.welcome.featureChinese" = "支持中文语音识别";
+"onboarding.welcome.featureGlobal" = "全局快捷键，任意应用可用";
+
+"onboarding.permission.title" = "授权辅助功能";
+"onboarding.permission.description" = "VowKy 需要辅助功能权限来注册全局快捷键和输入文字。\n\n点击下方按钮后，在系统设置中找到 VowKy 并开启开关。";
+"onboarding.permission.granted" = "辅助功能权限已授予";
+"onboarding.permission.openSettings" = "打开系统设置";
+"onboarding.permission.waiting" = "等待授权中...";
+"onboarding.permission.skipHint" = "也可以点击「下一步」稍后设置";
+
+"onboarding.hotkey.title" = "设置快捷键";
+"onboarding.hotkey.currentLabel" = "当前语音输入快捷键：";
+"onboarding.hotkey.pressNew" = "请按下新快捷键...";
+"onboarding.hotkey.cancelRecord" = "取消";
+"onboarding.hotkey.changeButton" = "修改快捷键";
+"onboarding.hotkey.conflictTitle" = "快捷键冲突";
+"onboarding.hotkey.conflictMessage" = "系统的「选择上一个输入法」快捷键也使用了 Option+Space，会与 VowKy 冲突。\n请前往「系统设置 > 键盘 > 键盘快捷键 > 输入法」中修改或关闭。";
+"onboarding.hotkey.openKeyboardSettings" = "打开键盘设置";
+
+"onboarding.tryIt.title" = "试一试";
+"onboarding.tryIt.modelLoading" = "语音模型加载中，请稍候...";
+"onboarding.tryIt.pressToStart" = "按下 %@ 开始说话";
+"onboarding.tryIt.pressToStop" = "说完后再按一次 %@ 停止";
+"onboarding.tryIt.listening" = "正在聆听...";
+"onboarding.tryIt.pressToStopShort" = "说完后按 %@ 停止";
+"onboarding.tryIt.recognizing" = "识别中...";
+"onboarding.tryIt.success" = "识别成功!";
+"onboarding.tryIt.tryAgain" = "再试一次";
+"onboarding.tryIt.noVoice" = "未识别到语音";
+"onboarding.tryIt.noVoiceHint" = "请确保麦克风正常工作，然后再试一次";
+"onboarding.tryIt.retry" = "重试";
+
+"onboarding.menuBar.title" = "菜单栏";
+"onboarding.menuBar.description" = "VowKy 常驻屏幕右上角菜单栏\n点击图标可查看状态、识别历史和设置";
+
+/* File transcription */
+"window.fileTranscription.title" = "VowKy 文件转录";
+
+"file.title" = "文件转录";
+"file.subtitle" = "批量音视频，本地离线处理";
+"file.selectFile" = "请选择文件";
+
+"file.action.transcribeAll" = "全部转录";
+"file.action.chooseFile" = "选择文件";
+"file.action.retry" = "重试";
+"file.action.cancel" = "取消";
+"file.action.clear" = "清空";
+"file.action.saveAs" = "另存为";
+"file.action.revealInFinder" = "在 Finder 中显示";
+
+"file.help.transcribeAll" = "转录队列中所有等待开始或已取消的文件";
+"file.help.transcribeThis" = "只转录这个文件";
+"file.help.removeFromQueue" = "从队列移除";
+"file.help.transcribingNow" = "当前文件转录中";
+"file.help.revealMarkdown" = "打开自动落盘的 .md 文件位置";
+"file.help.noMarkdownYet" = "尚未生成 .md 文件";
+
+"file.drop.prompt" = "拖入音频或视频文件";
+"file.drop.release" = "松开后加入队列";
+"file.drop.formats" = "支持批量选择 MP3、M4A、MP4、MOV、WAV、FLAC 等格式，全程本地处理。";
+
+"file.queue.title" = "队列";
+"file.queue.fileCount" = "%lld 个文件";
+
+"file.result.title" = "转录结果";
+"file.result.charCount" = "%lld 字";
+
+"file.row.waiting" = "等待开始";
+"file.row.completed" = "完成";
+"file.row.cancelled" = "已取消";
+"file.row.failed" = "失败";
+
+"file.summary.chooseOrDrop" = "选择或拖入文件";
+"file.summary.completedOfTotal" = "%lld / %lld 完成";
+"file.summary.completedFailed" = "%lld 完成 · %lld 失败";
+"file.summary.allCompleted" = "全部完成";
+"file.summary.cancelledCanRestart" = "已取消 · 可重新开始";
+"file.summary.pendingCount" = "%lld 个待转录";
+
+"file.header.transcribingCanAdd" = "转录中，可继续添加文件";
+"file.header.cancelledCanRestart" = "已取消，可重新开始";
+"file.header.readyToTranscribe" = "准备转录";
+
+"file.status.chooseOrDropMedia" = "选择或拖入音频/视频文件";
+"file.status.transcribingProgress" = "正在转录 · %lld / %lld";
+"file.status.completedFailedCount" = "%lld 个完成，%lld 个失败";
+"file.status.allCompleted" = "全部转录完成";
+"file.status.cancelled" = "已取消";
+"file.status.readingAudio" = "正在读取音轨...";
+"file.status.transcribing" = "正在转录...";
+"file.status.transcribingSegment" = "正在转录第 %lld / %lld 段";
+"file.status.transcribeCompleted" = "转录完成";
+"file.status.cancelledKeptResult" = "已取消，已保留当前结果";
+
+"file.badge.waitingContent" = "等待内容";
+"file.badge.editableResult" = "可编辑结果";
+"file.badge.done" = "已完成";
+"file.badge.noResult" = "无结果";
+"file.badge.editableDraft" = "可编辑草稿";
+"file.badge.livePreview" = "实时预览";
+"file.badge.notGenerated" = "未生成";
+"file.badge.keptDraft" = "保留草稿";
+
+"file.empty.selectFile" = "选择一个文件后会显示转录结果。";
+"file.empty.queued" = "点击“全部转录”处理所有等待文件，或点击左侧行内播放按钮只转录这个文件。";
+"file.empty.reading" = "正在读取音轨，识别结果会稍后出现。";
+"file.empty.transcribing" = "正在转录，识别到的内容会实时显示在这里。";
+"file.empty.completedNoText" = "该文件没有生成文本。";
+"file.empty.cancelledNoDraft" = "转录已取消，当前没有可用草稿。";
+"file.empty.failed" = "没有生成可用文本。可以修复文件或重试。";
+
+"file.picker.chooseMedia" = "选择要转录的音频或视频";
+"file.picker.chooseFolder" = "选择保存转录文本的文件夹";
+
+"file.error.saveFailed" = "保存失败：%@";
+
+"file.defaultName" = "VowKy转录";
+
+/* Recording + Bilingual */
+
+/* Window */
+"window.recording.title" = "VowKy 录音";
+
+/* ViewModel status (statusText) */
+"recording.status.idle" = "准备录音";
+"recording.status.loadingModel" = "正在加载录音模型...";
+"recording.status.recording" = "正在录音并实时预览";
+"recording.status.finishing" = "录音已完成，正在生成高质量转录稿...";
+"recording.status.completed" = "已保存文字和音频";
+"recording.status.cancelled" = "已取消";
+
+/* ViewModel errors */
+"recording.error.modelNotReady" = "语音模型未加载，无法生成最终转录稿";
+"recording.error.saveFailed" = "保存失败：%@";
+
+/* Finalization ETA */
+"recording.eta.estimating" = "估算中…";
+"recording.eta.almostDone" = "即将完成";
+"recording.eta.seconds" = "约还需 %lld 秒";
+"recording.eta.minutes" = "约还需 %lld 分钟";
+"recording.eta.minutesSeconds" = "约还需 %lld 分 %lld 秒";
+
+/* Finalization segment */
+"recording.segment.preparing" = "准备处理音频…";
+"recording.segment.progress" = "第 %lld / %lld 段";
+
+/* Header */
+"recording.header.title" = "录音";
+"recording.header.subtitle" = "实时预览，高质量最终稿自动保存";
+"recording.headerSubtitle.segmentETA" = "%@ · %@";
+
+/* Translation / subtitle controls */
+"recording.translation.toggle" = "翻译";
+"recording.subtitle.toggle" = "字幕";
+"recording.subtitle.help" = "在屏幕上显示可拖动的浮动字幕，开会看共享画面时也能看转写";
+
+/* Quit overlay */
+"recording.quitOverlay.title" = "VowKy 正在保存录音并完成转录...";
+"recording.quitOverlay.subtitle" = "请勿强制退出，正在生成最终稿";
+
+/* Recording card */
+"recording.finishing.hint" = "正在用高质量模型重新转录，请勿关闭窗口，完成后会自动保存。";
+
+/* Transcript card */
+"recording.transcript.title" = "转写内容";
+"recording.transcript.charCount" = "%lld 字";
+
+/* Footer buttons */
+"recording.button.cancel" = "取消";
+"recording.button.reRecord" = "重新录音";
+"recording.button.finish" = "完成并生成最终稿";
+"recording.button.copy" = "复制";
+"recording.button.openFolder" = "打开文件夹";
+
+/* Status badge */
+"recording.badge.ready" = "READY";
+"recording.badge.loading" = "LOADING";
+"recording.badge.live" = "LIVE";
+"recording.badge.finalizing" = "FINALIZING";
+"recording.badge.saved" = "SAVED";
+"recording.badge.cancelled" = "CANCELLED";
+"recording.badge.failed" = "FAILED";
+
+/* Card title */
+"recording.cardTitle.idle" = "准备开始";
+"recording.cardTitle.loadingModel" = "正在准备模型";
+"recording.cardTitle.recording" = "正在聆听";
+"recording.cardTitle.finishing" = "生成最终稿";
+"recording.cardTitle.completed" = "录音已保存";
+"recording.cardTitle.cancelled" = "录音已取消";
+"recording.cardTitle.failed" = "录音失败";
+
+/* Duration caption */
+"recording.durationCaption.total" = "总时长";
+"recording.durationCaption.processing" = "处理已用时";
+"recording.durationCaption.current" = "当前时长";
+
+/* Transcript badge */
+"recording.transcriptBadge.completed" = "SenseVoice 最终稿";
+"recording.transcriptBadge.finishing" = "高质量转录中";
+"recording.transcriptBadge.recording" = "SenseVoice 实时预览";
+"recording.transcriptBadge.failed" = "未保存";
+"recording.transcriptBadge.waiting" = "等待内容";
+
+/* Empty transcript hints */
+"recording.empty.loadingModel" = "正在准备离线模型，准备好后会自动开始录音。";
+"recording.empty.recording" = "开始说话后，这里会显示实时预览。完成后会替换为高质量最终稿。";
+"recording.empty.finishing" = "正在等待 SenseVoice 完成最终转录。";
+"recording.empty.completed" = "最终稿为空。";
+"recording.empty.failedNoAudio" = "没有生成可保存的转写内容。";
+"recording.empty.failedWithAudio" = "识别失败，但已录制的音频已保留。可通过下方「打开文件夹」找到。";
+"recording.empty.cancelled" = "本次录音已取消。";
+"recording.empty.idle" = "点击菜单中的录音后会自动开始。";
+
+/* Output path */
+"recording.outputPath.default" = "完成后自动保存到 文稿/VowKy Recordings";
+
+/* Bilingual transcript view */
+"bilingual.jumpToBottom" = "回到最新";
+"bilingual.translating" = "翻译中…";
+"bilingual.retry" = "重试";
+
+/* History */
+"history.window.title" = "VowKy 识别历史";
+"history.search.placeholder" = "搜索历史记录...";
+"history.empty.noRecords" = "还没有输入记录";
+"history.empty.noResults" = "未找到相关记录";
+"history.empty.hint" = "按下快捷键开始语音输入";
+"history.count" = "共 %lld 条记录";
+"history.export" = "导出";
+"history.export.panelTitle" = "导出识别历史";
+"history.export.defaultFilename" = "VowKy历史记录";
+"history.copy" = "复制";
+"history.delete" = "删除";
+"history.date.today" = "今天 %@";
+"history.date.yesterday" = "昨天 %@";
+
+/* Update Available popup */
+"window.update.title" = "VowKy 更新";
+"update.available.heading" = "VowKy %@ 可更新";
+"update.available.currentVersion" = "你当前使用的是 %@";
+"update.autoDownload" = "自动下载并安装以后的更新";
+"update.skipVersion" = "跳过此版本";
+"update.remindLater" = "稍后提醒我";
+"update.install" = "安装更新";
+
+
+/* Common (round3) */
+"common.gotIt" = "我知道了";
+
+/* AppState errors */
+"appState.error.fileTranscribingBusy" = "文件转录中，请稍后或取消转录";
+"appState.error.recordingBusy" = "录音中，请稍后或完成录音";
+"appState.error.modelLoading" = "语音模型加载中...";
+"appState.error.voiceInputBusy" = "语音输入正在进行中，请稍后再试";
+"appState.error.needAccessibility" = "请在系统设置中授予辅助功能权限";
+"appState.error.noVoice" = "未检测到声音，请检查麦克风权限或系统输入设备设置";
+"appState.error.fileTaskRunning" = "已有文件转录任务正在进行";
+"appState.error.recordingTaskRunning" = "已有录音任务正在进行";
+
+/* AppDelegate alerts */
+"alert.recovery.title" = "检测到未完成的录音";
+"alert.recovery.extra" = " 等 %lld 个";
+"alert.recovery.message" = "VowKy 上次退出时还在录音，已为你保留 %1$lld 个音频（%2$@%3$@）。\n\n音频保存在「文稿/VowKy Recordings」。";
+"alert.recovery.reveal" = "在 Finder 中显示";
+"alert.recovery.later" = "稍后处理";
+"alert.quitRecording.title" = "VowKy 正在录音中";
+"alert.quitRecording.message" = "退出前会先完成当前录音的转录并保存。是否继续？";
+"alert.quitRecording.finishAndQuit" = "完成并退出";
+"alert.quitRecording.keepRecording" = "继续录音";
+"alert.crashLoop.title" = "VowKy 检测到启动异常";
+"alert.crashLoop.message" = "VowKy 在短时间内多次重启，可能是快捷键冲突导致。已将快捷键重置为默认值（%@）。\n\n您可以在设置中重新自定义快捷键。";
+"alert.accessibility.title" = "VowKy 需要辅助功能权限";
+"alert.accessibility.message" = "VowKy 使用全局快捷键（%@）来触发语音输入，需要辅助功能权限才能正常工作。\n\n点击「打开系统设置」后，请在列表中找到 VowKy 并开启开关。";
+"alert.accessibility.openSettings" = "打开系统设置";
+"alert.accessibility.later" = "稍后设置";
+"alert.conflict.title" = "快捷键冲突";
+"alert.conflict.message" = "系统的「选择上一个输入法」快捷键也使用了 Option+Space，这会与 VowKy 的语音输入快捷键冲突。\n\n请前往「系统设置 > 键盘 > 键盘快捷键 > 输入法」中修改或关闭该快捷键。";
+"alert.conflict.openKeyboardSettings" = "打开键盘设置";
+
+/* Recording panel (floating toast) */
+"recordingPanel.listening" = "正在聆听...";
+"recordingPanel.recognizing" = "识别中...";
+"recordingPanel.noVoice" = "未识别到语音，请重试";
+
+/* Translation errors */
+"translation.error.sessionInvalidated" = "翻译会话已失效";
+"translation.error.http" = "翻译服务返回 HTTP %lld";
+"translation.error.timeout" = "翻译请求超时";
+"translation.error.emptyResult" = "翻译结果为空";
+"translation.error.notConfigured" = "请先在设置中填写 LLM 翻译的 API 地址、模型和密钥";
+"translation.error.invalidBaseURL" = "API 地址无效";
+"translation.failed.generic" = "翻译失败";
+"translation.cancelled" = "已取消";
+
+/* LLM provider presets (quick fill) */
+"llm.preset.qwenMt" = "阿里 Qwen-MT-Turbo（推荐）";
+"llm.preset.deepseek" = "DeepSeek";
+"llm.preset.glm" = "智谱 GLM-4-Flash（免费）";
+"llm.preset.doubao" = "字节豆包（需填入自己的接入点）";
+"llm.preset.groq" = "Groq（海外，最快）";
+
+/* Update popup */
+"update.notesUnavailable" = "本次更新的发布说明暂不可用。";
+
+
+/* Main-app-only services (round4) */
+"transcribe.noTextRecognized" = "没有识别到文字";
+"bilingual.export.translationFailed" = "（翻译失败）";
+"bilingual.export.filenameSuffix" = "双语";
+"history.export.csvHeader" = "时间,内容,类型";

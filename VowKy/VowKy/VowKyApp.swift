@@ -71,6 +71,7 @@ struct VowKyApp: App {
                 updater: updater,
                 updateCoordinator: updateCoordinator
             )
+            .environmentObject(LocalizationManager.shared)
         } label: {
             Image(nsImage: Self.butterflyTemplateImage)
                 .opacity(menuBarIconActive ? 1.0 : 0.85)

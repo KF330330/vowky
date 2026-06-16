@@ -202,9 +202,9 @@ final class TranslationCoordinator: ObservableObject {
             case .sessionInvalidated, .http, .timeout, .underlying:
                 retryable = true
             }
-            return .failed(message: error.errorDescription ?? "翻译失败", retryable: retryable)
+            return .failed(message: error.errorDescription ?? LL("translation.failed.generic"), retryable: retryable)
         } catch is CancellationError {
-            return .failed(message: "已取消", retryable: false)
+            return .failed(message: LL("translation.cancelled"), retryable: false)
         } catch {
             return .failed(message: error.localizedDescription, retryable: true)
         }

@@ -89,36 +89,37 @@ struct TranslationConfig: Equatable {
 // MARK: - LLM 服务商预设（设置页「快速填入」）
 
 struct TranslationLLMPreset: Identifiable {
-    let title: String
+    /// 本地化 key；展示时由调用方 loc.string(titleKey) 解析。
+    let titleKey: String
     let baseURL: String
     let model: String
-    var id: String { title }
+    var id: String { baseURL }
 
     /// 排序即推荐顺序。基于 2026-06 调研：Qwen-MT 为专用翻译模型，
     /// 速度/质量/价格/国内直连综合最优；Groq 面向海外用户延迟最低。
     static let all: [TranslationLLMPreset] = [
         TranslationLLMPreset(
-            title: "阿里 Qwen-MT-Turbo（推荐）",
+            titleKey: "llm.preset.qwenMt",
             baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
             model: "qwen-mt-turbo"
         ),
         TranslationLLMPreset(
-            title: "DeepSeek",
+            titleKey: "llm.preset.deepseek",
             baseURL: "https://api.deepseek.com/v1",
             model: "deepseek-chat"
         ),
         TranslationLLMPreset(
-            title: "智谱 GLM-4-Flash（免费）",
+            titleKey: "llm.preset.glm",
             baseURL: "https://open.bigmodel.cn/api/paas/v4",
             model: "glm-4-flash"
         ),
         TranslationLLMPreset(
-            title: "字节豆包（需填入自己的接入点）",
+            titleKey: "llm.preset.doubao",
             baseURL: "https://ark.cn-beijing.volces.com/api/v3",
             model: ""
         ),
         TranslationLLMPreset(
-            title: "Groq（海外，最快）",
+            titleKey: "llm.preset.groq",
             baseURL: "https://api.groq.com/openai/v1",
             model: "llama-3.3-70b-versatile"
         ),

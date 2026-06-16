@@ -26,10 +26,11 @@ final class RecordingTranscriptionWindowController {
 
         let viewModel = RecordingTranscriptionViewModel(appState: appState)
         let view = RecordingTranscriptionView(viewModel: viewModel)
+            .environmentObject(LocalizationManager.shared)
         let hostingController = NSHostingController(rootView: view)
 
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "VowKy 录音"
+        window.title = L("window.recording.title")
         window.styleMask = [.titled, .closable, .resizable, .miniaturizable]
         window.setContentSize(NSSize(width: 680, height: 520))
         window.minSize = NSSize(width: 540, height: 420)
@@ -233,17 +234,17 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
         switch state {
         case .idle:
-            return "准备录音"
+            return L("recording.status.idle")
         case .loadingModel:
-            return "正在加载录音模型..."
+            return L("recording.status.loadingModel")
         case .recording:
-            return "正在录音并实时预览"
+            return L("recording.status.recording")
         case .finishing:
-            return "录音已完成，正在生成高质量转录稿..."
+            return L("recording.status.finishing")
         case .completed:
-            return "已保存文字和音频"
+            return L("recording.status.completed")
         case .cancelled:
-            return "已取消"
+            return L("recording.status.cancelled")
         case .failed(let message):
             return message
         }
@@ -513,7 +514,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private func startRecordingPipeline(operationID: UUID) async {
         guard isActive(operationID) else { return }
         guard finalRecognizer.isReady else {
-            fail(operationID: operationID, message: "语音模型未加载，无法生成最终转录稿")
+            fail(operationID: operationID, message: L("recording.error.modelNotReady"))
             return
         }
 
@@ -635,7 +636,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                 scheduleBilingualTranscriptSave()
             }
         } catch {
-            state = .failed("保存失败：\(error.localizedDescription)")
+            state = .failed(L("recording.error.saveFailed", error.localizedDescription))
         }
 
         clearActiveOperation(operationID: operationID)
@@ -754,15 +755,15 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         guard let p = finalizationProgress else { return nil }
         guard p.inputClosed, p.completed >= 2, p.total > p.completed,
               finalizationElapsedSeconds > 0 else {
-            return "估算中…"
+            return L("recording.eta.estimating")
         }
         let perSegment = finalizationElapsedSeconds / Double(p.completed)
         let remaining = Int((Double(p.total - p.completed) * perSegment).rounded())
-        if remaining < 1 { return "即将完成" }
-        if remaining < 60 { return "约还需 \(remaining) 秒" }
+        if remaining < 1 { return L("recording.eta.almostDone") }
+        if remaining < 60 { return L("recording.eta.seconds", remaining) }
         let mins = remaining / 60
         let secs = remaining % 60
-        return secs == 0 ? "约还需 \(mins) 分钟" : "约还需 \(mins) 分 \(secs) 秒"
+        return secs == 0 ? L("recording.eta.minutes", mins) : L("recording.eta.minutesSeconds", mins, secs)
     }
 
     var finalizationDurationText: String {
@@ -775,9 +776,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     var finalizationSegmentText: String? {
         guard let p = finalizationProgress else { return nil }
         if p.total == 0 {
-            return "准备处理音频…"
+            return L("recording.segment.preparing")
         }
-        return "第 \(p.completed) / \(p.total) 段"
+        return L("recording.segment.progress", p.completed, p.total)
     }
 
     nonisolated static func displayWaveformBands(from samples: [Float]) -> [RecordingWaveformBand] {
@@ -829,6 +830,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 // MARK: - View
 
 struct RecordingTranscriptionView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var viewModel: RecordingTranscriptionViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -885,7 +887,7 @@ struct RecordingTranscriptionView: View {
                 get: { viewModel.translationConfig.enabled },
                 set: { viewModel.setTranslationEnabled($0) }
             )) {
-                Text("翻译")
+                Text(loc.string("recording.translation.toggle"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(RecordingTheme.textSecondary)
             }
@@ -923,14 +925,14 @@ struct RecordingTranscriptionView: View {
                 get: { viewModel.subtitleEnabled },
                 set: { viewModel.setSubtitleEnabled($0) }
             )) {
-                Text("字幕")
+                Text(loc.string("recording.subtitle.toggle"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(RecordingTheme.textSecondary)
             }
             .toggleStyle(.switch)
             .controlSize(.mini)
             .fixedSize()
-            .help("在屏幕上显示可拖动的浮动字幕，开会看共享画面时也能看转写")
+            .help(loc.string("recording.subtitle.help"))
         }
     }
 
@@ -942,10 +944,10 @@ struct RecordingTranscriptionView: View {
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)
-                Text("VowKy 正在保存录音并完成转录...")
+                Text(loc.string("recording.quitOverlay.title"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
-                Text("请勿强制退出，正在生成最终稿")
+                Text(loc.string("recording.quitOverlay.subtitle"))
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.7))
             }
@@ -971,10 +973,10 @@ struct RecordingTranscriptionView: View {
                 )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("录音")
+                Text(loc.string("recording.header.title"))
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(RecordingTheme.textPrimary)
-                Text("实时预览，高质量最终稿自动保存")
+                Text(loc.string("recording.header.subtitle"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(RecordingTheme.textMuted)
                     .lineLimit(1)
@@ -1071,7 +1073,7 @@ struct RecordingTranscriptionView: View {
                             .tint(RecordingTheme.accentDeep)
                             .frame(height: 8)
                     }
-                    Text("正在用高质量模型重新转录，请勿关闭窗口，完成后会自动保存。")
+                    Text(loc.string("recording.finishing.hint"))
                         .font(.system(size: 11))
                         .foregroundColor(RecordingTheme.textMuted)
                         .lineLimit(2)
@@ -1090,9 +1092,9 @@ struct RecordingTranscriptionView: View {
 
     private var headerSubtitle: String {
         if viewModel.state == .finishing {
-            let segment = viewModel.finalizationSegmentText ?? "准备处理音频…"
+            let segment = viewModel.finalizationSegmentText ?? loc.string("recording.segment.preparing")
             if let eta = viewModel.finalizationETAText {
-                return "\(segment) · \(eta)"
+                return loc.string("recording.headerSubtitle.segmentETA", segment, eta)
             }
             return segment
         }
@@ -1110,7 +1112,7 @@ struct RecordingTranscriptionView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(RecordingTheme.accentDark)
 
-                Text("转写内容")
+                Text(loc.string("recording.transcript.title"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(RecordingTheme.textPrimary)
 
@@ -1135,7 +1137,7 @@ struct RecordingTranscriptionView: View {
                 translationControls
 
                 if !viewModel.transcriptText.isEmpty {
-                    Text("\(viewModel.transcriptText.count) 字")
+                    Text(loc.string("recording.transcript.charCount", viewModel.transcriptText.count))
                         .font(.system(size: 11))
                         .foregroundColor(RecordingTheme.textMuted)
                 }
@@ -1202,7 +1204,7 @@ struct RecordingTranscriptionView: View {
                 Button {
                     viewModel.cancel()
                 } label: {
-                    Label("取消", systemImage: "xmark")
+                    Label(loc.string("recording.button.cancel"), systemImage: "xmark")
                 }
                 .buttonStyle(RecordingGhostButtonStyle())
                 .keyboardShortcut(.cancelAction)
@@ -1210,7 +1212,7 @@ struct RecordingTranscriptionView: View {
                 Button {
                     viewModel.start()
                 } label: {
-                    Label("重新录音", systemImage: "record.circle")
+                    Label(loc.string("recording.button.reRecord"), systemImage: "record.circle")
                 }
                 .buttonStyle(RecordingPrimaryButtonStyle())
                 .disabled(!viewModel.canStart)
@@ -1221,7 +1223,7 @@ struct RecordingTranscriptionView: View {
                 Button {
                     viewModel.stop()
                 } label: {
-                    Label("完成并生成最终稿", systemImage: "checkmark.circle.fill")
+                    Label(loc.string("recording.button.finish"), systemImage: "checkmark.circle.fill")
                 }
                 .buttonStyle(RecordingPrimaryButtonStyle())
             }
@@ -1231,7 +1233,7 @@ struct RecordingTranscriptionView: View {
             Button {
                 viewModel.copyResult()
             } label: {
-                Label("复制", systemImage: "doc.on.doc")
+                Label(loc.string("recording.button.copy"), systemImage: "doc.on.doc")
             }
             .buttonStyle(RecordingSecondaryButtonStyle())
             .disabled(!viewModel.canCopyResult)
@@ -1239,7 +1241,7 @@ struct RecordingTranscriptionView: View {
             Button {
                 viewModel.openOutputFolder()
             } label: {
-                Label("打开文件夹", systemImage: "folder")
+                Label(loc.string("recording.button.openFolder"), systemImage: "folder")
             }
             .buttonStyle(RecordingSecondaryButtonStyle())
             .disabled(!viewModel.canOpenOutputFolder)
@@ -1255,64 +1257,64 @@ struct RecordingTranscriptionView: View {
     private var statusBadgeText: String {
         switch viewModel.state {
         case .idle:
-            return "READY"
+            return loc.string("recording.badge.ready")
         case .loadingModel:
-            return "LOADING"
+            return loc.string("recording.badge.loading")
         case .recording:
-            return "LIVE"
+            return loc.string("recording.badge.live")
         case .finishing:
-            return "FINALIZING"
+            return loc.string("recording.badge.finalizing")
         case .completed:
-            return "SAVED"
+            return loc.string("recording.badge.saved")
         case .cancelled:
-            return "CANCELLED"
+            return loc.string("recording.badge.cancelled")
         case .failed:
-            return "FAILED"
+            return loc.string("recording.badge.failed")
         }
     }
 
     private var cardTitle: String {
         switch viewModel.state {
         case .idle:
-            return "准备开始"
+            return loc.string("recording.cardTitle.idle")
         case .loadingModel:
-            return "正在准备模型"
+            return loc.string("recording.cardTitle.loadingModel")
         case .recording:
-            return "正在聆听"
+            return loc.string("recording.cardTitle.recording")
         case .finishing:
-            return "生成最终稿"
+            return loc.string("recording.cardTitle.finishing")
         case .completed:
-            return "录音已保存"
+            return loc.string("recording.cardTitle.completed")
         case .cancelled:
-            return "录音已取消"
+            return loc.string("recording.cardTitle.cancelled")
         case .failed:
-            return "录音失败"
+            return loc.string("recording.cardTitle.failed")
         }
     }
 
     private var durationCaption: String {
         switch viewModel.state {
         case .completed:
-            return "总时长"
+            return loc.string("recording.durationCaption.total")
         case .finishing:
-            return "处理已用时"
+            return loc.string("recording.durationCaption.processing")
         default:
-            return "当前时长"
+            return loc.string("recording.durationCaption.current")
         }
     }
 
     private var transcriptBadgeText: String {
         switch viewModel.state {
         case .completed:
-            return "SenseVoice 最终稿"
+            return loc.string("recording.transcriptBadge.completed")
         case .finishing:
-            return "高质量转录中"
+            return loc.string("recording.transcriptBadge.finishing")
         case .recording:
-            return "SenseVoice 实时预览"
+            return loc.string("recording.transcriptBadge.recording")
         case .failed:
-            return "未保存"
+            return loc.string("recording.transcriptBadge.failed")
         default:
-            return "等待内容"
+            return loc.string("recording.transcriptBadge.waiting")
         }
     }
 
@@ -1330,21 +1332,21 @@ struct RecordingTranscriptionView: View {
     private var emptyTranscriptText: String {
         switch viewModel.state {
         case .loadingModel:
-            return "正在准备离线模型，准备好后会自动开始录音。"
+            return loc.string("recording.empty.loadingModel")
         case .recording:
-            return "开始说话后，这里会显示实时预览。完成后会替换为高质量最终稿。"
+            return loc.string("recording.empty.recording")
         case .finishing:
-            return "正在等待 SenseVoice 完成最终转录。"
+            return loc.string("recording.empty.finishing")
         case .completed:
-            return "最终稿为空。"
+            return loc.string("recording.empty.completed")
         case .failed:
             return viewModel.recoveredAudioURL == nil
-                ? "没有生成可保存的转写内容。"
-                : "识别失败，但已录制的音频已保留。可通过下方「打开文件夹」找到。"
+                ? loc.string("recording.empty.failedNoAudio")
+                : loc.string("recording.empty.failedWithAudio")
         case .cancelled:
-            return "本次录音已取消。"
+            return loc.string("recording.empty.cancelled")
         case .idle:
-            return "点击菜单中的录音后会自动开始。"
+            return loc.string("recording.empty.idle")
         }
     }
 
@@ -1355,7 +1357,7 @@ struct RecordingTranscriptionView: View {
         if let recovered = viewModel.recoveredAudioURL {
             return recovered.deletingLastPathComponent().path
         }
-        return "完成后自动保存到 文稿/VowKy Recordings"
+        return loc.string("recording.outputPath.default")
     }
 
     private var statusDotColor: Color {

@@ -38,10 +38,10 @@ final class OnboardingWindowController {
         self.viewModel = vm
 
         let onboardingView = OnboardingView(viewModel: vm)
-        let hostingController = NSHostingController(rootView: onboardingView)
+        let hostingController = NSHostingController(rootView: onboardingView.environmentObject(LocalizationManager.shared))
 
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "VowKy 设置向导"
+        window.title = L("window.onboarding.title")
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 520, height: 420))
         window.center()
@@ -322,7 +322,7 @@ final class OnboardingViewModel: ObservableObject {
 
             if isSpace && hasOption && !hasCommand && !hasControl {
                 hasConflict = true
-                conflictMessage = "系统的「选择上一个输入法」快捷键也使用了 Option+Space，会与 VowKy 冲突。\n请前往「系统设置 > 键盘 > 键盘快捷键 > 输入法」中修改或关闭。"
+                conflictMessage = L("onboarding.hotkey.conflictMessage")
             }
         }
     }
@@ -385,6 +385,7 @@ final class OnboardingViewModel: ObservableObject {
 // MARK: - Main Onboarding View
 
 struct OnboardingView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var viewModel: OnboardingViewModel
 
     var body: some View {
@@ -423,19 +424,19 @@ struct OnboardingView: View {
                 Spacer()
 
                 if viewModel.currentStep != .welcome {
-                    Button("上一步") {
+                    Button(loc.string("onboarding.nav.previous")) {
                         viewModel.goPrevious()
                     }
                 }
 
                 if viewModel.currentStep == .menuBar {
-                    Button("完成") {
+                    Button(loc.string("onboarding.nav.finish")) {
                         viewModel.completeOnboarding()
                     }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                 } else {
-                    Button("下一步") {
+                    Button(loc.string("onboarding.nav.next")) {
                         viewModel.goNext()
                     }
                     .keyboardShortcut(.defaultAction)
@@ -457,25 +458,27 @@ struct OnboardingView: View {
 // MARK: - Step 1: Welcome
 
 private struct WelcomeStepView: View {
+    @EnvironmentObject private var loc: LocalizationManager
+
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "mic.badge.plus")
                 .font(.system(size: 56))
                 .foregroundColor(.accentColor)
 
-            Text("欢迎使用 VowKy")
+            Text(loc.string("onboarding.welcome.title"))
                 .font(.title)
                 .bold()
 
-            Text("macOS 菜单栏语音输入工具\n按下快捷键说话，文字即刻出现在光标位置")
+            Text(loc.string("onboarding.welcome.subtitle"))
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
-                FeatureRow(icon: "wifi.slash", text: "完全离线，无需联网")
-                FeatureRow(icon: "lock.shield", text: "隐私优先，语音不出设备")
-                FeatureRow(icon: "globe", text: "支持中文语音识别")
-                FeatureRow(icon: "cursorarrow.click.badge.clock", text: "全局快捷键，任意应用可用")
+                FeatureRow(icon: "wifi.slash", text: loc.string("onboarding.welcome.featureOffline"))
+                FeatureRow(icon: "lock.shield", text: loc.string("onboarding.welcome.featurePrivacy"))
+                FeatureRow(icon: "globe", text: loc.string("onboarding.welcome.featureChinese"))
+                FeatureRow(icon: "cursorarrow.click.badge.clock", text: loc.string("onboarding.welcome.featureGlobal"))
             }
             .padding(.top, 8)
         }
@@ -499,6 +502,7 @@ private struct FeatureRow: View {
 // MARK: - Step 2: Permissions
 
 private struct PermissionsStepView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var viewModel: OnboardingViewModel
 
     var body: some View {
@@ -507,11 +511,11 @@ private struct PermissionsStepView: View {
                 .font(.system(size: 48))
                 .foregroundColor(.orange)
 
-            Text("授权辅助功能")
+            Text(loc.string("onboarding.permission.title"))
                 .font(.title2)
                 .bold()
 
-            Text("VowKy 需要辅助功能权限来注册全局快捷键和输入文字。\n\n点击下方按钮后，在系统设置中找到 VowKy 并开启开关。")
+            Text(loc.string("onboarding.permission.description"))
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -521,13 +525,13 @@ private struct PermissionsStepView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
                         .font(.title3)
-                    Text("辅助功能权限已授予")
+                    Text(loc.string("onboarding.permission.granted"))
                         .foregroundColor(.green)
                         .font(.headline)
                 }
                 .padding(.top, 8)
             } else {
-                Button("打开系统设置") {
+                Button(loc.string("onboarding.permission.openSettings")) {
                     viewModel.openAccessibilitySettings()
                 }
                 .buttonStyle(.borderedProminent)
@@ -538,13 +542,13 @@ private struct PermissionsStepView: View {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("等待授权中...")
+                        Text(loc.string("onboarding.permission.waiting"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
 
-                Text("也可以点击「下一步」稍后设置")
+                Text(loc.string("onboarding.permission.skipHint"))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -564,19 +568,20 @@ private struct PermissionsStepView: View {
 // MARK: - Step 3: Hotkey
 
 private struct HotkeyStepView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var viewModel: OnboardingViewModel
 
     var body: some View {
         VStack(spacing: 14) {
-            Text("设置快捷键")
+            Text(loc.string("onboarding.hotkey.title"))
                 .font(.title2)
                 .bold()
 
-            Text("当前语音输入快捷键：")
+            Text(loc.string("onboarding.hotkey.currentLabel"))
                 .foregroundColor(.secondary)
 
             if viewModel.isRecordingHotkey {
-                Text("请按下新快捷键...")
+                Text(loc.string("onboarding.hotkey.pressNew"))
                     .font(.system(size: 24, design: .monospaced))
                     .foregroundColor(.orange)
             } else {
@@ -593,7 +598,7 @@ private struct HotkeyStepView: View {
                     .shadow(radius: 2)
             }
 
-            Button(viewModel.isRecordingHotkey ? "取消" : "修改快捷键") {
+            Button(viewModel.isRecordingHotkey ? loc.string("onboarding.hotkey.cancelRecord") : loc.string("onboarding.hotkey.changeButton")) {
                 if viewModel.isRecordingHotkey {
                     viewModel.stopRecordingHotkey()
                 } else {
@@ -607,7 +612,7 @@ private struct HotkeyStepView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(.orange)
-                        Text("快捷键冲突")
+                        Text(loc.string("onboarding.hotkey.conflictTitle"))
                             .foregroundColor(.orange)
                             .bold()
                     }
@@ -615,7 +620,7 @@ private struct HotkeyStepView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
-                    Button("打开键盘设置") {
+                    Button(loc.string("onboarding.hotkey.openKeyboardSettings")) {
                         viewModel.openKeyboardSettings()
                     }
                     .buttonStyle(.bordered)
@@ -641,6 +646,7 @@ private struct HotkeyStepView: View {
 // MARK: - Step 4: Try It
 
 private struct TryItStepView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var viewModel: OnboardingViewModel
 
     var body: some View {
@@ -651,7 +657,7 @@ private struct TryItStepView: View {
                     .font(.system(size: 48))
                     .foregroundColor(.accentColor)
 
-                Text("试一试")
+                Text(loc.string("onboarding.tryIt.title"))
                     .font(.title2)
                     .bold()
 
@@ -659,37 +665,37 @@ private struct TryItStepView: View {
                     VStack(spacing: 12) {
                         ProgressView()
                             .controlSize(.regular)
-                        Text("语音模型加载中，请稍候...")
+                        Text(loc.string("onboarding.tryIt.modelLoading"))
                             .foregroundColor(.secondary)
                     }
                 } else {
                     VStack(spacing: 12) {
-                        Text("按下 \(viewModel.hotkeyDisplay) 开始说话")
+                        Text(loc.string("onboarding.tryIt.pressToStart", viewModel.hotkeyDisplay))
                             .font(.headline)
-                        Text("说完后再按一次 \(viewModel.hotkeyDisplay) 停止")
+                        Text(loc.string("onboarding.tryIt.pressToStop", viewModel.hotkeyDisplay))
                             .foregroundColor(.secondary)
                     }
                 }
 
             case .recording:
                 PulsingMicIcon()
-                Text("正在聆听...")
+                Text(loc.string("onboarding.tryIt.listening"))
                     .font(.headline)
                     .foregroundColor(.red)
-                Text("说完后按 \(viewModel.hotkeyDisplay) 停止")
+                Text(loc.string("onboarding.tryIt.pressToStopShort", viewModel.hotkeyDisplay))
                     .foregroundColor(.secondary)
 
             case .recognizing:
                 ProgressView()
                     .controlSize(.regular)
-                Text("识别中...")
+                Text(loc.string("onboarding.tryIt.recognizing"))
                     .font(.headline)
 
             case .success:
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 36))
                     .foregroundColor(.green)
-                Text("识别成功!")
+                Text(loc.string("onboarding.tryIt.success"))
                     .font(.headline)
                     .foregroundColor(.green)
                 Text(viewModel.recognizedText)
@@ -700,7 +706,7 @@ private struct TryItStepView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color(nsColor: .controlBackgroundColor))
                     )
-                Button("再试一次") {
+                Button(loc.string("onboarding.tryIt.tryAgain")) {
                     viewModel.resetTryIt()
                 }
                 .buttonStyle(.bordered)
@@ -709,11 +715,11 @@ private struct TryItStepView: View {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 36))
                     .foregroundColor(.orange)
-                Text("未识别到语音")
+                Text(loc.string("onboarding.tryIt.noVoice"))
                     .font(.headline)
-                Text("请确保麦克风正常工作，然后再试一次")
+                Text(loc.string("onboarding.tryIt.noVoiceHint"))
                     .foregroundColor(.secondary)
-                Button("重试") {
+                Button(loc.string("onboarding.tryIt.retry")) {
                     viewModel.resetTryIt()
                 }
                 .buttonStyle(.bordered)
@@ -731,17 +737,19 @@ private struct TryItStepView: View {
 // MARK: - Step 5: Menu Bar
 
 private struct MenuBarStepView: View {
+    @EnvironmentObject private var loc: LocalizationManager
+
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "menubar.arrow.up.rectangle")
                 .font(.system(size: 48))
                 .foregroundColor(.accentColor)
 
-            Text("菜单栏")
+            Text(loc.string("onboarding.menuBar.title"))
                 .font(.title2)
                 .bold()
 
-            Text("VowKy 常驻屏幕右上角菜单栏\n点击图标可查看状态、识别历史和设置")
+            Text(loc.string("onboarding.menuBar.description"))
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
 

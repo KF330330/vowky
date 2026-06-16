@@ -13,12 +13,12 @@ enum TranslationError: Error, Equatable, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .sessionInvalidated: return "翻译会话已失效"
-        case .http(let code): return "翻译服务返回 HTTP \(code)"
-        case .timeout: return "翻译请求超时"
-        case .emptyResult: return "翻译结果为空"
-        case .notConfigured: return "请先在设置中填写 LLM 翻译的 API 地址、模型和密钥"
-        case .invalidBaseURL: return "API 地址无效"
+        case .sessionInvalidated: return LL("translation.error.sessionInvalidated")
+        case .http(let code): return LL("translation.error.http", code)
+        case .timeout: return LL("translation.error.timeout")
+        case .emptyResult: return LL("translation.error.emptyResult")
+        case .notConfigured: return LL("translation.error.notConfigured")
+        case .invalidBaseURL: return LL("translation.error.invalidBaseURL")
         case .underlying(let message): return message
         }
     }

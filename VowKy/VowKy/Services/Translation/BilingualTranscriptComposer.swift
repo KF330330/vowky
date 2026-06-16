@@ -23,7 +23,7 @@ enum BilingualTranscriptComposer {
             case .translated(let translation):
                 return "\(paragraph.text)\n> \(quoted(translation))"
             case .failed:
-                return "\(paragraph.text)\n> （翻译失败）"
+                return "\(paragraph.text)\n> \(LL("bilingual.export.translationFailed"))"
             case .pending, .skippedSameLanguage:
                 return paragraph.text
             }
@@ -35,7 +35,7 @@ enum BilingualTranscriptComposer {
     static func outputURL(for transcriptURL: URL) -> URL {
         let baseName = transcriptURL.deletingPathExtension().lastPathComponent
         return transcriptURL.deletingLastPathComponent()
-            .appendingPathComponent("\(baseName) (双语).md")
+            .appendingPathComponent("\(baseName) (\(LL("bilingual.export.filenameSuffix"))).md")
     }
 
     /// 译文若含换行，每行都补 `> ` 前缀，保持整段在同一个引用块内。

@@ -214,12 +214,12 @@ final class AppState: ObservableObject {
         errorMessage = nil
 
         if isFileTranscriptionInProgress {
-            errorMessage = "文件转录中，请稍后或取消转录"
+            errorMessage = L("appState.error.fileTranscribingBusy")
             CrashLogger.log("[Hotkey] Ignored while file transcription is running")
             return
         }
         if isRecordingTranscriptionInProgress {
-            errorMessage = "录音中，请稍后或完成录音"
+            errorMessage = L("appState.error.recordingBusy")
             CrashLogger.log("[Hotkey] Ignored while recording transcription is running")
             return
         }
@@ -236,7 +236,7 @@ final class AppState: ObservableObject {
 
         case .loading:
             if !speechRecognizer.isReady {
-                errorMessage = "语音模型加载中..."
+                errorMessage = L("appState.error.modelLoading")
                 CrashLogger.log("[Hotkey] Model still loading, ignored")
                 print("[VowKy][AppState] Model still loading, ignoring toggle")
             }
@@ -250,7 +250,7 @@ final class AppState: ObservableObject {
     private func startRecordingFromIdle() {
         // Check accessibility permission
         guard permissionChecker.isAccessibilityGranted() else {
-            errorMessage = "请在系统设置中授予辅助功能权限"
+            errorMessage = L("appState.error.needAccessibility")
             CrashLogger.log("[Recording] Accessibility not granted")
             print("[VowKy][AppState] Accessibility not granted")
             return
@@ -306,7 +306,7 @@ final class AppState: ObservableObject {
         if !samples.isEmpty && maxAmp < 0.0001 {
             CrashLogger.log("[Recognize] Audio is silent (maxAmp=\(maxAmp)), aborting recognition")
             backupService?.deleteBackup()
-            errorMessage = "未检测到声音，请检查麦克风权限或系统输入设备设置"
+            errorMessage = L("appState.error.noVoice")
             state = .idle
             return
         }
@@ -369,16 +369,16 @@ final class AppState: ObservableObject {
 
     func beginFileTranscription() -> String? {
         if isFileTranscriptionInProgress {
-            return "已有文件转录任务正在进行"
+            return L("appState.error.fileTaskRunning")
         }
         if isRecordingTranscriptionInProgress {
-            return "录音中，请稍后或完成录音"
+            return L("appState.error.recordingBusy")
         }
         if state == .loading || !speechRecognizer.isReady {
-            return "语音模型加载中..."
+            return L("appState.error.modelLoading")
         }
         guard state == .idle else {
-            return "语音输入正在进行中，请稍后再试"
+            return L("appState.error.voiceInputBusy")
         }
         isFileTranscriptionInProgress = true
         return nil
@@ -399,16 +399,16 @@ final class AppState: ObservableObject {
 
     func beginRecordingTranscription() -> String? {
         if isRecordingTranscriptionInProgress {
-            return "已有录音任务正在进行"
+            return L("appState.error.recordingTaskRunning")
         }
         if isFileTranscriptionInProgress {
-            return "文件转录中，请稍后或取消转录"
+            return L("appState.error.fileTranscribingBusy")
         }
         if state == .loading {
-            return "语音模型加载中..."
+            return L("appState.error.modelLoading")
         }
         guard state == .idle else {
-            return "语音输入正在进行中，请稍后再试"
+            return L("appState.error.voiceInputBusy")
         }
         isRecordingTranscriptionInProgress = true
         return nil

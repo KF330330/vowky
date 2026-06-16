@@ -1,40 +1,39 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
-import Sparkle
+import Combine
 
 // MARK: - Settings Window Controller
 
+@MainActor
 final class SettingsWindowController {
     static let shared = SettingsWindowController()
 
     private var window: NSWindow?
-    private weak var updater: SPUUpdater?
-    private weak var updateCoordinator: UpdateReminderCoordinator?
+    private var titleObserver: AnyCancellable?
 
-    /// 由 MenuBarView 调用时传入 updater 和 coordinator，让设置里的「自动检查更新」开关与「立即检查更新」按钮可用。
-    func showWindow(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil) {
-        if let updater {
-            self.updater = updater
-        }
-        if let updateCoordinator {
-            self.updateCoordinator = updateCoordinator
-        }
+    func showWindow() {
         if let window = window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let settingsView = SettingsView(updater: self.updater, updateCoordinator: self.updateCoordinator)
+        let settingsView = SettingsView()
+            .environmentObject(LocalizationManager.shared)
         let hostingController = NSHostingController(rootView: settingsView)
 
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "VowKy Settings"
+        window.title = L("window.settings.title")
         window.styleMask = [.titled, .closable]
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // SwiftUI 内容随语言切换自动刷新；AppKit 标题栏不在 SwiftUI graph 内，需手动跟随。
+        titleObserver = LocalizationManager.shared.$language
+            .receive(on: RunLoop.main)
+            .sink { [weak window] _ in window?.title = L("window.settings.title") }
 
         self.window = window
     }
@@ -158,18 +157,12 @@ final class HotkeyRecorder: ObservableObject {
 // MARK: - Settings View
 
 struct SettingsView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @State private var isAccessibilityGranted = AXIsProcessTrusted()
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var isHoldMode = HotkeyConfig.current.isHoldMode
     @StateObject private var hotkeyRecorder = HotkeyRecorder()
     @State private var autoCopyToClipboard = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
-    @State private var automaticUpdateChecks: Bool = {
-        let defaults = UserDefaults.standard
-        if defaults.object(forKey: VowKyApp.automaticUpdateChecksDefaultsKey) == nil {
-            return true
-        }
-        return defaults.bool(forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
-    }()
     @State private var permissionRefreshTimer: Timer?
 
     // 翻译
@@ -182,15 +175,7 @@ struct SettingsView: View {
     @State private var translationTestResult: String?
     @State private var translationTestInProgress: Bool = false
 
-    private weak var updater: SPUUpdater?
-    private weak var updateCoordinator: UpdateReminderCoordinator?
-    @ObservedObject private var updateViewModel: CheckForUpdatesViewModel
-
-    init(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil) {
-        self.updater = updater
-        self.updateCoordinator = updateCoordinator
-        self.updateViewModel = CheckForUpdatesViewModel(updater: updater)
-
+    init() {
         let translationConfig = TranslationConfigStore.load()
         _translationEnabled     = State(initialValue: translationConfig.enabled)
         _translationEngine      = State(initialValue: translationConfig.engine)
@@ -203,28 +188,28 @@ struct SettingsView: View {
     var body: some View {
         Form {
             // Hotkey
-            Section("快捷键") {
+            Section(loc.string("settings.section.hotkey")) {
                 HStack {
-                    Text("语音输入")
+                    Text(loc.string("settings.hotkey.voiceInput"))
                     Spacer()
                     if hotkeyRecorder.isRecording {
-                        Text("请按下新快捷键...")
+                        Text(loc.string("settings.hotkey.recording"))
                             .font(.system(.body, design: .monospaced))
                             .foregroundColor(.orange)
                     } else {
                         Text(hotkeyRecorder.displayName)
                             .font(.system(.body, design: .monospaced))
                     }
-                    Button(hotkeyRecorder.isRecording ? "取消" : "修改") {
+                    Button(hotkeyRecorder.isRecording ? loc.string("common.cancel") : loc.string("settings.hotkey.modify")) {
                         hotkeyRecorder.toggle()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
 
-                Picker("触发方式", selection: $isHoldMode) {
-                    Text("按键切换").tag(false)
-                    Text("长按说话").tag(true)
+                Picker(loc.string("settings.hotkey.trigger"), selection: $isHoldMode) {
+                    Text(loc.string("settings.hotkey.trigger.toggle")).tag(false)
+                    Text(loc.string("settings.hotkey.trigger.hold")).tag(true)
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: isHoldMode) { newValue in
@@ -235,27 +220,27 @@ struct SettingsView: View {
             }
 
             // Model
-            Section("语音模型") {
-                LabeledContent("模型") {
+            Section(loc.string("settings.section.model")) {
+                LabeledContent(loc.string("settings.model.label")) {
                     Text("SenseVoice (int8)")
                 }
-                LabeledContent("引擎") {
-                    Text("sherpa-onnx (本地)")
+                LabeledContent(loc.string("settings.model.engine")) {
+                    Text(loc.string("settings.model.engine.value"))
                 }
             }
 
             // Permissions
-            Section("权限") {
+            Section(loc.string("settings.section.permissions")) {
                 HStack {
-                    Text("辅助功能")
+                    Text(loc.string("settings.permission.accessibility"))
                     Spacer()
                     if isAccessibilityGranted {
-                        Text("已授权")
+                        Text(loc.string("settings.permission.granted"))
                             .foregroundColor(.green)
                     } else {
-                        Text("未授权")
+                        Text(loc.string("settings.permission.denied"))
                             .foregroundColor(.red)
-                        Button("前往设置") {
+                        Button(loc.string("settings.permission.openSettings")) {
                             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
                             AXIsProcessTrustedWithOptions(options)
                             startPermissionRefresh()
@@ -266,16 +251,16 @@ struct SettingsView: View {
                 }
 
                 HStack {
-                    Text("麦克风")
+                    Text(loc.string("settings.permission.microphone"))
                     Spacer()
-                    Text("由系统管理")
+                    Text(loc.string("settings.permission.systemManaged"))
                         .foregroundColor(.secondary)
                 }
             }
 
             // General
-            Section("通用") {
-                Toggle("开机自启", isOn: $launchAtLogin)
+            Section(loc.string("settings.section.general")) {
+                Toggle(loc.string("settings.general.launchAtLogin"), isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { newValue in
                         do {
                             if newValue {
@@ -288,34 +273,30 @@ struct SettingsView: View {
                             launchAtLogin = !newValue
                         }
                     }
-                Toggle("识别后自动复制到剪贴板", isOn: $autoCopyToClipboard)
+                Toggle(loc.string("settings.general.autoCopy"), isOn: $autoCopyToClipboard)
                     .onChange(of: autoCopyToClipboard) { newValue in
                         UserDefaults.standard.set(newValue, forKey: "autoCopyToClipboard")
                     }
-                Toggle("自动检查更新", isOn: $automaticUpdateChecks)
-                    .onChange(of: automaticUpdateChecks) { newValue in
-                        UserDefaults.standard.set(newValue, forKey: VowKyApp.automaticUpdateChecksDefaultsKey)
-                        updater?.automaticallyChecksForUpdates = newValue
+            }
+
+            // Language
+            Section(loc.string("settings.section.language")) {
+                Picker(loc.string("settings.language.picker"), selection: Binding(
+                    get: { loc.language },
+                    set: { LocalizationManager.shared.setLanguage($0) }
+                )) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
                     }
-                HStack {
-                    Text("立即检查更新")
-                    Spacer()
-                    Button("检查") {
-                        guard let updater else { return }
-                        updateCoordinator?.userInitiatedCheck(updater: updater)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(updater == nil || !updateViewModel.canCheckForUpdates)
                 }
             }
 
             // 翻译
-            Section("翻译（录音窗口）") {
+            Section(loc.string("settings.section.translation")) {
                 Toggle(isOn: $translationEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("启用实时翻译")
-                        Text("录音转写时在每段原文下方实时显示译文")
+                        Text(loc.string("settings.translation.enable"))
+                        Text(loc.string("settings.translation.enable.subtitle"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -324,15 +305,15 @@ struct SettingsView: View {
                 .onChange(of: translationEnabled) { _ in saveTranslationConfig() }
 
                 if translationEnabled {
-                    Picker("翻译引擎", selection: $translationEngine) {
+                    Picker(loc.string("settings.translation.engine"), selection: $translationEngine) {
                         if #available(macOS 15.0, *) {
-                            Text("系统离线翻译").tag(TranslationEngineKind.apple)
+                            Text(loc.string("settings.translation.engine.apple")).tag(TranslationEngineKind.apple)
                         }
                         Text("LLM API").tag(TranslationEngineKind.llm)
                     }
                     .onChange(of: translationEngine) { _ in saveTranslationConfig() }
 
-                    Picker("目标语言", selection: $translationTargetBCP47) {
+                    Picker(loc.string("settings.translation.targetLang"), selection: $translationTargetBCP47) {
                         ForEach(TranslationTarget.presets, id: \.target.bcp47) { preset in
                             Text(preset.name).tag(preset.target.bcp47)
                         }
@@ -340,17 +321,17 @@ struct SettingsView: View {
                     .onChange(of: translationTargetBCP47) { _ in saveTranslationConfig() }
 
                     if translationEngine == .apple {
-                        Text("完全离线，由 macOS 系统翻译。首次使用某语言时系统会自动下载离线语言包。")
+                        Text(loc.string("settings.translation.apple.note"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
                         HStack {
-                            Text("快速填入")
+                            Text(loc.string("settings.translation.quickFill"))
                             Spacer()
-                            Menu("选择服务商") {
+                            Menu(loc.string("settings.translation.selectProvider")) {
                                 ForEach(TranslationLLMPreset.all) { preset in
-                                    Button(preset.title) {
+                                    Button(loc.string(preset.titleKey)) {
                                         translationLLMBaseURL = preset.baseURL
                                         translationLLMModel = preset.model
                                         translationTestResult = nil
@@ -360,19 +341,19 @@ struct SettingsView: View {
                             }
                             .fixedSize()
                         }
-                        Text("推荐阿里 Qwen-MT：专用翻译模型，速度快、质量高、便宜、国内直连。填入后在下方补上你的 API Key 即可。")
+                        Text(loc.string("settings.translation.llm.recommend"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        TextField("API 地址", text: $translationLLMBaseURL, prompt: Text("https://api.deepseek.com/v1"))
+                        TextField(loc.string("settings.translation.llm.baseURL"), text: $translationLLMBaseURL, prompt: Text("https://api.deepseek.com/v1"))
                             .onChange(of: translationLLMBaseURL) { _ in saveTranslationConfig() }
-                        TextField("模型", text: $translationLLMModel, prompt: Text("deepseek-chat"))
+                        TextField(loc.string("settings.translation.llm.model"), text: $translationLLMModel, prompt: Text("deepseek-chat"))
                             .onChange(of: translationLLMModel) { _ in saveTranslationConfig() }
-                        SecureField("API Key", text: $translationLLMAPIKey)
+                        SecureField(loc.string("settings.translation.llm.apiKey"), text: $translationLLMAPIKey)
                             .onChange(of: translationLLMAPIKey) { _ in saveTranslationConfig() }
 
-                        Text("兼容 OpenAI Chat Completions 格式的服务（DeepSeek、Qwen、OpenAI 等）。译文会发送到该服务，请注意隐私。")
+                        Text(loc.string("settings.translation.llm.note"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -384,7 +365,7 @@ struct SettingsView: View {
                                 if translationTestInProgress {
                                     ProgressView().controlSize(.small)
                                 } else {
-                                    Text("测试连接")
+                                    Text(loc.string("settings.translation.llm.test"))
                                 }
                             }
                             .buttonStyle(.bordered)
@@ -448,6 +429,7 @@ struct SettingsView: View {
         ))
     }
 
+    @MainActor
     private func testTranslationLLM() async {
         translationTestInProgress = true
         translationTestResult = nil
@@ -458,10 +440,10 @@ struct SettingsView: View {
                 "Hello, this is a connection test.",
                 to: TranslationTarget(bcp47: translationTargetBCP47)
             )
-            translationTestResult = "✓ 连接成功：\(translated)"
+            translationTestResult = loc.string("settings.translation.llm.testSuccess", translated)
         } catch {
             let message = (error as? TranslationError)?.errorDescription ?? error.localizedDescription
-            translationTestResult = "✗ \(message)"
+            translationTestResult = loc.string("settings.translation.llm.testFail", message)
         }
         translationTestInProgress = false
     }

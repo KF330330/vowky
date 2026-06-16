@@ -24,10 +24,11 @@ final class FileTranscriptionWindowController {
 
         let viewModel = FileTranscriptionViewModel(appState: appState)
         let view = FileTranscriptionView(viewModel: viewModel)
+            .environmentObject(LocalizationManager.shared)
         let hostingController = NSHostingController(rootView: view)
 
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "VowKy 文件转录"
+        window.title = L("window.fileTranscription.title")
         window.styleMask = [.titled, .closable, .resizable, .miniaturizable]
         window.setContentSize(NSSize(width: 900, height: 660))
         window.minSize = NSSize(width: 760, height: 520)
@@ -201,24 +202,24 @@ final class FileTranscriptionViewModel: ObservableObject {
     }
 
     var queueSummaryText: String {
-        guard !jobs.isEmpty else { return "选择或拖入文件" }
+        guard !jobs.isEmpty else { return L("file.summary.chooseOrDrop") }
         if isRunning {
-            return "\(completedCount) / \(jobs.count) 完成"
+            return L("file.summary.completedOfTotal", completedCount, jobs.count)
         }
         if failedCount > 0 {
-            return "\(completedCount) 完成 · \(failedCount) 失败"
+            return L("file.summary.completedFailed", completedCount, failedCount)
         }
         if completedCount == jobs.count {
-            return "全部完成"
+            return L("file.summary.allCompleted")
         }
         if jobs.allSatisfy({ $0.state == .cancelled }) {
-            return "已取消 · 可重新开始"
+            return L("file.summary.cancelledCanRestart")
         }
-        return "\(startableCount) 个待转录"
+        return L("file.summary.pendingCount", startableCount)
     }
 
     var selectedJobStatusText: String {
-        selectedJob.map(jobStatusText) ?? "请选择文件"
+        selectedJob.map(jobStatusText) ?? L("file.selectFile")
     }
 
     var selectedJobErrorMessage: String? {
@@ -241,15 +242,15 @@ final class FileTranscriptionViewModel: ObservableObject {
     func queueRowStatusText(for job: FileTranscriptionJob) -> String {
         switch job.state {
         case .queued:
-            return "等待开始"
+            return L("file.row.waiting")
         case .reading, .transcribing:
             return "\(Int(clampedProgress(job.progress) * 100))%"
         case .completed:
-            return "完成"
+            return L("file.row.completed")
         case .cancelled:
-            return "已取消"
+            return L("file.row.cancelled")
         case .failed:
-            return "失败"
+            return L("file.row.failed")
         }
     }
 
@@ -313,27 +314,27 @@ final class FileTranscriptionViewModel: ObservableObject {
             return statusMessage
         }
         if isRunning {
-            return "转录中，可继续添加文件"
+            return L("file.header.transcribingCanAdd")
         }
         if canStartTranscription {
             if jobs.contains(where: { $0.state == .cancelled })
                 && !jobs.contains(where: { $0.state == .queued }) {
-                return "已取消，可重新开始"
+                return L("file.header.cancelledCanRestart")
             }
-            return "准备转录"
+            return L("file.header.readyToTranscribe")
         }
         return statusText
     }
 
     var statusText: String {
-        guard !jobs.isEmpty else { return "选择或拖入音频/视频文件" }
+        guard !jobs.isEmpty else { return L("file.status.chooseOrDropMedia") }
 
         if isRunning {
             let finishedCount = jobs.filter(\.isFinished).count
             if let selectedJob {
                 return "\(jobStatusText(selectedJob)) · \(finishedCount) / \(jobs.count)"
             }
-            return "正在转录 · \(finishedCount) / \(jobs.count)"
+            return L("file.status.transcribingProgress", finishedCount, jobs.count)
         }
 
         let failedCount = jobs.filter {
@@ -342,15 +343,15 @@ final class FileTranscriptionViewModel: ObservableObject {
         }.count
         let completedCount = jobs.filter { $0.state == .completed }.count
         if failedCount > 0 {
-            return "\(completedCount) 个完成，\(failedCount) 个失败"
+            return L("file.status.completedFailedCount", completedCount, failedCount)
         }
         if completedCount == jobs.count {
-            return "全部转录完成"
+            return L("file.status.allCompleted")
         }
         if jobs.allSatisfy({ $0.state == .cancelled }) {
-            return "已取消"
+            return L("file.status.cancelled")
         }
-        return selectedJob.map(jobStatusText) ?? "准备转录"
+        return selectedJob.map(jobStatusText) ?? L("file.header.readyToTranscribe")
     }
 
     func refreshInsertionTarget() {
@@ -359,7 +360,7 @@ final class FileTranscriptionViewModel: ObservableObject {
 
     func chooseFile() {
         let panel = NSOpenPanel()
-        panel.title = "选择要转录的音频或视频"
+        panel.title = L("file.picker.chooseMedia")
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = Self.allowedContentTypes
@@ -526,7 +527,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         guard canUseResult, let selectedJob else { return }
 
         let panel = NSSavePanel()
-        panel.title = "另存为"
+        panel.title = L("file.action.saveAs")
         // 允许 .md 和 .txt（用户可在 SavePanel 自由编辑扩展名）
         panel.allowedContentTypes = [.plainText, .data]
         panel.allowsOtherFileTypes = true
@@ -539,7 +540,7 @@ final class FileTranscriptionViewModel: ObservableObject {
             try content.write(to: url, atomically: true, encoding: .utf8)
         } catch {
             updateJob(id: selectedJob.id) { job in
-                job.state = .failed("保存失败：\(error.localizedDescription)")
+                job.state = .failed(L("file.error.saveFailed", error.localizedDescription))
             }
         }
     }
@@ -548,7 +549,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         guard canSaveAllResults else { return }
 
         let panel = NSOpenPanel()
-        panel.title = "选择保存转录文本的文件夹"
+        panel.title = L("file.picker.chooseFolder")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
@@ -569,7 +570,7 @@ final class FileTranscriptionViewModel: ObservableObject {
                 try content.write(to: fileURL, atomically: true, encoding: .utf8)
             } catch {
                 updateJob(id: job.id) { item in
-                    item.state = .failed("保存失败：\(error.localizedDescription)")
+                    item.state = .failed(L("file.error.saveFailed", error.localizedDescription))
                 }
             }
         }
@@ -689,16 +690,16 @@ final class FileTranscriptionViewModel: ObservableObject {
     private func jobStatusText(_ job: FileTranscriptionJob) -> String {
         switch job.state {
         case .queued:
-            return "等待开始"
+            return L("file.row.waiting")
         case .reading:
-            return "正在读取音轨..."
+            return L("file.status.readingAudio")
         case .transcribing:
-            guard job.totalSegments > 0 else { return "正在转录..." }
-            return "正在转录第 \(job.currentSegment) / \(job.totalSegments) 段"
+            guard job.totalSegments > 0 else { return L("file.status.transcribing") }
+            return L("file.status.transcribingSegment", job.currentSegment, job.totalSegments)
         case .completed:
-            return "转录完成"
+            return L("file.status.transcribeCompleted")
         case .cancelled:
-            return job.resultText.isEmpty ? "已取消" : "已取消，已保留当前结果"
+            return job.resultText.isEmpty ? L("file.status.cancelled") : L("file.status.cancelledKeptResult")
         case .failed(let message):
             return message
         }
@@ -706,7 +707,7 @@ final class FileTranscriptionViewModel: ObservableObject {
 
     private func defaultSaveName(for job: FileTranscriptionJob) -> String {
         let baseName = (job.fileName as NSString).deletingPathExtension
-        let base = baseName.isEmpty ? "VowKy转录" : baseName
+        let base = baseName.isEmpty ? L("file.defaultName") : baseName
         return "\(base).txt"
     }
 
@@ -716,7 +717,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         ext: String,
         usedNames: inout Set<String>
     ) -> URL {
-        let cleanBaseName = sanitizedFileName(baseName.isEmpty ? "VowKy转录" : baseName)
+        let cleanBaseName = sanitizedFileName(baseName.isEmpty ? L("file.defaultName") : baseName)
         var candidate = "\(cleanBaseName).\(ext)"
         var suffix = 2
         while usedNames.contains(candidate)
@@ -736,7 +737,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         let invalid = CharacterSet(charactersIn: "/:")
         let parts = name.components(separatedBy: invalid)
         let cleaned = parts.joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "VowKy转录" : cleaned
+        return cleaned.isEmpty ? L("file.defaultName") : cleaned
     }
 
     /// 为给定音频 URL 选一个可写的 .md 落盘位置：优先音频同目录；
@@ -789,6 +790,7 @@ final class FileTranscriptionViewModel: ObservableObject {
 // MARK: - View
 
 struct FileTranscriptionView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var viewModel: FileTranscriptionViewModel
     @State private var isDropTargeted = false
 
@@ -847,10 +849,10 @@ struct FileTranscriptionView: View {
                 )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("文件转录")
+                Text(loc.string("file.title"))
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(FileTranscriptionTheme.textPrimary)
-                Text("批量音视频，本地离线处理")
+                Text(loc.string("file.subtitle"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(FileTranscriptionTheme.textMuted)
                     .lineLimit(1)
@@ -885,17 +887,17 @@ struct FileTranscriptionView: View {
                 Button {
                     viewModel.startTranscription()
                 } label: {
-                    Label("全部转录", systemImage: "play.fill")
+                    Label(loc.string("file.action.transcribeAll"), systemImage: "play.fill")
                 }
                 .buttonStyle(FilePrimaryButtonStyle())
                 .keyboardShortcut(.return, modifiers: [])
-                .help("转录队列中所有等待开始或已取消的文件")
+                .help(loc.string("file.help.transcribeAll"))
             }
 
             Button {
                 viewModel.chooseFile()
             } label: {
-                Label("选择文件", systemImage: "folder")
+                Label(loc.string("file.action.chooseFile"), systemImage: "folder")
             }
             .buttonStyle(FileSecondaryButtonStyle())
         }
@@ -916,10 +918,10 @@ struct FileTranscriptionView: View {
                 )
 
             VStack(spacing: 6) {
-                Text(isDropTargeted ? "松开后加入队列" : "拖入音频或视频文件")
+                Text(isDropTargeted ? loc.string("file.drop.release") : loc.string("file.drop.prompt"))
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundColor(FileTranscriptionTheme.textPrimary)
-                Text("支持批量选择 MP3、M4A、MP4、MOV、WAV、FLAC 等格式，全程本地处理。")
+                Text(loc.string("file.drop.formats"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(FileTranscriptionTheme.textMuted)
                     .multilineTextAlignment(.center)
@@ -928,7 +930,7 @@ struct FileTranscriptionView: View {
             Button {
                 viewModel.chooseFile()
             } label: {
-                Label("选择文件", systemImage: "folder")
+                Label(loc.string("file.action.chooseFile"), systemImage: "folder")
             }
             .buttonStyle(FilePrimaryButtonStyle())
         }
@@ -964,12 +966,12 @@ struct FileTranscriptionView: View {
     private var queueArea: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("队列")
+                Text(loc.string("file.queue.title"))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(FileTranscriptionTheme.textPrimary)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(viewModel.jobs.count) 个文件")
+                    Text(loc.string("file.queue.fileCount", viewModel.jobs.count))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(FileTranscriptionTheme.textSecondary)
                     if let totalFileSizeText = viewModel.totalFileSizeText {
@@ -1053,7 +1055,7 @@ struct FileTranscriptionView: View {
                     Image(systemName: "play.fill")
                 }
                 .buttonStyle(FileIconButtonStyle(tint: FileTranscriptionTheme.accentDeep))
-                .help("只转录这个文件")
+                .help(loc.string("file.help.transcribeThis"))
             }
 
             Button {
@@ -1063,7 +1065,7 @@ struct FileTranscriptionView: View {
             }
             .buttonStyle(FileIconButtonStyle(tint: FileTranscriptionTheme.textMuted))
             .disabled(!viewModel.canRemoveJob(job))
-            .help(viewModel.canRemoveJob(job) ? "从队列移除" : "当前文件转录中")
+            .help(viewModel.canRemoveJob(job) ? loc.string("file.help.removeFromQueue") : loc.string("file.help.transcribingNow"))
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 10)
@@ -1152,7 +1154,7 @@ struct FileTranscriptionView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(FileTranscriptionTheme.accentDark)
 
-                Text("转录结果")
+                Text(loc.string("file.result.title"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(FileTranscriptionTheme.textPrimary)
 
@@ -1170,7 +1172,7 @@ struct FileTranscriptionView: View {
                 Spacer()
 
                 if !viewModel.resultText.isEmpty {
-                    Text("\(viewModel.resultText.count) 字")
+                    Text(loc.string("file.result.charCount", viewModel.resultText.count))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(FileTranscriptionTheme.textMuted)
                 }
@@ -1225,7 +1227,7 @@ struct FileTranscriptionView: View {
                 Button {
                     viewModel.retrySelectedJob()
                 } label: {
-                    Label("重试", systemImage: "arrow.clockwise")
+                    Label(loc.string("file.action.retry"), systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(FileSecondaryButtonStyle())
             }
@@ -1244,7 +1246,7 @@ struct FileTranscriptionView: View {
                 Button {
                     viewModel.cancel()
                 } label: {
-                    Label("取消", systemImage: "xmark")
+                    Label(loc.string("file.action.cancel"), systemImage: "xmark")
                 }
                 .buttonStyle(FileGhostButtonStyle())
                 .keyboardShortcut(.cancelAction)
@@ -1252,7 +1254,7 @@ struct FileTranscriptionView: View {
                 Button {
                     viewModel.clear()
                 } label: {
-                    Label("清空", systemImage: "arrow.clockwise")
+                    Label(loc.string("file.action.clear"), systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(FileGhostButtonStyle())
                 .disabled(viewModel.jobs.isEmpty)
@@ -1263,7 +1265,7 @@ struct FileTranscriptionView: View {
             Button {
                 viewModel.saveResult()
             } label: {
-                Label("另存为", systemImage: "square.and.arrow.down")
+                Label(loc.string("file.action.saveAs"), systemImage: "square.and.arrow.down")
             }
             .buttonStyle(FileSecondaryButtonStyle())
             .disabled(!viewModel.canUseResult)
@@ -1271,11 +1273,11 @@ struct FileTranscriptionView: View {
             Button {
                 viewModel.revealMarkdownInFinder()
             } label: {
-                Label("在 Finder 中显示", systemImage: "folder")
+                Label(loc.string("file.action.revealInFinder"), systemImage: "folder")
             }
             .buttonStyle(FileSecondaryButtonStyle())
             .disabled(!viewModel.canRevealMarkdownInFinder)
-            .help(viewModel.canRevealMarkdownInFinder ? "打开自动落盘的 .md 文件位置" : "尚未生成 .md 文件")
+            .help(viewModel.canRevealMarkdownInFinder ? loc.string("file.help.revealMarkdown") : loc.string("file.help.noMarkdownYet"))
 
         }
         .controlSize(.small)
@@ -1295,38 +1297,38 @@ struct FileTranscriptionView: View {
     }
 
     private var resultBadgeText: String {
-        guard let job = viewModel.selectedJob else { return "等待内容" }
+        guard let job = viewModel.selectedJob else { return loc.string("file.badge.waitingContent") }
         switch job.state {
         case .completed:
-            return viewModel.canEditSelectedResult ? "可编辑结果" : "已完成"
+            return viewModel.canEditSelectedResult ? loc.string("file.badge.editableResult") : loc.string("file.badge.done")
         case .cancelled:
-            return viewModel.resultText.isEmpty ? "无结果" : "可编辑草稿"
+            return viewModel.resultText.isEmpty ? loc.string("file.badge.noResult") : loc.string("file.badge.editableDraft")
         case .reading, .transcribing:
-            return "实时预览"
+            return loc.string("file.badge.livePreview")
         case .failed:
-            return viewModel.resultText.isEmpty ? "未生成" : "保留草稿"
+            return viewModel.resultText.isEmpty ? loc.string("file.badge.notGenerated") : loc.string("file.badge.keptDraft")
         case .queued:
-            return "等待内容"
+            return loc.string("file.badge.waitingContent")
         }
     }
 
     private var emptyResultText: String {
         guard let job = viewModel.selectedJob else {
-            return "选择一个文件后会显示转录结果。"
+            return loc.string("file.empty.selectFile")
         }
         switch job.state {
         case .queued:
-            return "点击“全部转录”处理所有等待文件，或点击左侧行内播放按钮只转录这个文件。"
+            return loc.string("file.empty.queued")
         case .reading:
-            return "正在读取音轨，识别结果会稍后出现。"
+            return loc.string("file.empty.reading")
         case .transcribing:
-            return "正在转录，识别到的内容会实时显示在这里。"
+            return loc.string("file.empty.transcribing")
         case .completed:
-            return "该文件没有生成文本。"
+            return loc.string("file.empty.completedNoText")
         case .cancelled:
-            return "转录已取消，当前没有可用草稿。"
+            return loc.string("file.empty.cancelledNoDraft")
         case .failed:
-            return "没有生成可用文本。可以修复文件或重试。"
+            return loc.string("file.empty.failed")
         }
     }
 

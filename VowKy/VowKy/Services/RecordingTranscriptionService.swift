@@ -41,7 +41,7 @@ enum RecordingTranscriptionError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .noFinalRecognitionText:
-            return "没有识别到文字"
+            return LL("transcribe.noTextRecognized")
         }
     }
 }

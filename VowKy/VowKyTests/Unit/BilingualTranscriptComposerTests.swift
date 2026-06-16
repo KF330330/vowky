@@ -32,7 +32,7 @@ final class BilingualTranscriptComposerTests: XCTestCase {
         let result = BilingualTranscriptComposer.compose(paragraphs: [
             paragraph("这句翻译失败了。", .failed("网络错误")),
         ])
-        XCTAssertEqual(result, "这句翻译失败了。\n> （翻译失败）\n")
+        XCTAssertEqual(result, "这句翻译失败了。\n> \(LL("bilingual.export.translationFailed"))\n")
     }
 
     func test03_compose_skippedAndPendingParagraphs_originalOnly() {
@@ -79,7 +79,7 @@ final class BilingualTranscriptComposerTests: XCTestCase {
     func test08_outputURL_insertsBilingualSuffixBeforeExtension() {
         let textURL = URL(fileURLWithPath: "/tmp/VowKy Recordings/VowKy Recording 2026-06-11 10.00.00.md")
         let result = BilingualTranscriptComposer.outputURL(for: textURL)
-        XCTAssertEqual(result.lastPathComponent, "VowKy Recording 2026-06-11 10.00.00 (双语).md")
+        XCTAssertEqual(result.lastPathComponent, "VowKy Recording 2026-06-11 10.00.00 (\(LL("bilingual.export.filenameSuffix"))).md")
         XCTAssertEqual(result.deletingLastPathComponent().path, "/tmp/VowKy Recordings")
     }
 }

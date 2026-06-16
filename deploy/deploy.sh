@@ -20,24 +20,27 @@ VERSION="$(get_version)"
 BUILD="$(get_build)"
 DMG_NAME="VowKy-${VERSION}.dmg"
 DMG_PATH="${BUILD_DIR}/dmg/${DMG_NAME}"
-RELEASE_NOTES_PATH="${VOWKY_DIR}/VowKy/Resources/ReleaseNotes/${VERSION}.md"
+RELEASE_NOTES_PATH="${VOWKY_DIR}/VowKy/Resources/ReleaseNotes/${VERSION}.md"          # 中文
+EN_RELEASE_NOTES_PATH="${VOWKY_DIR}/VowKy/Resources/ReleaseNotes/${VERSION}.en.md"    # 英文
 
 if [ ! -f "${DMG_PATH}" ]; then
     log_error "DMG 不存在: ${DMG_PATH}"
     exit 1
 fi
 
-# 版本说明强制要求存在且非空：appcast 与 GitHub Release 都需要它
-if [ ! -f "${RELEASE_NOTES_PATH}" ]; then
-    log_error "缺少版本说明文件: ${RELEASE_NOTES_PATH}"
-    log_error "每个版本都必须有对应的 release notes（用户在 Sparkle 弹窗里能看到）"
-    exit 1
-fi
-if [ ! -s "${RELEASE_NOTES_PATH}" ]; then
-    log_error "版本说明文件为空: ${RELEASE_NOTES_PATH}"
-    exit 1
-fi
-log_ok "Release notes: ${RELEASE_NOTES_PATH}"
+# 版本说明强制要求存在且非空（中英双语）：appcast 与 GitHub Release 都需要它
+for rn_path in "${RELEASE_NOTES_PATH}" "${EN_RELEASE_NOTES_PATH}"; do
+    if [ ! -f "${rn_path}" ]; then
+        log_error "缺少版本说明文件: ${rn_path}"
+        log_error "每个版本都必须有中英两份 release notes（{ver}.md=中文，{ver}.en.md=英文；用户在 Sparkle 弹窗里能看到）"
+        exit 1
+    fi
+    if [ ! -s "${rn_path}" ]; then
+        log_error "版本说明文件为空: ${rn_path}"
+        exit 1
+    fi
+done
+log_ok "Release notes（中英双语）: ${RELEASE_NOTES_PATH} + ${EN_RELEASE_NOTES_PATH}"
 
 # ============================================================
 # 2. 上传网站（替换下载链接为带版本号的文件名）
@@ -199,8 +202,9 @@ ${body}
 HTMLDOC
 }
 
-RELEASE_NOTES_CONTENT="$(build_release_notes_html "${RELEASE_NOTES_PATH}" "${VERSION}")"
-log_info "release notes 已生成样式化 HTML（内置渲染，无需 pandoc）"
+RELEASE_NOTES_CONTENT_ZH="$(build_release_notes_html "${RELEASE_NOTES_PATH}" "${VERSION}")"
+RELEASE_NOTES_CONTENT_EN="$(build_release_notes_html "${EN_RELEASE_NOTES_PATH}" "${VERSION}")"
+log_info "release notes 已生成中英双语样式化 HTML（内置渲染，无需 pandoc）"
 
 # 生成 appcast.xml
 APPCAST_PATH="${BUILD_DIR}/appcast.xml"
@@ -218,8 +222,11 @@ cat > "${APPCAST_PATH}" <<APPCAST_EOF
       <sparkle:version>${BUILD}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <description><![CDATA[
-${RELEASE_NOTES_CONTENT}
+      <description xml:lang="en"><![CDATA[
+${RELEASE_NOTES_CONTENT_EN}
+]]></description>
+      <description xml:lang="zh-Hans"><![CDATA[
+${RELEASE_NOTES_CONTENT_ZH}
 ]]></description>
       <enclosure url="${DOWNLOAD_URL}" length="${DMG_SIZE_BYTES}" type="application/octet-stream"${EDDSA_ATTR} />
     </item>

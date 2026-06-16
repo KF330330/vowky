@@ -158,7 +158,7 @@ final class FileTranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(services[1].receivedURLs.isEmpty)
         XCTAssertEqual(viewModel.jobs.map(\.state), [.cancelled, .cancelled])
         XCTAssertTrue(viewModel.canStartTranscription)
-        XCTAssertEqual(viewModel.queueHeaderStatusText, "已取消，可重新开始")
+        XCTAssertEqual(viewModel.queueHeaderStatusText, L("file.header.cancelledCanRestart"))
         XCTAssertEqual(recordedResults, [])
         XCTAssertFalse(appState.isFileTranscriptionInProgress)
     }
@@ -299,7 +299,7 @@ final class FileTranscriptionViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isRunning)
         XCTAssertTrue(viewModel.canStartTranscription)
         XCTAssertTrue(service.receivedURLs.isEmpty)
-        XCTAssertEqual(viewModel.queueRowStatusText(for: viewModel.jobs[0]), "等待开始")
+        XCTAssertEqual(viewModel.queueRowStatusText(for: viewModel.jobs[0]), L("file.row.waiting"))
         XCTAssertFalse(viewModel.shouldShowProgress(for: viewModel.jobs[0]))
     }
 
@@ -381,7 +381,7 @@ final class FileTranscriptionViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.jobs.map(\.fileName), ["current.mp4", "appended.mp4"])
         XCTAssertEqual(viewModel.jobs[1].state, .queued)
-        XCTAssertEqual(viewModel.queueRowStatusText(for: viewModel.jobs[1]), "等待开始")
+        XCTAssertEqual(viewModel.queueRowStatusText(for: viewModel.jobs[1]), L("file.row.waiting"))
         XCTAssertFalse(viewModel.shouldShowProgress(for: viewModel.jobs[1]))
         XCTAssertEqual(viewModel.selectedJob?.fileName, "current.mp4")
 
@@ -433,17 +433,17 @@ final class FileTranscriptionViewModelTests: XCTestCase {
         let failed = FileTranscriptionJob(url: url, fileName: "sample.mp4", state: .failed("尾段失败"), progress: 0.96)
         let cancelled = FileTranscriptionJob(url: url, fileName: "sample.mp4", state: .cancelled, progress: 0.4)
 
-        XCTAssertEqual(viewModel.queueRowStatusText(for: queued), "等待开始")
+        XCTAssertEqual(viewModel.queueRowStatusText(for: queued), L("file.row.waiting"))
         XCTAssertFalse(viewModel.shouldShowProgress(for: queued))
         XCTAssertEqual(viewModel.queueRowStatusText(for: reading), "25%")
         XCTAssertTrue(viewModel.shouldShowProgress(for: reading))
         XCTAssertEqual(viewModel.queueRowStatusText(for: transcribing), "52%")
         XCTAssertTrue(viewModel.shouldShowProgress(for: transcribing))
-        XCTAssertEqual(viewModel.queueRowStatusText(for: completed), "完成")
+        XCTAssertEqual(viewModel.queueRowStatusText(for: completed), L("file.row.completed"))
         XCTAssertFalse(viewModel.shouldShowProgress(for: completed))
-        XCTAssertEqual(viewModel.queueRowStatusText(for: failed), "失败")
+        XCTAssertEqual(viewModel.queueRowStatusText(for: failed), L("file.row.failed"))
         XCTAssertFalse(viewModel.shouldShowProgress(for: failed))
-        XCTAssertEqual(viewModel.queueRowStatusText(for: cancelled), "已取消")
+        XCTAssertEqual(viewModel.queueRowStatusText(for: cancelled), L("file.row.cancelled"))
         XCTAssertFalse(viewModel.shouldShowProgress(for: cancelled))
     }
 

@@ -72,10 +72,11 @@ final class WhatsNewWindowController {
         let view = WhatsNewView(version: shortVersion, notes: notes) { [weak self] in
             self?.closeWindow(bundle: bundle, defaults: defaults)
         }
+        .environmentObject(LocalizationManager.shared)
         let hosting = NSHostingController(rootView: view)
 
         let window = NSWindow(contentViewController: hosting)
-        window.title = "VowKy 新版功能"
+        window.title = L("window.whatsNew.title")
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 500, height: 420))
         window.center()
@@ -117,24 +118,37 @@ final class WhatsNewWindowController {
 // MARK: - Release Notes Loader
 
 enum ReleaseNotesLoader {
-    static let fallbackText = "本次更新尚无详细说明。\n\n请访问 https://github.com/KF330330/vowky/releases 查看完整发布说明。"
+    static var fallbackText: String {
+        LocalizationManager.string("releaseNotes.fallback", language: LanguagePreferenceStore.load())
+    }
 
-    /// 从 bundle 的 `ReleaseNotes/<version>.md` 读取版本说明；缺失或为空时返回 fallback。
-    /// XcodeGen 把 `VowKy/Resources/` 加进 resources 时，目录结构可能被 group/folder reference
-    /// 两种方式处理，所以这里先按子目录找一次，找不到再按平铺名查一次。
-    static func load(forVersion version: String, bundle: Bundle = .main) -> String {
-        let trimmedVersion = version.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// 按当前语言从 bundle 读取版本说明。命名约定：`<version>.md`=中文，`<version>.en.md`=英文。
+    /// 英文优先找 `<version>.en.md`，缺失回落中文 `<version>.md`，再回落 fallback。
+    /// 资源在本项目里被扁平化到 Contents/Resources 根，所以平铺 basename 优先；子目录作防御性兜底。
+    /// 语言默认从持久化偏好读取（nonisolated），避免触碰 @MainActor 单例，方便测试与后台调用。
+    static func load(
+        forVersion version: String,
+        language: AppLanguage = LanguagePreferenceStore.load(),
+        bundle: Bundle = .main
+    ) -> String {
+        let v = version.trimmingCharacters(in: .whitespacesAndNewlines)
         // 空 version 时 bundle.url(forResource:"") 会意外匹配第一个 .md 文件，需要先短路掉
-        guard !trimmedVersion.isEmpty else { return fallbackText }
+        guard !v.isEmpty else { return fallbackText }
 
-        let resolvedURL = bundle.url(forResource: trimmedVersion, withExtension: "md", subdirectory: "ReleaseNotes")
-            ?? bundle.url(forResource: trimmedVersion, withExtension: "md")
-        guard let url = resolvedURL,
-              let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return fallbackText
+        // 英文：先 "<version>.en"，再回落 "<version>"；中文：直接 "<version>"
+        var resourceNames: [String] = []
+        if language == .en { resourceNames.append("\(v).en") }
+        resourceNames.append(v)
+
+        for name in resourceNames {
+            let url = bundle.url(forResource: name, withExtension: "md")
+                ?? bundle.url(forResource: name, withExtension: "md", subdirectory: "ReleaseNotes")
+            if let url, let content = try? String(contentsOf: url, encoding: .utf8) {
+                let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
         }
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? fallbackText : trimmed
+        return fallbackText
     }
 }
 
@@ -184,6 +198,7 @@ enum MarkdownParser {
 // MARK: - What's New View
 
 struct WhatsNewView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     let version: String
     let notes: String
     let onClose: () -> Void
@@ -208,10 +223,10 @@ struct WhatsNewView: View {
                     .interpolation(.high)
                     .frame(width: 72, height: 72)
                     .shadow(color: Color.black.opacity(0.10), radius: 6, y: 3)
-                Text("VowKy 已更新")
+                Text(loc.string("whatsNew.updated"))
                     .font(.system(size: 19, weight: .bold))
                     .kerning(-0.3)
-                Text("版本 \(version)")
+                Text(loc.string("whatsNew.version", version))
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
@@ -239,7 +254,7 @@ struct WhatsNewView: View {
             // === 底栏：右下 [好的] ===
             HStack {
                 Spacer()
-                Button("好的") {
+                Button(loc.string("common.ok")) {
                     onClose()
                 }
                 .keyboardShortcut(.defaultAction)

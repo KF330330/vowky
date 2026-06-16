@@ -221,7 +221,7 @@ final class HistoryStore {
         let records = fetchAll(limit: Int(Int32.max))
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        var lines = ["时间,内容,类型"]
+        var lines = [LL("history.export.csvHeader")]
         for record in records {
             let escaped = record.content.replacingOccurrences(of: "\"", with: "\"\"")
             lines.append("\(formatter.string(from: record.createdAt)),\"\(escaped)\",\(record.sourceType)")

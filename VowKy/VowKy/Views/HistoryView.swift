@@ -3,6 +3,7 @@ import AppKit
 
 // MARK: - History Window Controller
 
+@MainActor
 final class HistoryWindowController {
     static let shared = HistoryWindowController()
 
@@ -18,10 +19,11 @@ final class HistoryWindowController {
         }
 
         let historyView = HistoryView()
+            .environmentObject(LocalizationManager.shared)
         let hostingController = NSHostingController(rootView: historyView)
 
         let panel = NSPanel(contentViewController: hostingController)
-        panel.title = "VowKy 识别历史"
+        panel.title = L("history.window.title")
         panel.styleMask = [.titled, .closable, .resizable, .miniaturizable, .nonactivatingPanel]
         panel.styleMask.remove(.nonactivatingPanel)
         panel.isFloatingPanel = false
@@ -67,6 +69,7 @@ private enum Brand {
 // MARK: - History View
 
 struct HistoryView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     @State private var records: [HistoryRecord] = []
     @State private var searchText = ""
     @State private var totalCount = 0
@@ -79,7 +82,7 @@ struct HistoryView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(Brand.deep)
                     .font(.system(size: 13, weight: .medium))
-                TextField("搜索历史记录...", text: $searchText)
+                TextField(loc.string("history.search.placeholder"), text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .focused($isSearchFocused)
@@ -120,11 +123,11 @@ struct HistoryView: View {
                     Image(systemName: "leaf")
                         .font(.system(size: 36))
                         .foregroundColor(Brand.main)
-                    Text(searchText.isEmpty ? "还没有输入记录" : "未找到相关记录")
+                    Text(searchText.isEmpty ? loc.string("history.empty.noRecords") : loc.string("history.empty.noResults"))
                         .font(.system(size: 14))
                         .foregroundColor(Brand.textMuted)
                     if searchText.isEmpty {
-                        Text("按下快捷键开始语音输入")
+                        Text(loc.string("history.empty.hint"))
                             .font(.system(size: 12))
                             .foregroundColor(Brand.textMuted.opacity(0.7))
                     }
@@ -149,7 +152,7 @@ struct HistoryView: View {
 
             // Bottom bar
             HStack {
-                Text("共 \(totalCount) 条记录")
+                Text(loc.string("history.count", totalCount))
                     .font(.system(size: 11))
                     .foregroundColor(Brand.textMuted)
                 Spacer()
@@ -159,7 +162,7 @@ struct HistoryView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 11))
-                        Text("导出")
+                        Text(loc.string("history.export"))
                             .font(.system(size: 11))
                     }
                     .foregroundColor(Brand.deep)
@@ -189,8 +192,8 @@ struct HistoryView: View {
 
     private func exportHistory() {
         let panel = NSSavePanel()
-        panel.title = "导出识别历史"
-        panel.nameFieldStringValue = "VowKy历史记录"
+        panel.title = loc.string("history.export.panelTitle")
+        panel.nameFieldStringValue = loc.string("history.export.defaultFilename")
         panel.allowedContentTypes = [.plainText, .commaSeparatedText]
         panel.allowsOtherFileTypes = false
 
@@ -214,6 +217,7 @@ struct HistoryView: View {
 // MARK: - History Row
 
 struct HistoryRowView: View {
+    @EnvironmentObject private var loc: LocalizationManager
     let record: HistoryRecord
     let onDelete: () -> Void
 
@@ -243,7 +247,7 @@ struct HistoryRowView: View {
                             .foregroundColor(Brand.deep)
                     }
                     .buttonStyle(.plain)
-                    .help("复制")
+                    .help(loc.string("history.copy"))
 
                     Button {
                         onDelete()
@@ -253,7 +257,7 @@ struct HistoryRowView: View {
                             .foregroundColor(.red.opacity(0.7))
                     }
                     .buttonStyle(.plain)
-                    .help("删除")
+                    .help(loc.string("history.delete"))
                 }
                 .padding(4)
                 .background(
@@ -286,10 +290,10 @@ struct HistoryRowView: View {
 
         if calendar.isDateInToday(date) {
             formatter.dateFormat = "HH:mm"
-            return "今天 " + formatter.string(from: date)
+            return loc.string("history.date.today", formatter.string(from: date))
         } else if calendar.isDateInYesterday(date) {
             formatter.dateFormat = "HH:mm"
-            return "昨天 " + formatter.string(from: date)
+            return loc.string("history.date.yesterday", formatter.string(from: date))
         } else {
             formatter.dateFormat = "MM-dd HH:mm"
             return formatter.string(from: date)
