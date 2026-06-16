@@ -25,6 +25,9 @@ final class LocalizationManager: ObservableObject {
     func setLanguage(_ lang: AppLanguage) {
         guard lang != language else { return }
         LanguagePreferenceStore.save(lang)
+        // 同步 AppleLanguages：让 Sparkle 进度/安装窗口、系统标准 UI 在下次启动也跟随新语言。
+        // （我们自绘 UI 立即切换；Sparkle/系统这类无法热切的部分在重启后对齐。）
+        UserDefaults.standard.set([lang.rawValue], forKey: "AppleLanguages")
         table = LocalizationManager.loadTable(for: lang)
         language = lang   // @Published → objectWillChange → 所有依赖视图重算 body
     }

@@ -409,3 +409,4 @@
 /* Update: already up to date (Sparkle no-update dialog, overridden) */
 "update.upToDate.title" = "您使用的就是最新版！";
 "update.upToDate.message" = "您使用的已是最新版本（当前运行 %@）。";
+"update.error.title" = "更新出错";

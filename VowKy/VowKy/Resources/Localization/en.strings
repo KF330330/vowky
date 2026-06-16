@@ -409,3 +409,4 @@
 /* Update: already up to date (Sparkle no-update dialog, overridden) */
 "update.upToDate.title" = "You're up to date!";
 "update.upToDate.message" = "You're already on the latest version (you're running %@).";
+"update.error.title" = "Update Error";

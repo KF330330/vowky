@@ -38,4 +38,16 @@ final class VowKyUpdaterUserDriver: SPUStandardUserDriver {
         alert.runModal()
         acknowledgement()
     }
+
+    /// 更新出错弹窗。标题/按钮用 VowKy 本地化（跟随 App 内语言）；
+    /// 错误正文用 error.localizedDescription（已由 AppleLanguages 对齐到 App 语言）。
+    override func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = LL("update.error.title")
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: LL("common.ok"))
+        alert.runModal()
+        acknowledgement()
+    }
 }

@@ -22,6 +22,11 @@ struct VowKyApp: App {
     )
 
     init() {
+        // 让 Sparkle 与系统标准 UI 跟随 App 内语言：在 Sparkle 初始化前用持久化偏好覆盖进程的 AppleLanguages。
+        // 默认偏好为英文（LanguagePreferenceStore 读不到 → .en），所以默认整个进程（含 Sparkle 下载/安装/出错弹窗、
+        // 系统标准对话框）都是英文。我们自绘 UI 仍由 LocalizationManager 实时切换，与此正交、不冲突。
+        UserDefaults.standard.set([LanguagePreferenceStore.load().rawValue], forKey: "AppleLanguages")
+
         let coordinator = updateCoordinator
 
         // 自定义 user driver:只替换「发现新版本」窗口为 VowKy 自绘弹窗,
