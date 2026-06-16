@@ -39,6 +39,7 @@ final class UpdateReminderCoordinator: NSObject, SPUUpdaterDelegate {
     /// 用户从菜单点击 Check for Updates 时调用，避免计入"自动提醒"次数。
     func userInitiatedCheck(updater: SPUUpdater) {
         isUserInitiatedCheck = true
+        UpdateLogger.log("▶︎ 用户手动「检查更新」")
         updater.checkForUpdates()
     }
 
@@ -64,18 +65,27 @@ final class UpdateReminderCoordinator: NSObject, SPUUpdaterDelegate {
         guard let latest = candidates.max(by: { a, b in
             comparator.compareVersion(a.versionString, toVersion: b.versionString) == .orderedAscending
         }) else {
+            UpdateLogger.log("appcast 评估: host build=\(hostBundleVersion), \(appcast.items.count) 项, 无更高版本可用 → 不提示")
             return nil
         }
 
         // 用户主动检查 → 不动我们的限频计数
         if isUserInitiatedCheck {
+            UpdateLogger.log("appcast 评估(手动): host build=\(hostBundleVersion) → 命中 \(latest.versionString)")
             return latest
         }
 
-        return shouldShowAutomatically(forVersion: latest.versionString) ? latest : nil
+        let willShow = shouldShowAutomatically(forVersion: latest.versionString)
+        UpdateLogger.log("appcast 评估(自动): host build=\(hostBundleVersion) → 候选 \(latest.versionString), 限频判定=\(willShow ? "提示" : "本次静默")")
+        return willShow ? latest : nil
     }
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        if let error {
+            UpdateLogger.log("更新周期结束 (check=\(updateCheck.rawValue)): \(error.localizedDescription)")
+        } else {
+            UpdateLogger.log("更新周期结束 (check=\(updateCheck.rawValue)): 正常")
+        }
         isUserInitiatedCheck = false
     }
 
@@ -83,7 +93,42 @@ final class UpdateReminderCoordinator: NSObject, SPUUpdaterDelegate {
     /// helper 持有 app bundle 内的可执行/模型 mmap,若存活会妨碍 `/Applications/VowKy.app` 的原地替换。
     /// (applicationWillTerminate 也会兜底关闭,这里是更靠前的显式保险。)
     func updaterWillRelaunchApplication(_ updater: SPUUpdater) {
+        UpdateLogger.log("⟳ 即将重启以完成安装 — 关闭常驻语音 helper")
         HelperTransport.shared.shutdown()
+    }
+
+    // MARK: - 仅记录日志的生命周期钩子（不改变任何更新行为）
+    // 这些是 SPUUpdaterDelegate 的可选方法，只用来把整条自更新链路写进 update.log，
+    // 便于发版后一眼确认「检查 → 找到 → 下载 → 安装 → 重启」每一步是否正常。
+
+    func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
+        let versions = appcast.items.map { $0.versionString }.joined(separator: ", ")
+        UpdateLogger.log("appcast 加载成功: \(appcast.items.count) 项 [\(versions)]")
+    }
+
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        UpdateLogger.log("✅ 找到有效更新: \(item.displayVersionString) (build \(item.versionString))")
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
+        UpdateLogger.log("ℹ️ 未发现可用更新: \(error.localizedDescription)")
+    }
+
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        UpdateLogger.log("⤓ 即将安装: \(item.displayVersionString) — 主进程签名=\(UpdateLogger.selfCodeSignatureStatus())")
+    }
+
+    func updater(_ updater: SPUUpdater, failedToDownloadUpdate item: SUAppcastItem, error: Error) {
+        UpdateLogger.log("❌ 下载更新失败: \(item.displayVersionString) — \(error.localizedDescription)")
+    }
+
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        let ns = error as NSError
+        UpdateLogger.log("⛔️ 更新中止: domain=\(ns.domain) code=\(ns.code) — \(ns.localizedDescription) | 主进程签名=\(UpdateLogger.selfCodeSignatureStatus())")
+    }
+
+    func userDidCancelDownload(_ updater: SPUUpdater) {
+        UpdateLogger.log("用户取消下载")
     }
 
     // MARK: - Decision Logic (testable)

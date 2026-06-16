@@ -32,10 +32,13 @@ final class WhatsNewWindowController {
 
         switch decision(lastSeenBuild: lastSeen, currentBuild: currentBuild) {
         case .skip:
+            UpdateLogger.log("What's New: 同 build (\(currentBuild)) 已看过 → 跳过")
             return
         case .markSeenOnly:
+            UpdateLogger.log("What's New: 首次安装 build \(currentBuild) → 记录但不弹")
             defaults.set(currentBuild, forKey: lastSeenBuildKey)
         case .showWindow:
+            UpdateLogger.log("What's New: 升级到 build \(currentBuild)（上次见过 \(lastSeen ?? "nil")）→ 弹窗（证明更新已生效）")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 MainActor.assumeIsolated {
                     WhatsNewWindowController.shared.showWindow(markBuildSeenOnClose: true, bundle: bundle, defaults: defaults)

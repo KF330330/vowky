@@ -61,8 +61,15 @@ struct VowKyApp: App {
 
         do {
             try updater.start()
+            UpdateLogger.logSessionStart(
+                autoCheck: updater.automaticallyChecksForUpdates,
+                autoDownload: updater.automaticallyDownloadsUpdates,
+                interval: updater.updateCheckInterval,
+                lastCheck: updater.lastUpdateCheckDate
+            )
         } catch {
             CrashLogger.log("[Update] startUpdater failed: \(error.localizedDescription)")
+            UpdateLogger.log("❌ updater.start() 失败: \(error.localizedDescription)")
         }
 
         self.userDriver = driver

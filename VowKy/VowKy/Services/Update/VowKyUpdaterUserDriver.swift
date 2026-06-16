@@ -19,6 +19,7 @@ final class VowKyUpdaterUserDriver: SPUStandardUserDriver {
         state: SPUUserUpdateState,
         reply: @escaping (SPUUserUpdateChoice) -> Void
     ) {
+        UpdateLogger.log("showUpdateFound: \(appcastItem.displayVersionString) (build \(appcastItem.versionString)) — \(presentUpdate != nil ? "展示 VowKy 自绘弹窗" : "回退 Sparkle 标准弹窗")")
         guard let presentUpdate else {
             super.showUpdateFound(with: appcastItem, state: state, reply: reply)
             return

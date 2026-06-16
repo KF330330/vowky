@@ -32,6 +32,8 @@ final class UpdateAvailableWindowController {
         self.reply = reply
         self.didReply = false
 
+        UpdateLogger.log("展示「发现新版本」弹窗: 新版本=\(appcastItem.displayVersionString) 当前=\(currentVersion)")
+
         let icon = NSImage(named: NSImage.applicationIconName)
             ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
         let notesHTML = appcastItem.itemDescription ?? "<p>\(L("update.notesUnavailable"))</p>"
@@ -86,8 +88,18 @@ final class UpdateAvailableWindowController {
     private func deliver(_ choice: SPUUserUpdateChoice) {
         guard !didReply else { return }
         didReply = true
+        UpdateLogger.log("用户在更新弹窗选择: \(Self.choiceLabel(choice))")
         reply?(choice)
         reply = nil
+    }
+
+    private static func choiceLabel(_ choice: SPUUserUpdateChoice) -> String {
+        switch choice {
+        case .install: return "安装更新 (install)"
+        case .dismiss: return "稍后提醒 (dismiss)"
+        case .skip: return "跳过此版本 (skip)"
+        @unknown default: return "未知 (\(choice.rawValue))"
+        }
     }
 }
 
