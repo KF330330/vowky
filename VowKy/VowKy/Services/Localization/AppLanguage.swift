@@ -1,6 +1,6 @@
 import Foundation
 
-/// App 内可选语言。默认英文。rawValue 同时用作 .strings/.lproj/release-notes 的语言标识。
+/// App 内可选语言。默认中文。rawValue 同时用作 .strings/.lproj/release-notes 的语言标识。
 enum AppLanguage: String, CaseIterable, Identifiable {
     case en
     case zhHans = "zh-Hans"

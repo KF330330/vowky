@@ -7,11 +7,11 @@ enum LanguagePreferenceStore {
         static let appLanguage = "app.language"
     }
 
-    /// 读不到偏好 → 默认英文（**不**查系统语言）。这就是「默认英文，无视系统语言」的强制点。
+    /// 读不到偏好 → 默认中文（**不**查系统语言）。这就是「默认中文，无视系统语言」的强制点。
     static func load(defaults: UserDefaults = .standard) -> AppLanguage {
         guard let raw = defaults.string(forKey: Keys.appLanguage),
               let lang = AppLanguage(rawValue: raw) else {
-            return .en
+            return .zhHans
         }
         return lang
     }
