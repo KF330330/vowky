@@ -121,6 +121,22 @@ verify_dmg_contents() {
 }
 
 # ============================================================
+# RESUME：上传(rsync/GitHub)失败后的廉价重试
+# ============================================================
+# RESUME=1 且当前版本 DMG 已构建+签名+公证(stapled)+带安全时间戳 → 直接复用、跳过整个构建，
+# 避免重新 archive + 重新公证。守卫必须放在 rm -rf "${BUILD_DIR}" 之前，命中即原样保留产物。
+if [ "${RESUME:-}" = "1" ] && [ -f "${DMG_PATH}" ] \
+   && xcrun stapler validate "${DMG_PATH}" >/dev/null 2>&1; then
+    _resume_info="$(codesign -dvv "${DMG_PATH}" 2>&1 || true)"
+    if [[ $'\n'"${_resume_info}" == *$'\n'"Timestamp="* ]]; then
+        log_ok "RESUME=1：复用已构建并公证的 DMG，跳过 archive/公证 → ${DMG_PATH}"
+        verify_dmg_contents
+        exit 0
+    fi
+    log_warn "RESUME=1 但 DMG 缺安全时间戳，按正常流程重新构建"
+fi
+
+# ============================================================
 # 清理 & 创建目录
 # ============================================================
 rm -rf "${BUILD_DIR}"
@@ -315,6 +331,36 @@ else
     NOTARY_AUTH_ARGS=(--keychain-profile "${NOTARY_PROFILE}")
 fi
 
+# 公证 S3 上传：默认禁用加速端点——跨境大包走加速端点反而更易超时
+# （memory deploy-network-notary 实测）。需要时用 NOTARY_S3_ACCEL=1 显式启用加速。
+# 用单值变量(而非数组)，避免 macOS 自带 bash 3.2 下空数组 + set -u 的 unbound 报错。
+NOTARY_S3_FLAG="--no-s3-acceleration"
+[ "${NOTARY_S3_ACCEL:-}" = "1" ] && NOTARY_S3_FLAG=""
+
+# 公证上传跨境易 deadlineExceeded，整体重试（notarytool 不支持续传）。
+# 仅对网络/超时类失败重试；公证判定 Invalid/Rejected 是包本身问题，立即失败、不浪费时间重传。
+# 用 `if out=$(...)` 捕获输出+成败，规避 set -e 在命令替换失败时提前退出。
+notarize_submit_with_retry() {   # $1 = 待公证文件
+    local file="$1" attempt max=4 out
+    for attempt in $(seq 1 "$max"); do
+        if out="$(xcrun notarytool submit "$file" "${NOTARY_AUTH_ARGS[@]}" ${NOTARY_S3_FLAG} --wait 2>&1)"; then
+            echo "$out"
+            return 0
+        fi
+        echo "$out"
+        if grep -qiE 'status: *(Invalid|Rejected)' <<<"$out"; then
+            log_error "公证被拒(Invalid/Rejected)——包内容/签名问题，非网络，重试无意义。"
+            return 1
+        fi
+        if [ "$attempt" -lt "$max" ]; then
+            log_warn "公证上传第 ${attempt}/${max} 次失败（疑似跨境超时），$((attempt*10))s 后整体重试..."
+            sleep $((attempt*10))
+        fi
+    done
+    log_error "公证上传重试 ${max} 次仍失败（跨境大文件夜间常被掐）。建议白天发版或挂 TUN 全局 VPN。"
+    return 1
+}
+
 # ============================================================
 # 5. 公证 App (仅 prod)
 # ============================================================
@@ -324,11 +370,7 @@ if [ "$NOTARIZE" = true ]; then
     APP_ZIP="${NOTARY_UPLOAD_DIR}/VowKy-notarize.zip"
     ditto -c -k --keepParent "${APP_PATH}" "${APP_ZIP}"
 
-    # NOTARY_NO_S3_ACCEL=1：禁用 S3 传输加速端点（国内网络上传大包时加速端点反而易超时）
-    xcrun notarytool submit "${APP_ZIP}" \
-        "${NOTARY_AUTH_ARGS[@]}" \
-        ${NOTARY_NO_S3_ACCEL:+--no-s3-acceleration} \
-        --wait
+    notarize_submit_with_retry "${APP_ZIP}"
 
     xcrun stapler staple "${APP_PATH}"
     log_ok "App 公证完成"
@@ -384,10 +426,7 @@ if [ "$NOTARIZE" = true ]; then
     DMG_NOTARY_PATH="${NOTARY_UPLOAD_DIR}/${DMG_NAME}"
     cp "${DMG_PATH}" "${DMG_NOTARY_PATH}"
 
-    xcrun notarytool submit "${DMG_NOTARY_PATH}" \
-        "${NOTARY_AUTH_ARGS[@]}" \
-        ${NOTARY_NO_S3_ACCEL:+--no-s3-acceleration} \
-        --wait
+    notarize_submit_with_retry "${DMG_NOTARY_PATH}"
 
     xcrun stapler staple "${DMG_PATH}"
     log_ok "DMG 公证完成"

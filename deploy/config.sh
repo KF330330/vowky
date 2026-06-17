@@ -66,3 +66,17 @@ log_info()  { echo "▸ $*"; }
 log_ok()    { echo "✓ $*"; }
 log_warn()  { echo "⚠ $*"; }
 log_error() { echo "✗ $*" >&2; }
+
+# 断点续传 + 重试的 rsync。--partial-dir 把半成品放隐藏子目录，中断后下次只续传缺失部分
+# （跨境大 DMG 必备）；--timeout 检测卡死好触发重试。rsync 会自动把 partial-dir 排除出 --delete。
+# 用法: rsync_retry <rsync 参数...>
+rsync_retry() {
+    local attempt max=6
+    for attempt in $(seq 1 "$max"); do
+        rsync --partial-dir=.rsync-partial-vowky --timeout=120 "$@" && return 0
+        log_warn "rsync 第 ${attempt}/${max} 次中断（断点已保留），$((attempt*5))s 后续传重试..."
+        sleep $((attempt*5))
+    done
+    log_error "rsync 重试 ${max} 次仍失败"
+    return 1
+}

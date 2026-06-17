@@ -1,4 +1,4 @@
-.PHONY: build deploy deploy-skip-notarize bump-patch bump-minor bump-major preflight verify help dev run
+.PHONY: build deploy deploy-resume deploy-skip-notarize bump-patch bump-minor bump-major preflight verify help dev run
 
 help: ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -8,6 +8,9 @@ build: ## 构建 DMG（Developer ID 签名 + 公证）
 
 deploy: ## 构建并部署到 vowky.com
 	./deploy/deploy.sh
+
+deploy-resume: ## 复用已构建+已公证的 DMG，只重试上传（部署上传半路失败后用）
+	RESUME=1 ./deploy/deploy.sh
 
 deploy-skip-notarize: ## 部署（跳过公证，Apple timestamp 不可用时使用）
 	SKIP_NOTARIZE=1 ./deploy/deploy.sh

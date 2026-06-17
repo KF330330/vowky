@@ -65,7 +65,7 @@ fi
 # --exclude appcast.xml：appcast 不属于网站源（在 step 5 单独上传）。
 # 若被 --delete 误删，而后续步骤（如 GitHub 上传）中断没走到 step 5，
 # 服务器 appcast 就会缺失 → 线上 /appcast.xml 404 → 所有用户自动更新全挂。
-rsync -avz --delete --exclude='appcast.xml' \
+rsync_retry -avz --delete --exclude='appcast.xml' \
     "${SITE_STAGING}/" \
     "${SERVER}:${WEB_ROOT}/site/"
 rm -rf "${SITE_STAGING}"
@@ -75,7 +75,7 @@ log_ok "网站上传完成"
 # 3. 上传 DMG
 # ============================================================
 log_info "上传 DMG 到 ${SERVER}:${WEB_ROOT}/downloads/..."
-rsync -avz \
+rsync_retry -avz \
     "${DMG_PATH}" \
     "${SERVER}:${WEB_ROOT}/downloads/"
 log_ok "DMG 上传完成: ${DMG_NAME}"
@@ -261,7 +261,7 @@ fi
 # 5. 上传 appcast.xml
 # ============================================================
 log_info "上传 appcast.xml..."
-rsync -avz \
+rsync_retry -avz \
     "${APPCAST_PATH}" \
     "${SERVER}:${WEB_ROOT}/site/appcast.xml"
 # Nginx 期望 appcast.xml 在 WEB_ROOT 根目录，创建软链接
@@ -288,32 +288,49 @@ fi
 
 RELEASE_ID="$(gh api "repos/${GH_REPO}/releases/tags/v${VERSION}" --jq '.id')"
 
-# 删除同名旧 asset（模拟 --clobber，避免重传时 422 already_exists）
-for asset_name in "${DMG_NAME}" "VowKy.dmg"; do
-    asset_id="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" \
-        --jq ".[] | select(.name==\"${asset_name}\") | .id" 2>/dev/null | head -1)"
-    if [ -n "${asset_id}" ]; then
-        gh api -X DELETE "repos/${GH_REPO}/releases/assets/${asset_id}" >/dev/null 2>&1 || true
-    fi
-done
+# 经服务器中转上传 DMG 到 GitHub Release，带重试。
+# GitHub 上传 API 不支持续传，只能整体重传；每次重试前先删同名旧 asset（模拟 --clobber，
+# 避免半成品导致 422 already_exists）。curl 自身也带 --retry/超时，先吃掉瞬时网络抖动。
+gh_delete_asset() {   # $1 = asset 名
+    local aid
+    aid="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" \
+        --jq ".[] | select(.name==\"$1\") | .id" 2>/dev/null | head -1)"
+    [ -n "${aid}" ] && gh api -X DELETE "repos/${GH_REPO}/releases/assets/${aid}" >/dev/null 2>&1 || true
+}
 
-# 经服务器中转上传：本机只传非密的注入值作为远端环境变量，token 同样注入；
-# 远端脚本用 'EOF'（单引号）heredoc，所有 ${..} 在远端展开，避免本机/远端引号混淆。
-# 同时上传带版本号 + 不带版本号两个名字（后者支撑 /releases/latest/download/VowKy.dmg）。
-log_info "经服务器中转上传 DMG 到 GitHub Release..."
-GH_TOKEN_VAL="$(gh auth token)"
-ssh "${SERVER}" \
-    "GH_TOKEN_VAL='${GH_TOKEN_VAL}' GH_REPO='${GH_REPO}' RELEASE_ID='${RELEASE_ID}' DMG_NAME='${DMG_NAME}' WEB_ROOT='${WEB_ROOT}' bash -s" <<'REMOTE_UPLOAD'
+upload_dmg_to_github() {
+    local attempt max=3
+    for attempt in $(seq 1 "$max"); do
+        gh_delete_asset "${DMG_NAME}"
+        gh_delete_asset "VowKy.dmg"
+        # 同时上传带版本号 + 不带版本号两个名字（后者支撑 /releases/latest/download/VowKy.dmg）。
+        # 远端 'REMOTE_UPLOAD'（单引号）heredoc：所有 ${..} 在远端展开，避免本机/远端引号混淆。
+        if ssh "${SERVER}" \
+            "GH_TOKEN_VAL='${GH_TOKEN_VAL}' GH_REPO='${GH_REPO}' RELEASE_ID='${RELEASE_ID}' DMG_NAME='${DMG_NAME}' WEB_ROOT='${WEB_ROOT}' bash -s" <<'REMOTE_UPLOAD'
 set -e
 cd "${WEB_ROOT}/downloads"
 for upload_name in "${DMG_NAME}" "VowKy.dmg"; do
-    curl -fsS -X POST \
+    curl -fsS --connect-timeout 30 --max-time 1800 --retry 3 --retry-delay 10 \
+        -X POST \
         -H "Authorization: token ${GH_TOKEN_VAL}" \
         -H "Content-Type: application/octet-stream" \
         -T "${DMG_NAME}" \
         "https://uploads.github.com/repos/${GH_REPO}/releases/${RELEASE_ID}/assets?name=${upload_name}" >/dev/null
 done
 REMOTE_UPLOAD
+        then
+            return 0
+        fi
+        log_warn "GitHub 中转上传第 ${attempt}/${max} 次失败，$((attempt*10))s 后清理并重试..."
+        sleep $((attempt*10))
+    done
+    log_error "GitHub 中转上传重试 ${max} 次仍失败"
+    return 1
+}
+
+log_info "经服务器中转上传 DMG 到 GitHub Release..."
+GH_TOKEN_VAL="$(gh auth token)"
+upload_dmg_to_github
 
 # 确保该版本为 latest（两个 tag 指向同一 commit 时 GitHub 的 latest 判定会有歧义）
 gh release edit "v${VERSION}" --latest >/dev/null
