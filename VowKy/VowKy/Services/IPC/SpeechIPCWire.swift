@@ -14,7 +14,6 @@ enum SpeechIPCOpcode: UInt8 {
     case handshake = 0x01
     case recognize = 0x02
     case recognizeDetailed = 0x03
-    case addPunctuation = 0x04
 }
 
 enum SpeechIPCWire {
@@ -58,15 +57,6 @@ enum SpeechIPCWire {
         return w.data
     }
 
-    static func encodePunctuationRequest(text: String) -> Data {
-        var w = Writer()
-        w.u8(SpeechIPCOpcode.addPunctuation.rawValue)
-        let bytes = Array(text.utf8)
-        w.u32(UInt32(bytes.count))
-        w.bytes(bytes)
-        return w.data
-    }
-
     // MARK: - 请求解码(helper)
 
     struct RecognizeRequest { let detailed: Bool; let samples: [Float]; let sampleRate: Int }
@@ -86,20 +76,10 @@ enum SpeechIPCWire {
         return RecognizeRequest(detailed: opcode == .recognizeDetailed, samples: samples, sampleRate: Int(sr))
     }
 
-    static func decodePunctuationRequest(_ payload: Data) -> String? {
-        var r = Reader(payload)
-        guard let op = r.u8(), op == SpeechIPCOpcode.addPunctuation.rawValue,
-              let len = r.u32(), let text = r.string(Int(len)) else { return nil }
-        return text
-    }
-
     // MARK: - 响应编码(helper)
 
-    static func encodeHandshakeResponse(speechReady: Bool, punctReady: Bool) -> Data {
-        var bits: UInt8 = 0
-        if speechReady { bits |= 0b01 }
-        if punctReady { bits |= 0b10 }
-        return Data([bits])
+    static func encodeHandshakeResponse(speechReady: Bool) -> Data {
+        Data([speechReady ? 1 : 0])
     }
 
     /// status: 1 = 有文本, 0 = nil
@@ -132,18 +112,11 @@ enum SpeechIPCWire {
         return w.data
     }
 
-    static func encodePunctuationResponse(text: String) -> Data {
-        var w = Writer()
-        let bytes = Array(text.utf8)
-        w.u32(UInt32(bytes.count)); w.bytes(bytes)
-        return w.data
-    }
-
     // MARK: - 响应解码(客户端)
 
-    static func decodeHandshakeResponse(_ data: Data) -> (speech: Bool, punct: Bool)? {
+    static func decodeHandshakeResponse(_ data: Data) -> Bool? {
         guard let bits = data.first else { return nil }
-        return ((bits & 0b01) != 0, (bits & 0b10) != 0)
+        return (bits & 0b01) != 0
     }
 
     static func decodeRecognizeResponse(_ data: Data) -> String? {
@@ -167,12 +140,6 @@ enum SpeechIPCWire {
         }
         guard let tsCount = r.u32(), let timestamps = r.floats(Int(tsCount)) else { return nil }
         return DetailedRecognition(text: text, tokens: tokens, timestamps: timestamps)
-    }
-
-    static func decodePunctuationResponse(_ data: Data) -> String? {
-        var r = Reader(data)
-        guard let len = r.u32(), let text = r.string(Int(len)) else { return nil }
-        return text
     }
 
     // MARK: - 字节游标

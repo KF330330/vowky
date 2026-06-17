@@ -11,13 +11,13 @@ struct VowKyApp: App {
     private let updater: SPUUpdater
     private let userDriver: VowKyUpdaterUserDriver
 
-    // ONNX 推理已移出主进程:语音/标点都通过共享的 HelperTransport 转发给常驻 helper(vowky-speechd)。
+    // ONNX 推理已移出主进程:语音识别通过共享的 HelperTransport 转发给常驻 helper(vowky-speechd)。
+    // 标点由 SenseVoice(use_itn)在识别时直接产出,不再有独立标点模型。
     // 主进程不再链接 onnxruntime,活签名保持有效,Sparkle 自更新得以通过 Sequoia/Tahoe 校验。
     @StateObject private var appState = AppState(
         speechRecognizer: RemoteSpeechRecognizer(transport: .shared),
         audioRecorder: AudioRecorder(),
         permissionChecker: RealPermissionChecker(),
-        punctuationService: RemotePunctuationService(transport: .shared),
         backupService: AudioBackupService()
     )
 

@@ -213,15 +213,8 @@ struct VowKyTranscribeCLI {
             throw VowKyTranscribeCLIError.modelLoadFailed
         }
 
-        let punctuation = PunctuationService()
-        let punctuationModel = modelDirectory.appendingPathComponent("punct-model.onnx")
-        if fileManager.fileExists(atPath: punctuationModel.path) {
-            punctuation.loadModel(modelPath: punctuationModel.path)
-        }
-
         let service = FileTranscriptionService(
-            speechRecognizer: recognizer,
-            punctuationService: punctuation.isReady ? punctuation : nil
+            speechRecognizer: recognizer
         )
         return VowKyFileTranscriptionRunner(service: service)
     }

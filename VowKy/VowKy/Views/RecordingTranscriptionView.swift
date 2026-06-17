@@ -148,7 +148,6 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private let appState: AppState
     private var audioRecorder: AudioRecorderProtocol
     private let finalRecognizer: SpeechRecognizerProtocol
-    private let punctuationService: PunctuationServiceProtocol?
     private let outputStore: RecordingTranscriptionOutputStore
     private let resultRecorder: (String) -> Void
 
@@ -166,14 +165,12 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         appState: AppState,
         audioRecorder: AudioRecorderProtocol? = nil,
         finalRecognizer: SpeechRecognizerProtocol? = nil,
-        punctuationService: PunctuationServiceProtocol? = nil,
         outputStore: RecordingTranscriptionOutputStore = RecordingTranscriptionOutputStore(),
         resultRecorder: ((String) -> Void)? = nil
     ) {
         self.appState = appState
         self.audioRecorder = audioRecorder ?? appState.audioRecorder
         self.finalRecognizer = finalRecognizer ?? appState.finalSpeechRecognizerForRecordingTranscription()
-        self.punctuationService = punctuationService ?? appState.punctuationServiceForRecordingTranscription()
         self.outputStore = outputStore
         self.resultRecorder = resultRecorder ?? { text in
             appState.recordRecognitionResult(text: text, sourceType: "recording")
@@ -606,10 +603,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         subtitleCancellable = nil
         subtitlePacer.reset()
 
-        let trimmedText = result.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let finalText = trimmedText.isEmpty
-            ? ""
-            : (punctuationService?.addPunctuation(to: trimmedText) ?? trimmedText)
+        let finalText = result.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         do {
             try outputStore.writeTranscript(finalText, to: preparedOutput.textURL)

@@ -1520,62 +1520,6 @@ class SherpaOnnxKeywordSpotterWrapper {
   }
 }
 
-// Punctuation
-
-func sherpaOnnxOfflinePunctuationModelConfig(
-  ctTransformer: String,
-  numThreads: Int = 1,
-  debug: Int = 0,
-  provider: String = "cpu"
-) -> SherpaOnnxOfflinePunctuationModelConfig {
-  return SherpaOnnxOfflinePunctuationModelConfig(
-    ct_transformer: toCPointer(ctTransformer),
-    num_threads: Int32(numThreads),
-    debug: Int32(debug),
-    provider: toCPointer(provider)
-  )
-}
-
-func sherpaOnnxOfflinePunctuationConfig(
-  model: SherpaOnnxOfflinePunctuationModelConfig
-) -> SherpaOnnxOfflinePunctuationConfig {
-  return SherpaOnnxOfflinePunctuationConfig(
-    model: model
-  )
-}
-
-class SherpaOnnxOfflinePunctuationWrapper {
-  /// A pointer to the underlying counterpart in C
-  let ptr: OpaquePointer!
-
-  /// Constructor taking a model config
-  init(
-    config: UnsafePointer<SherpaOnnxOfflinePunctuationConfig>!
-  ) {
-    ptr = SherpaOnnxCreateOfflinePunctuation(config)
-  }
-
-  deinit {
-    if let ptr {
-      SherpaOnnxDestroyOfflinePunctuation(ptr)
-    }
-  }
-
-  func addPunct(text: String) -> String {
-    // Use withCString to avoid strdup leak on every call
-    text.withCString { cStr in
-      let cText = SherpaOfflinePunctuationAddPunct(ptr, cStr)
-      guard let cText = cText else {
-        CrashLogger.log("[SherpaOnnx] addPunct returned NULL for text: \(text)")
-        return text
-      }
-      let ans = String(cString: cText)
-      SherpaOfflinePunctuationFreeText(cText)
-      return ans
-    }
-  }
-}
-
 func sherpaOnnxOnlinePunctuationModelConfig(
   cnnBiLstm: String,
   bpeVocab: String,

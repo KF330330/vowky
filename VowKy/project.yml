@@ -26,7 +26,6 @@ targets:
           # 只编进 helper / transcribe / 测试 bundle,主 app 不再链接 onnxruntime。
           - "SherpaOnnx/**"
           - "Services/SpeechRecognizer.swift"
-          - "Services/PunctuationService.swift"
           - "Services/VowKyTranscribeCLI.swift"
           - "Services/VowKyModelLocator.swift"
       - path: VowKy/Resources
@@ -77,7 +76,6 @@ targets:
       # VOWKY_TEST_HOST 让这些文件 @testable import VowKy 取到 host 模块里的 Protocols/Service 类型。
       - path: VowKy/SherpaOnnx/SherpaOnnx.swift
       - path: VowKy/Services/SpeechRecognizer.swift
-      - path: VowKy/Services/PunctuationService.swift
       - path: VowKy/Services/VowKyTranscribeCLI.swift
       - path: VowKy/Services/VowKyModelLocator.swift
     dependencies:
@@ -111,7 +109,6 @@ targets:
       - path: VowKy/Services/CrashLogger.swift
       - path: VowKy/Services/Protocols.swift
       - path: VowKy/Services/SpeechRecognizer.swift
-      - path: VowKy/Services/PunctuationService.swift
       - path: VowKy/Services/MediaAudioDecoder.swift
       - path: VowKy/Services/FileTranscriptionService.swift
       - path: VowKy/Services/TranscriptionOutputNamer.swift
@@ -155,7 +152,6 @@ targets:
       - path: VowKy/Services/CrashLogger.swift
       - path: VowKy/Services/Protocols.swift
       - path: VowKy/Services/SpeechRecognizer.swift
-      - path: VowKy/Services/PunctuationService.swift
       - path: VowKy/Services/VowKyModelLocator.swift
     settings:
       base:

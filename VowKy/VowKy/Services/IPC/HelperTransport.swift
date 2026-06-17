@@ -5,15 +5,13 @@ import Foundation
 final class HelperReadyState: @unchecked Sendable {
     private let lock = NSLock()
     private var speech = false
-    private var punct = false
 
     var speechReady: Bool { lock.lock(); defer { lock.unlock() }; return speech }
-    var punctReady: Bool { lock.lock(); defer { lock.unlock() }; return punct }
 
-    func set(speech: Bool, punct: Bool) {
-        lock.lock(); self.speech = speech; self.punct = punct; lock.unlock()
+    func set(speech: Bool) {
+        lock.lock(); self.speech = speech; lock.unlock()
     }
-    func clear() { set(speech: false, punct: false) }
+    func clear() { set(speech: false) }
 }
 
 /// 主 app 与常驻 helper(vowky-speechd)之间的传输层。
@@ -45,7 +43,6 @@ final class HelperTransport: @unchecked Sendable {
     // MARK: - 公开 API
 
     var speechReady: Bool { readyState.speechReady }
-    var punctReady: Bool { readyState.punctReady }
 
     /// 启动并预热(spawn + handshake,握手往返会一直等到 helper 加载完模型)。app 启动时调用。
     func ensureStarted() async {
@@ -106,11 +103,11 @@ final class HelperTransport: @unchecked Sendable {
               let outFD = stdoutHandle?.fileDescriptor,
               SpeechIPCWire.writeFrame(fd: inFD, payload: req),
               let resp = SpeechIPCWire.readFrame(fd: outFD, deadline: Date().addingTimeInterval(Self.handshakeTimeout)),
-              let ready = SpeechIPCWire.decodeHandshakeResponse(resp) else {
+              let speechReady = SpeechIPCWire.decodeHandshakeResponse(resp) else {
             teardownLocked()
             return false
         }
-        readyState.set(speech: ready.speech, punct: ready.punct)
+        readyState.set(speech: speechReady)
         return true
     }
 

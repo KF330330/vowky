@@ -88,17 +88,6 @@ final class MockPermissionChecker: PermissionCheckerProtocol {
     }
 }
 
-final class MockPunctuationService: PunctuationServiceProtocol {
-    var isReady: Bool = true
-    var addPunctuationCallCount = 0
-    var punctuationSuffix = "。"
-
-    func addPunctuation(to text: String) -> String {
-        addPunctuationCallCount += 1
-        return text + punctuationSuffix
-    }
-}
-
 final class MockStreamingSpeechRecognizer: StreamingSpeechRecognizerProtocol {
     var isReady: Bool = true
     var loadModelCallCount = 0

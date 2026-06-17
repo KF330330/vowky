@@ -66,12 +66,10 @@ final class FileTranscriptionServiceTests: XCTestCase {
         ))
         let recognizer = MockSpeechRecognizer()
         recognizer.queuedRecognizeResults = ["第一段", "第二段", "第三段"]
-        let punctuation = MockPunctuationService()
         let counter = CallCounter()
         let service = FileTranscriptionService(
             decoder: decoder,
             speechRecognizer: recognizer,
-            punctuationService: punctuation,
             yieldToVoiceInput: { await counter.increment() }
         )
 
@@ -102,7 +100,7 @@ final class FileTranscriptionServiceTests: XCTestCase {
         XCTAssertLessThan(chunks[0].duration, 32.3)
     }
 
-    func testTranscribeSegmentsAddsPunctuationAndReportsProgress() async throws {
+    func testTranscribeSegmentsReportsProgress() async throws {
         let sampleRate = 100
         let samples = Array(repeating: Float(0.02), count: 6_500)
         let decoder = MockMediaAudioDecoder(decodedAudio: DecodedAudio(
@@ -112,11 +110,9 @@ final class FileTranscriptionServiceTests: XCTestCase {
         ))
         let recognizer = MockSpeechRecognizer()
         recognizer.queuedRecognizeResults = ["第一段", "第二段", "第三段"]
-        let punctuation = MockPunctuationService()
         let service = FileTranscriptionService(
             decoder: decoder,
-            speechRecognizer: recognizer,
-            punctuationService: punctuation
+            speechRecognizer: recognizer
         )
 
         var updates: [FileTranscriptionProgress] = []
@@ -124,11 +120,10 @@ final class FileTranscriptionServiceTests: XCTestCase {
             updates.append(update)
         }
 
-        XCTAssertEqual(result, "第一段。\n第二段。\n第三段。")
+        XCTAssertEqual(result, "第一段\n第二段\n第三段")
         XCTAssertEqual(decoder.decodeCallCount, 3)
         XCTAssertEqual(decoder.decodeTimeRanges.map { Int($0.start.rounded()) }, [0, 30, 60])
         XCTAssertEqual(recognizer.recognizeCallCount, 3)
-        XCTAssertEqual(punctuation.addPunctuationCallCount, 3)
         XCTAssertEqual(updates.last?.progress, 1)
         XCTAssertEqual(updates.last?.partialText, result)
     }
@@ -166,8 +161,7 @@ final class FileTranscriptionServiceTests: XCTestCase {
         recognizer.queuedRecognizeResults = ["第一段", ""]
         let service = FileTranscriptionService(
             decoder: decoder,
-            speechRecognizer: recognizer,
-            punctuationService: nil
+            speechRecognizer: recognizer
         )
 
         let result = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { _ in }
@@ -191,7 +185,6 @@ final class FileTranscriptionServiceTests: XCTestCase {
         let service = FileTranscriptionService(
             decoder: decoder,
             speechRecognizer: recognizer,
-            punctuationService: nil,
             targetChunkDuration: 48,
             boundarySearchWindow: 0
         )
@@ -219,8 +212,7 @@ final class FileTranscriptionServiceTests: XCTestCase {
         recognizer.queuedRecognizeResults = ["第一段", "第二段", ""]
         let service = FileTranscriptionService(
             decoder: decoder,
-            speechRecognizer: recognizer,
-            punctuationService: nil
+            speechRecognizer: recognizer
         )
 
         let result = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { _ in }
@@ -241,8 +233,7 @@ final class FileTranscriptionServiceTests: XCTestCase {
         let recognizer = MockSpeechRecognizer()
         let service = FileTranscriptionService(
             decoder: decoder,
-            speechRecognizer: recognizer,
-            punctuationService: nil
+            speechRecognizer: recognizer
         )
 
         do {
@@ -265,8 +256,7 @@ final class FileTranscriptionServiceTests: XCTestCase {
         recognizer.queuedRecognizeResults = ["第一段", "第二段", "第三段"]
         let service = FileTranscriptionService(
             decoder: decoder,
-            speechRecognizer: recognizer,
-            punctuationService: nil
+            speechRecognizer: recognizer
         )
 
         var task: Task<String, Error>!

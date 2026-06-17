@@ -54,7 +54,6 @@ protocol FileTranscribing {
 final class FileTranscriptionService: FileTranscribing {
     private let decoder: MediaAudioDecoding
     private let speechRecognizer: SpeechRecognizerProtocol
-    private let punctuationService: PunctuationServiceProtocol?
     private let targetChunkDuration: TimeInterval
     private let boundarySearchWindow: TimeInterval
     /// 礼让闸：每个分块前调用。实时语音输入活动时挂起，让出共用 helper；为 nil 时不礼让（CLI/测试）。
@@ -63,14 +62,12 @@ final class FileTranscriptionService: FileTranscribing {
     init(
         decoder: MediaAudioDecoding = MediaAudioDecoder(),
         speechRecognizer: SpeechRecognizerProtocol,
-        punctuationService: PunctuationServiceProtocol?,
         targetChunkDuration: TimeInterval = 30,
         boundarySearchWindow: TimeInterval = 2,
         yieldToVoiceInput: (() async -> Void)? = nil
     ) {
         self.decoder = decoder
         self.speechRecognizer = speechRecognizer
-        self.punctuationService = punctuationService
         self.targetChunkDuration = targetChunkDuration
         self.boundarySearchWindow = boundarySearchWindow
         self.yieldToVoiceInput = yieldToVoiceInput
@@ -157,8 +154,7 @@ final class FileTranscriptionService: FileTranscribing {
                 continue
             }
 
-            let finalText = punctuationService?.addPunctuation(to: rawText) ?? rawText
-            recognizedSegments.append(finalText)
+            recognizedSegments.append(rawText)
             currentStart += max(chunk.duration, 0.01)
             segmentIndex += 1
 

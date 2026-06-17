@@ -35,11 +35,9 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
     func testStartStopSavesTextAndAudioAndRecordsHistory() async throws {
         mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
         mockFinalRecognizer.recognizeResult = "SenseVoice最终"
-        let punctuation = MockPunctuationService()
         var recordedResults: [String] = []
 
         let viewModel = makeViewModel(
-            punctuationService: punctuation,
             resultRecorder: { recordedResults.append($0) }
         )
 
@@ -56,13 +54,13 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
             viewModel.state == .completed
         }
 
-        XCTAssertEqual(viewModel.transcriptText, "SenseVoice最终。")
-        XCTAssertEqual(recordedResults, ["SenseVoice最终。"])
+        XCTAssertEqual(viewModel.transcriptText, "SenseVoice最终")
+        XCTAssertEqual(recordedResults, ["SenseVoice最终"])
         XCTAssertFalse(appState.isRecordingTranscriptionInProgress)
         let output = try XCTUnwrap(viewModel.output)
         XCTAssertTrue(FileManager.default.fileExists(atPath: output.textURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: output.audioURL.path))
-        XCTAssertEqual(try String(contentsOf: output.textURL), "SenseVoice最终。")
+        XCTAssertEqual(try String(contentsOf: output.textURL), "SenseVoice最终")
         let samples = try XCTUnwrap(WAVSampleFileWriter.readFloat32Samples(from: output.audioURL))
         XCTAssertEqual(samples, [Float(0.1), Float(0.2), Float(0.3)])
     }
@@ -108,7 +106,7 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         mockRecorder.samplesToEmitOnStart = [[0.1, 0.2]]
         mockFinalRecognizer.recognizeResult = "慢速最终稿"
         mockFinalRecognizer.recognizeDelay = 300_000_000
-        let viewModel = makeViewModel(punctuationService: MockPunctuationService())
+        let viewModel = makeViewModel()
 
         viewModel.start()
         try await waitUntil("recording starts") {
@@ -123,7 +121,7 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         try await waitUntil("slow final recognition completes", timeout: 1) {
             viewModel.state == .completed
         }
-        XCTAssertEqual(viewModel.transcriptText, "慢速最终稿。")
+        XCTAssertEqual(viewModel.transcriptText, "慢速最终稿")
     }
 
     func testEmptySenseVoiceFinalTextFailsAndSkipsHistory() async throws {
@@ -180,14 +178,12 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
     }
 
     private func makeViewModel(
-        punctuationService: PunctuationServiceProtocol? = nil,
         resultRecorder: ((String) -> Void)? = nil
     ) -> RecordingTranscriptionViewModel {
         RecordingTranscriptionViewModel(
             appState: appState,
             audioRecorder: mockRecorder,
             finalRecognizer: mockFinalRecognizer,
-            punctuationService: punctuationService,
             outputStore: RecordingTranscriptionOutputStore(outputDirectory: tempDir),
             resultRecorder: resultRecorder
         )

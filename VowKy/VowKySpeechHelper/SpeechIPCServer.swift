@@ -7,7 +7,6 @@ final class SpeechIPCServer: @unchecked Sendable {
     private let inputFD: Int32
     private let outputFD: Int32
     private let recognizer = LocalSpeechRecognizer()
-    private let punctuation = PunctuationService()
 
     init(inputFD: Int32, outputFD: Int32) {
         self.inputFD = inputFD
@@ -38,11 +37,7 @@ final class SpeechIPCServer: @unchecked Sendable {
             modelPath: dir.appendingPathComponent("model.int8.onnx").path,
             tokensPath: dir.appendingPathComponent("tokens.txt").path
         )
-        let punctModel = dir.appendingPathComponent("punct-model.onnx")
-        if FileManager.default.fileExists(atPath: punctModel.path) {
-            punctuation.loadModel(modelPath: punctModel.path)
-        }
-        NSLog("[vowky-speechd] models loaded: speech=\(recognizer.isReady) punct=\(punctuation.isReady)")
+        NSLog("[vowky-speechd] models loaded: speech=\(recognizer.isReady)")
     }
 
     // MARK: - 请求派发
@@ -53,10 +48,7 @@ final class SpeechIPCServer: @unchecked Sendable {
         }
         switch op {
         case .handshake:
-            return SpeechIPCWire.encodeHandshakeResponse(
-                speechReady: recognizer.isReady,
-                punctReady: punctuation.isReady
-            )
+            return SpeechIPCWire.encodeHandshakeResponse(speechReady: recognizer.isReady)
         case .recognize, .recognizeDetailed:
             guard let req = SpeechIPCWire.decodeRecognizeRequest(frame) else {
                 return op == .recognizeDetailed
@@ -74,10 +66,6 @@ final class SpeechIPCServer: @unchecked Sendable {
                 }
                 return SpeechIPCWire.encodeRecognizeResponse(text: text)
             }
-        case .addPunctuation:
-            let text = SpeechIPCWire.decodePunctuationRequest(frame) ?? ""
-            let result = punctuation.addPunctuation(to: text)
-            return SpeechIPCWire.encodePunctuationResponse(text: result)
         }
     }
 

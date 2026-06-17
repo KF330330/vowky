@@ -87,20 +87,9 @@ final class SpeechIPCWireTests: XCTestCase {
         XCTAssertNil(SpeechIPCWire.decodeDetailedResponse(payload))
     }
 
-    func testPunctuationRoundTrip() {
-        let req = SpeechIPCWire.encodePunctuationRequest(text: "我们都是木头人不会说话")
-        XCTAssertEqual(SpeechIPCWire.opcode(of: req), .addPunctuation)
-        XCTAssertEqual(SpeechIPCWire.decodePunctuationRequest(req), "我们都是木头人不会说话")
-
-        let resp = SpeechIPCWire.encodePunctuationResponse(text: "我们都是木头人，不会说话。")
-        XCTAssertEqual(SpeechIPCWire.decodePunctuationResponse(resp), "我们都是木头人，不会说话。")
-    }
-
     func testHandshakeResponseBits() {
-        XCTAssertEqual(SpeechIPCWire.decodeHandshakeResponse(SpeechIPCWire.encodeHandshakeResponse(speechReady: true, punctReady: true)).map { [$0.speech, $0.punct] }, [true, true])
-        XCTAssertEqual(SpeechIPCWire.decodeHandshakeResponse(SpeechIPCWire.encodeHandshakeResponse(speechReady: true, punctReady: false)).map { [$0.speech, $0.punct] }, [true, false])
-        XCTAssertEqual(SpeechIPCWire.decodeHandshakeResponse(SpeechIPCWire.encodeHandshakeResponse(speechReady: false, punctReady: true)).map { [$0.speech, $0.punct] }, [false, true])
-        XCTAssertEqual(SpeechIPCWire.decodeHandshakeResponse(SpeechIPCWire.encodeHandshakeResponse(speechReady: false, punctReady: false)).map { [$0.speech, $0.punct] }, [false, false])
+        XCTAssertEqual(SpeechIPCWire.decodeHandshakeResponse(SpeechIPCWire.encodeHandshakeResponse(speechReady: true)), true)
+        XCTAssertEqual(SpeechIPCWire.decodeHandshakeResponse(SpeechIPCWire.encodeHandshakeResponse(speechReady: false)), false)
     }
 
     // MARK: - 异常输入优雅退化

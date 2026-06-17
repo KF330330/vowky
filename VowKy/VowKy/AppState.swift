@@ -35,7 +35,6 @@ final class AppState: ObservableObject {
     private let speechRecognizer: SpeechRecognizerProtocol
     let audioRecorder: AudioRecorderProtocol
     private let permissionChecker: PermissionCheckerProtocol
-    private let punctuationService: PunctuationServiceProtocol?
     private let backupService: AudioBackupProtocol?
 
     /// Optional services wired during setup()
@@ -54,13 +53,11 @@ final class AppState: ObservableObject {
         speechRecognizer: SpeechRecognizerProtocol,
         audioRecorder: AudioRecorderProtocol,
         permissionChecker: PermissionCheckerProtocol,
-        punctuationService: PunctuationServiceProtocol? = nil,
         backupService: AudioBackupProtocol? = nil
     ) {
         self.speechRecognizer = speechRecognizer
         self.audioRecorder = audioRecorder
         self.permissionChecker = permissionChecker
-        self.punctuationService = punctuationService
         self.backupService = backupService
     }
 
@@ -333,11 +330,8 @@ final class AppState: ObservableObject {
                 return
             }
 
-            // Add punctuation if available（异步往返：避免在 MainActor 上同步阻塞，
-            // 与文件转录共用 helper 并发时尤为关键，否则等待分块推理会冻结主线程）
-            CrashLogger.log("[Recognize] Adding punctuation to: \(text)")
-            let finalText = await punctuationService?.addPunctuationAsync(to: text) ?? text
-            CrashLogger.log("[Recognize] Punctuation done: \(finalText)")
+            // 标点由 SenseVoice 识别(use_itn)直接产出，无需额外标点步骤。
+            let finalText = text
             print("[VowKy][AppState] Final text: \(finalText)")
 
             // Valid result: insert text and return to idle
@@ -396,7 +390,6 @@ final class AppState: ObservableObject {
     func makeFileTranscriptionService() -> FileTranscriptionService {
         FileTranscriptionService(
             speechRecognizer: speechRecognizer,
-            punctuationService: punctuationService,
             yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
         )
     }
@@ -467,10 +460,6 @@ final class AppState: ObservableObject {
         speechRecognizer
     }
 
-    func punctuationServiceForRecordingTranscription() -> PunctuationServiceProtocol? {
-        punctuationService
-    }
-
     var hasTextInsertionTarget: Bool {
         guard let app = lastTextInsertionTarget else { return false }
         return !app.isTerminated
@@ -537,9 +526,7 @@ final class AppState: ObservableObject {
                 return
             }
 
-            CrashLogger.log("[Recovery] Adding punctuation to: \(text)")
-            let finalText = punctuationService?.addPunctuation(to: text) ?? text
-            CrashLogger.log("[Recovery] Punctuation done: \(finalText)")
+            let finalText = text
             recordRecognitionResult(text: finalText, sourceType: "voice")
             let autoCopy = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
             textOutputService?.insertText(finalText, copyToClipboard: autoCopy)
