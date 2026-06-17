@@ -49,8 +49,40 @@ private final class MockMediaAudioDecoder: MediaAudioDecoding {
     }
 }
 
+private actor CallCounter {
+    private(set) var count = 0
+    func increment() { count += 1 }
+}
+
 @MainActor
 final class FileTranscriptionServiceTests: XCTestCase {
+    func testYieldToVoiceInputIsAwaitedBeforeEachChunk() async throws {
+        let sampleRate = 100
+        let samples = Array(repeating: Float(0.02), count: 6_500)
+        let decoder = MockMediaAudioDecoder(decodedAudio: DecodedAudio(
+            samples: samples,
+            sampleRate: sampleRate,
+            duration: 65
+        ))
+        let recognizer = MockSpeechRecognizer()
+        recognizer.queuedRecognizeResults = ["第一段", "第二段", "第三段"]
+        let punctuation = MockPunctuationService()
+        let counter = CallCounter()
+        let service = FileTranscriptionService(
+            decoder: decoder,
+            speechRecognizer: recognizer,
+            punctuationService: punctuation,
+            yieldToVoiceInput: { await counter.increment() }
+        )
+
+        _ = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { _ in }
+
+        // 3 个分块 → 礼让闸在每个分块前各调用一次
+        let yieldCount = await counter.count
+        XCTAssertEqual(yieldCount, 3)
+        XCTAssertEqual(recognizer.recognizeCallCount, 3)
+    }
+
     func testMakeChunksPrefersNearbyLowEnergyBoundary() {
         let sampleRate = 100
         var samples = Array(repeating: Float(0.02), count: 6_500)

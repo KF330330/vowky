@@ -58,6 +58,15 @@ protocol PermissionCheckerProtocol {
 protocol PunctuationServiceProtocol {
     var isReady: Bool { get }
     func addPunctuation(to text: String) -> String
+    /// 异步加标点：实时语音输入路径用，避免在 MainActor 上做同步 IPC 往返而冻结主线程
+    /// （文件转录与共用 helper 并发时尤为重要）。默认实现回退到同步版，Mock 无需改动。
+    func addPunctuationAsync(to text: String) async -> String
+}
+
+extension PunctuationServiceProtocol {
+    func addPunctuationAsync(to text: String) async -> String {
+        addPunctuation(to: text)
+    }
 }
 
 protocol AudioBackupProtocol {

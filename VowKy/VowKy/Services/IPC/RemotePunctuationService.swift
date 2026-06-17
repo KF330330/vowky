@@ -24,4 +24,16 @@ final class RemotePunctuationService: PunctuationServiceProtocol {
         }
         return result
     }
+
+    /// 异步往返(走 queue.async),供实时语音输入在 MainActor 上调用而不阻塞主线程。
+    /// 语义/退化与同步版一致;helper 未就绪或往返失败均返回原文。
+    func addPunctuationAsync(to text: String) async -> String {
+        guard transport.punctReady else { return text }
+        let payload = SpeechIPCWire.encodePunctuationRequest(text: text)
+        guard let response = await transport.request(payload, timeout: Self.requestTimeout),
+              let result = SpeechIPCWire.decodePunctuationResponse(response) else {
+            return text
+        }
+        return result
+    }
 }

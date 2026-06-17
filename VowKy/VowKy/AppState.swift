@@ -17,12 +17,18 @@ final class AppState: ObservableObject {
 
     // MARK: - Published Properties
 
-    @Published var state: State = .idle
+    @Published var state: State = .idle {
+        didSet { releaseVoiceInputWaitersIfIdle() }
+    }
     @Published var errorMessage: String?
     @Published var lastResult: String?
     @Published var recentResults: [String] = [] // 最近 3 次识别结果
     @Published var isFileTranscriptionInProgress = false
     @Published var isRecordingTranscriptionInProgress = false
+
+    /// 后台文件转录的「礼让闸」等待者：实时语音输入活动(录音/识别)期间，文件转录在每个分块前挂起到此，
+    /// 回到 .idle 时一次性放行。让出共用 helper，保证语音输入低延迟、不与文件分块争抢引擎。
+    private var voiceInputWaiters: [CheckedContinuation<Void, Never>] = []
 
     // MARK: - Dependencies
 
@@ -213,11 +219,9 @@ final class AppState: ObservableObject {
         // Clear previous error
         errorMessage = nil
 
-        if isFileTranscriptionInProgress {
-            errorMessage = L("appState.error.fileTranscribingBusy")
-            CrashLogger.log("[Hotkey] Ignored while file transcription is running")
-            return
-        }
+        // 文件转录期间允许语音输入：文件转录只读文件解码器、不碰麦克风，二者无硬冲突；
+        // 共用的离线 helper 由 waitWhileVoiceInputActive() 礼让闸协调，语音输入优先。
+        // 录音转写仍需屏蔽——它和语音输入都占用麦克风，存在硬冲突。
         if isRecordingTranscriptionInProgress {
             errorMessage = L("appState.error.recordingBusy")
             CrashLogger.log("[Hotkey] Ignored while recording transcription is running")
@@ -329,9 +333,10 @@ final class AppState: ObservableObject {
                 return
             }
 
-            // Add punctuation if available
+            // Add punctuation if available（异步往返：避免在 MainActor 上同步阻塞，
+            // 与文件转录共用 helper 并发时尤为关键，否则等待分块推理会冻结主线程）
             CrashLogger.log("[Recognize] Adding punctuation to: \(text)")
-            let finalText = punctuationService?.addPunctuation(to: text) ?? text
+            let finalText = await punctuationService?.addPunctuationAsync(to: text) ?? text
             CrashLogger.log("[Recognize] Punctuation done: \(finalText)")
             print("[VowKy][AppState] Final text: \(finalText)")
 
@@ -391,8 +396,48 @@ final class AppState: ObservableObject {
     func makeFileTranscriptionService() -> FileTranscriptionService {
         FileTranscriptionService(
             speechRecognizer: speechRecognizer,
-            punctuationService: punctuationService
+            punctuationService: punctuationService,
+            yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
         )
+    }
+
+    // MARK: - 语音输入礼让闸（供后台文件转录每个分块前调用）
+
+    /// 实时语音输入是否正在占用引擎（录音中或识别中）。`.outputting` 为死状态，一并算上以防未来启用。
+    private var isVoiceInputActive: Bool {
+        state == .recording || state == .recognizing || state == .outputting
+    }
+
+    /// 文件转录在每个分块前 await 此方法：语音输入活动时挂起，回到 .idle 时由 didSet 放行。
+    /// 取消安全——任务在闸内被取消会立即唤醒，让循环的 `Task.checkCancellation()` 干净退出，
+    /// 避免 `endFileTranscription()` 不执行而把 `isFileTranscriptionInProgress` 永久卡 true。
+    func waitWhileVoiceInputActive() async {
+        if !isVoiceInputActive { return }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                // 闭包内 re-check：避免 check 与 append 之间状态已翻转导致错过唤醒。
+                if !isVoiceInputActive || Task.isCancelled {
+                    cont.resume()
+                    return
+                }
+                voiceInputWaiters.append(cont)
+            }
+        } onCancel: {
+            Task { @MainActor in self.resumeAllVoiceInputWaiters() }
+        }
+    }
+
+    /// 回到 .idle 时一次性放行所有等待者。先快照清空再 resume，杜绝重复 resume（会 fatalError）。
+    private func releaseVoiceInputWaitersIfIdle() {
+        guard state == .idle else { return }
+        resumeAllVoiceInputWaiters()
+    }
+
+    private func resumeAllVoiceInputWaiters() {
+        guard !voiceInputWaiters.isEmpty else { return }
+        let waiters = voiceInputWaiters
+        voiceInputWaiters = []
+        waiters.forEach { $0.resume() }
     }
 
     // MARK: - Recording Transcription

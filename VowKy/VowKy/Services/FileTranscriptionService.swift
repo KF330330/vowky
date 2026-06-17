@@ -57,19 +57,23 @@ final class FileTranscriptionService: FileTranscribing {
     private let punctuationService: PunctuationServiceProtocol?
     private let targetChunkDuration: TimeInterval
     private let boundarySearchWindow: TimeInterval
+    /// 礼让闸：每个分块前调用。实时语音输入活动时挂起，让出共用 helper；为 nil 时不礼让（CLI/测试）。
+    private let yieldToVoiceInput: (() async -> Void)?
 
     init(
         decoder: MediaAudioDecoding = MediaAudioDecoder(),
         speechRecognizer: SpeechRecognizerProtocol,
         punctuationService: PunctuationServiceProtocol?,
         targetChunkDuration: TimeInterval = 30,
-        boundarySearchWindow: TimeInterval = 2
+        boundarySearchWindow: TimeInterval = 2,
+        yieldToVoiceInput: (() async -> Void)? = nil
     ) {
         self.decoder = decoder
         self.speechRecognizer = speechRecognizer
         self.punctuationService = punctuationService
         self.targetChunkDuration = targetChunkDuration
         self.boundarySearchWindow = boundarySearchWindow
+        self.yieldToVoiceInput = yieldToVoiceInput
     }
 
     func transcribe(
@@ -95,6 +99,8 @@ final class FileTranscriptionService: FileTranscribing {
         var segmentIndex = 0
 
         while currentStart < totalDuration || (totalDuration == 0 && segmentIndex == 0) {
+            // 实时语音输入活动时在此挂起（解码前完全礼让），语音结束后继续。取消会立即唤醒。
+            await yieldToVoiceInput?()
             try Task.checkCancellation()
             let partialText = recognizedSegments.joined(separator: "\n")
             await progress(FileTranscriptionProgress(

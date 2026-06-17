@@ -281,22 +281,18 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(mockRecorder.stopCallCount, 2)
     }
 
-    // MARK: - File transcription blocks hotkey recognition
+    // MARK: - File transcription no longer blocks hotkey recognition (shared-engine concurrency)
 
-    func test17_fileTranscriptionInProgressBlocksHotkeyRecording() {
+    func test17_fileTranscriptionInProgressAllowsHotkeyRecording() {
         XCTAssertNil(appState.beginFileTranscription())
+        XCTAssertTrue(appState.isFileTranscriptionInProgress)
 
         appState.handleHotkeyToggle()
 
-        XCTAssertEqual(appState.state, .idle)
-        XCTAssertEqual(appState.errorMessage, L("appState.error.fileTranscribingBusy"))
-        XCTAssertEqual(mockRecorder.startCallCount, 0)
-
-        appState.endFileTranscription()
-        appState.handleHotkeyToggle()
-
+        // 文件转录进行中，语音输入照常开始录音（共用引擎，靠礼让闸协调），文件转录标志保持不变。
         XCTAssertEqual(appState.state, .recording)
         XCTAssertEqual(mockRecorder.startCallCount, 1)
+        XCTAssertTrue(appState.isFileTranscriptionInProgress)
     }
 
     func test18_recordingTranscriptionInProgressBlocksHotkeyAndFileTranscription() {
@@ -314,5 +310,59 @@ final class AppStateTests: XCTestCase {
 
         XCTAssertEqual(appState.state, .recording)
         XCTAssertEqual(mockRecorder.startCallCount, 1)
+    }
+
+    // MARK: - Voice-input yield gate (file transcription cooperatively yields the shared engine)
+
+    func test19_gateReturnsImmediatelyWhenIdle() async {
+        XCTAssertEqual(appState.state, .idle)
+        // 不应挂起：idle 时立即返回
+        await appState.waitWhileVoiceInputActive()
+    }
+
+    func test20_gateSuspendsDuringRecordingThenResumesOnIdle() async {
+        appState.handleHotkeyToggle() // idle → recording
+        XCTAssertEqual(appState.state, .recording)
+
+        let resumed = expectation(description: "gate resumed after returning to idle")
+        let task = Task { @MainActor in
+            await appState.waitWhileVoiceInputActive()
+            resumed.fulfill()
+        }
+        // 让闸内任务跑到挂起点（append continuation）
+        for _ in 0..<5 { await Task.yield() }
+
+        appState.cancelRecording() // recording → idle，didSet 放行等待者
+        await fulfillment(of: [resumed], timeout: 2)
+        _ = await task.value
+    }
+
+    func test21_gateCancellationResumesWaiterWithoutHang() async {
+        appState.handleHotkeyToggle() // idle → recording
+
+        let done = expectation(description: "gate returned after task cancel")
+        let task = Task { @MainActor in
+            await appState.waitWhileVoiceInputActive()
+            done.fulfill()
+        }
+        for _ in 0..<5 { await Task.yield() }
+
+        task.cancel() // 挂起中取消应立即唤醒，避免永久挂起
+        await fulfillment(of: [done], timeout: 2)
+    }
+
+    func test22_gateResumesMultipleWaiters() async {
+        appState.handleHotkeyToggle() // idle → recording
+
+        let a = expectation(description: "waiter A resumed")
+        let b = expectation(description: "waiter B resumed")
+        let t1 = Task { @MainActor in await appState.waitWhileVoiceInputActive(); a.fulfill() }
+        let t2 = Task { @MainActor in await appState.waitWhileVoiceInputActive(); b.fulfill() }
+        for _ in 0..<5 { await Task.yield() }
+
+        appState.cancelRecording() // → idle：两个等待者都应被放行
+        await fulfillment(of: [a, b], timeout: 2)
+        _ = await t1.value
+        _ = await t2.value
     }
 }
