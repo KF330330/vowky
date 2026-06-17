@@ -162,12 +162,12 @@ final class SubtitleOverlayController {
         return NSPoint(x: vf.midX - size.width / 2, y: vf.minY + 80)
     }
 
-    /// 固定窗口高度（按字号算，够放 2 行原文 + 2 行译文）。内容刷新**不**调用它，
+    /// 固定窗口高度（按字号算，够放 1 行原文 + 1 行译文 + 少量留白）。内容刷新**不**调用它，
     /// 只有创建/字号变化时才重算 → 窗口尺寸恒定，从根上消除字幕横跳。
     private func applyPanelSize() {
         guard let panel else { return }
         let f = model.fontSize
-        let height = ceil(f * 1.3 * 2 + f * 0.82 * 1.3 * 2 + 6 + 36)
+        let height = ceil(f * 1.3 + f * 0.82 * 1.3 + 6 + 18)
         let old = panel.frame
         panel.setFrame(NSRect(x: old.minX, y: old.minY, width: old.width, height: height), display: true)
         ensureVisible()
@@ -246,7 +246,7 @@ struct SubtitleContentView: View {
                 Text(model.original.isEmpty ? " " : model.original)
                     .font(.system(size: model.fontSize, weight: .semibold))
                     .foregroundColor(.white)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .truncationMode(.head)
                     .multilineTextAlignment(.center)
 
@@ -254,7 +254,7 @@ struct SubtitleContentView: View {
                     Text(translationText ?? " ")
                         .font(.system(size: model.fontSize * 0.82, weight: .regular))
                         .foregroundColor(.white.opacity(0.72))
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .truncationMode(.head)
                         .multilineTextAlignment(.center)
                         .opacity(translationText == nil ? 0 : 1)  // pending 占位不闪
