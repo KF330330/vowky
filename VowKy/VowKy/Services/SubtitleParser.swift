@@ -15,10 +15,11 @@ enum SubtitleParser {
 
         var out: [String] = []
         for cue in cues {
-            let words = cue.split(separator: " ").map(String.init)
+            // 按 token 切：CJK/假名按单字，拉丁串整块。让重叠去重对中文/日文等无空格语言也有效。
+            let words = tokenize(cue)
             guard !words.isEmpty else { continue }
 
-            // 最长 k：out 的后 k 个词 == 当前 cue 的前 k 个词。
+            // 最长 k：out 的后 k 个 token == 当前 cue 的前 k 个 token。
             let cap = min(out.count, words.count)
             var k = 0
             if cap > 0 {
@@ -36,11 +37,7 @@ enum SubtitleParser {
             out.append(contentsOf: newWords)
         }
 
-        var joined = out.joined(separator: " ")
-        for variant in [" \(newlineSentinel) ", "\(newlineSentinel) ", " \(newlineSentinel)", newlineSentinel] {
-            joined = joined.replacingOccurrences(of: variant, with: "\n")
-        }
-        return joined.trimmingCharacters(in: .whitespacesAndNewlines)
+        return joinTokens(out).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static let newlineSentinel = "\u{0001}"
@@ -88,5 +85,61 @@ enum SubtitleParser {
         s = s.replacingOccurrences(of: "♪", with: "")
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return s.trimmingCharacters(in: .whitespaces)
+    }
+
+    // MARK: CJK-aware 分词 / 拼接
+
+    /// 是否 CJK/假名/全角等无空格分词的字符。
+    private static func isCJK(_ ch: Character) -> Bool {
+        guard let s = ch.unicodeScalars.first?.value else { return false }
+        return (0x4E00...0x9FFF).contains(s)   // CJK 统一汉字
+            || (0x3400...0x4DBF).contains(s)   // 扩展 A
+            || (0x3040...0x30FF).contains(s)   // 平假名 + 片假名
+            || (0xF900...0xFAFF).contains(s)   // CJK 兼容汉字
+            || (0x3000...0x303F).contains(s)   // CJK 标点
+            || (0xFF00...0xFFEF).contains(s)   // 全角
+    }
+
+    /// 切 token：空白分隔；CJK/假名每字一个 token；连续拉丁串（含数字/标点）保持整块。
+    private static func tokenize(_ cue: String) -> [String] {
+        var tokens: [String] = []
+        var latin = ""
+        func flush() { if !latin.isEmpty { tokens.append(latin); latin = "" } }
+        for ch in cue {
+            if ch == " " || ch == "\t" {
+                flush()
+            } else if isCJK(ch) {
+                flush()
+                tokens.append(String(ch))
+            } else {
+                latin.append(ch)
+            }
+        }
+        flush()
+        return tokens
+    }
+
+    private static func tokenIsCJK(_ tok: String) -> Bool {
+        tok.count == 1 && isCJK(tok.first!)
+    }
+
+    /// 拼接：只在两个拉丁 token 之间补空格（CJK-CJK / CJK-拉丁不补）；哨兵 → 换行。
+    private static func joinTokens(_ tokens: [String]) -> String {
+        var result = ""
+        var prevSpaceable = false
+        for tok in tokens {
+            if tok == newlineSentinel {
+                result += "\n"
+                prevSpaceable = false
+                continue
+            }
+            let spaceable = !tokenIsCJK(tok)
+            if !result.isEmpty, !result.hasSuffix("\n"), prevSpaceable, spaceable {
+                result += " "
+            }
+            result += tok
+            prevSpaceable = spaceable
+        }
+        return result
     }
 }

@@ -521,13 +521,16 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         return usable.sorted().first
     }
 
-    /// 自动字幕只认原语言（exact / `-orig` / 同语言区域变体），绝不回退到任意键——否则会抓到翻译版。
+    /// 自动字幕只认原语言（exact / `-orig` / 同语言区域变体 / 任意 `-orig` 键），绝不回退到任意键——否则会抓到翻译版。
     private func pickAutoLang(_ keys: Set<String>, prefer: String) -> String? {
         let usable = keys.filter { $0 != "live_chat" && !$0.isEmpty }
         guard !usable.isEmpty else { return nil }
         if usable.contains(prefer) { return prefer }
         if usable.contains(prefer + "-orig") { return prefer + "-orig" }
         if let regional = usable.first(where: { $0.hasPrefix(prefer + "-") }) { return regional }
+        // language=NA/未知时：YouTube 用 `<lang>-orig` 标记原始自动字幕语言（与 language 字段无关），
+        // 取任意 `-orig` 键即原语言，既修 NA 漏字幕又天然避开翻译版。
+        if let orig = usable.sorted().first(where: { $0.hasSuffix("-orig") }) { return orig }
         return nil
     }
 
