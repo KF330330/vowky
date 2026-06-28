@@ -11,6 +11,9 @@ final class FileTranscriptionWindowController {
     private var window: NSWindow?
     private var viewModel: FileTranscriptionViewModel?
 
+    /// 当前活动的 view model（供 Debug E2E 钩子脚本化驱动；正常路径不用）。
+    var activeViewModel: FileTranscriptionViewModel? { viewModel }
+
     func showWindow(appState: AppState) {
         appState.captureCurrentTextInsertionTarget()
         NSApp.setActivationPolicy(.regular)
@@ -66,6 +69,7 @@ final class FileTranscriptionWindowController {
 
 enum FileTranscriptionJobState: Equatable {
     case queued
+    case downloading
     case reading
     case transcribing
     case completed
@@ -74,6 +78,9 @@ enum FileTranscriptionJobState: Equatable {
 }
 
 struct FileTranscriptionJob: Identifiable, Equatable {
+    /// 本地文件 or 视频链接。
+    enum Kind: Equatable { case localFile, remoteURL }
+
     let id = UUID()
     let url: URL
     var fileName: String
@@ -87,11 +94,25 @@ struct FileTranscriptionJob: Identifiable, Equatable {
     /// 实际落盘的 .md 路径；nil 表示尚未写盘（写权限不足 / 转写未完成）
     var markdownURL: URL?
 
+    // MARK: 链接任务专用
+    var kind: Kind = .localFile
+    /// 原始粘贴的链接（远程任务的去重键）。
+    var remoteURLString: String?
+    /// 下载完成后的本地媒体文件；nil 表示尚未下载。
+    var mediaURL: URL?
+    /// 该任务的临时下载目录，用完即删。
+    var workDir: URL?
+    /// 下载子阶段（准备工具 / 解析 / 下载 / 提取音频），用于显示更准确的状态文案。
+    var downloadPhase: DownloadProgress.Phase?
+
+    /// 实际喂给转写管线的本地文件 URL：链接任务用下载产物，本地任务用自身 url。
+    var transcriptionInputURL: URL { mediaURL ?? url }
+
     var isFinished: Bool {
         switch state {
         case .completed, .cancelled, .failed:
             return true
-        case .queued, .reading, .transcribing:
+        case .queued, .downloading, .reading, .transcribing:
             return false
         }
     }
@@ -101,13 +122,21 @@ struct FileTranscriptionJob: Identifiable, Equatable {
 
 @MainActor
 final class FileTranscriptionViewModel: ObservableObject {
+    /// UserDefaults 里存 cookie 来源（与 SettingsView 共用）。
+    static let cookieSourceDefaultsKey = "urlDownload.cookieSource"
+
     @Published private(set) var jobs: [FileTranscriptionJob] = []
     @Published private(set) var selectedJobID: UUID?
     @Published private(set) var hasInsertionTarget = false
     @Published private(set) var statusMessage: String?
+    /// URL 输入框绑定。
+    @Published var urlInputText: String = ""
 
     private let appState: AppState
     private let fileTranscriptionServiceFactory: () -> FileTranscribing
+    private let urlDownloadServiceFactory: () -> URLMediaDownloading
+    private let cookieSourceProvider: () -> CookieSource
+    private let yieldToVoiceInput: () async -> Void
     private let resultRecorder: (String) -> Void
     private var transcriptionTask: Task<Void, Never>?
     private var activeTargetJobIDs: Set<UUID>?
@@ -115,11 +144,24 @@ final class FileTranscriptionViewModel: ObservableObject {
     init(
         appState: AppState,
         fileTranscriptionServiceFactory: (() -> FileTranscribing)? = nil,
+        urlDownloadServiceFactory: (() -> URLMediaDownloading)? = nil,
+        cookieSourceProvider: (() -> CookieSource)? = nil,
+        yieldToVoiceInput: (() async -> Void)? = nil,
         resultRecorder: ((String) -> Void)? = nil
     ) {
         self.appState = appState
         self.fileTranscriptionServiceFactory = fileTranscriptionServiceFactory ?? {
             appState.makeFileTranscriptionService()
+        }
+        self.urlDownloadServiceFactory = urlDownloadServiceFactory ?? {
+            appState.makeURLDownloadService()
+        }
+        self.cookieSourceProvider = cookieSourceProvider ?? {
+            let raw = UserDefaults.standard.string(forKey: FileTranscriptionViewModel.cookieSourceDefaultsKey) ?? "none"
+            return CookieSource.fromRawValue(raw)
+        }
+        self.yieldToVoiceInput = yieldToVoiceInput ?? { [weak appState] in
+            await appState?.waitWhileVoiceInputActive()
         }
         self.resultRecorder = resultRecorder ?? { text in
             appState.recordRecognitionResult(text: text, sourceType: "file")
@@ -163,7 +205,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         switch selectedJob.state {
         case .completed, .cancelled:
             return true
-        case .queued, .reading, .transcribing, .failed:
+        case .queued, .downloading, .reading, .transcribing, .failed:
             return false
         }
     }
@@ -243,6 +285,12 @@ final class FileTranscriptionViewModel: ObservableObject {
         switch job.state {
         case .queued:
             return L("file.row.waiting")
+        case .downloading:
+            // 真正下载阶段显示百分比，其余子阶段（准备工具/解析/提取）显示短词。
+            if job.downloadPhase == .downloading, job.progress > 0 {
+                return "\(Int(clampedProgress(job.progress) * 100))%"
+            }
+            return L("file.row.downloading")
         case .reading, .transcribing:
             return "\(Int(clampedProgress(job.progress) * 100))%"
         case .completed:
@@ -256,7 +304,7 @@ final class FileTranscriptionViewModel: ObservableObject {
 
     func shouldShowProgress(for job: FileTranscriptionJob) -> Bool {
         switch job.state {
-        case .reading, .transcribing:
+        case .downloading, .reading, .transcribing:
             return true
         case .queued, .completed, .cancelled, .failed:
             return false
@@ -265,7 +313,7 @@ final class FileTranscriptionViewModel: ObservableObject {
 
     func canRemoveJob(_ job: FileTranscriptionJob) -> Bool {
         switch job.state {
-        case .reading, .transcribing:
+        case .downloading, .reading, .transcribing:
             return false
         case .queued, .completed, .cancelled, .failed:
             return true
@@ -301,6 +349,8 @@ final class FileTranscriptionViewModel: ObservableObject {
             job.progress = 0
             job.currentSegment = 0
             job.totalSegments = 0
+            job.mediaURL = nil          // 链接任务重试需重新下载
+            job.downloadPhase = nil
         }
         startTranscription(id: selectedJobID)
     }
@@ -393,6 +443,49 @@ final class FileTranscriptionViewModel: ObservableObject {
         }
     }
 
+    /// 从一段文本抽取 http(s) 链接，建为「链接转写」任务（支持多条、去重、非法提示）。
+    func appendURLJobs(rawText: String) {
+        let candidates = Self.extractURLs(from: rawText)
+        guard !candidates.isEmpty else {
+            if !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                statusMessage = L("file.url.invalid")
+            }
+            return
+        }
+        var seen = Set(jobs.compactMap { $0.remoteURLString })
+        let fresh = candidates.filter { seen.insert($0).inserted }
+        urlInputText = ""
+        guard !fresh.isEmpty else { return }
+
+        statusMessage = nil
+        let newJobs = fresh.map { urlString -> FileTranscriptionJob in
+            var job = FileTranscriptionJob(
+                url: URL(string: urlString) ?? URL(fileURLWithPath: "/"),
+                fileName: Self.displayName(forURLString: urlString),
+                fileSize: nil
+            )
+            job.kind = .remoteURL
+            job.remoteURLString = urlString
+            return job
+        }
+        let shouldSelectFirstNewJob = !isRunning || selectedJobID == nil || jobs.isEmpty
+        jobs.append(contentsOf: newJobs)
+        if shouldSelectFirstNewJob {
+            selectedJobID = newJobs.first?.id
+        }
+    }
+
+    /// 解析空白/换行分隔的多条 http(s) 链接。
+    static func extractURLs(from text: String) -> [String] {
+        text.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+            .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "<>\"'")) }
+            .filter { ($0.hasPrefix("http://") || $0.hasPrefix("https://")) && URL(string: $0) != nil }
+    }
+
+    static func displayName(forURLString urlString: String) -> String {
+        URL(string: urlString)?.host ?? urlString
+    }
+
     func startTranscription() {
         startTranscription(targetJobIDs: nil)
     }
@@ -430,22 +523,78 @@ final class FileTranscriptionViewModel: ObservableObject {
                 }
 
                 let jobID = jobs[index].id
-                let jobURL = jobs[index].url
+                let job = jobs[index]
                 selectedJobID = jobID
-                updateJob(id: jobID) { job in
-                    job.state = .reading
-                    job.progress = 0
-                    job.resultText = ""
-                    job.currentSegment = 0
-                    job.totalSegments = 0
+
+                // 链接任务：先把视频下成本地 .m4a，再走与本地文件完全相同的转写路径。
+                if job.kind == .remoteURL, job.mediaURL == nil {
+                    await yieldToVoiceInput()   // 礼让实时语音输入后再开始重活
+                    guard !Task.isCancelled else {
+                        markUnfinishedJobsCancelled(targetJobIDs: targetJobIDs)
+                        return
+                    }
+                    let workDir = Self.makeWorkDir()
+                    updateJob(id: jobID) { item in
+                        item.state = .downloading
+                        item.downloadPhase = .provisioningTools
+                        item.progress = 0
+                        item.resultText = ""
+                        item.currentSegment = 0
+                        item.totalSegments = 0
+                        item.workDir = workDir
+                    }
+                    let downloader = urlDownloadServiceFactory()
+                    do {
+                        let media = try await downloader.download(
+                            urlString: job.remoteURLString ?? "",
+                            into: workDir,
+                            cookies: cookieSourceProvider()
+                        ) { [weak self] update in
+                            self?.applyDownload(update, to: jobID)
+                        }
+                        guard !Task.isCancelled else {
+                            updateJob(id: jobID) { $0.state = .cancelled }
+                            cleanupWorkDir(for: jobID)
+                            markUnfinishedJobsCancelled(targetJobIDs: targetJobIDs)
+                            return
+                        }
+                        updateJob(id: jobID) { item in
+                            item.mediaURL = media.mediaURL
+                            item.fileName = Self.sanitizedFileNameStatic(media.rawTitle)
+                            item.downloadPhase = nil
+                        }
+                    } catch is CancellationError {
+                        updateJob(id: jobID) { $0.state = .cancelled }
+                        cleanupWorkDir(for: jobID)
+                        markUnfinishedJobsCancelled(targetJobIDs: targetJobIDs)
+                        return
+                    } catch {
+                        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        updateJob(id: jobID) { $0.state = .failed(message) }
+                        cleanupWorkDir(for: jobID)
+                        continue
+                    }
+                }
+
+                // 取最新快照（链接任务此时已带 mediaURL），决定喂给转写管线的本地 URL 与 .md 命名方式。
+                let isRemote = job.kind == .remoteURL
+                let inputURL = jobs.first(where: { $0.id == jobID })?.transcriptionInputURL ?? job.url
+
+                updateJob(id: jobID) { item in
+                    item.state = .reading
+                    item.progress = 0
+                    item.resultText = ""
+                    item.currentSegment = 0
+                    item.totalSegments = 0
                 }
 
                 let service = fileTranscriptionServiceFactory()
                 do {
-                    let finalText = try await service.transcribe(url: jobURL) { [weak self] update in
+                    let finalText = try await service.transcribe(url: inputURL) { [weak self] update in
                         self?.apply(progressUpdate: update, to: jobID)
                     }
                     guard !Task.isCancelled else {
+                        cleanupWorkDir(for: jobID)
                         markUnfinishedJobsCancelled(targetJobIDs: targetJobIDs)
                         return
                     }
@@ -456,21 +605,27 @@ final class FileTranscriptionViewModel: ObservableObject {
                     }
                     resultRecorder(finalText)
 
-                    // 转写一完成就自动落盘 raw text .md（与录音流程一致）
-                    let mdURL = Self.resolveMarkdownOutputURL(for: jobURL)
+                    // 转写一完成就自动落盘 raw text .md（与录音流程一致）。
+                    // 链接任务的「源」是即将删除的临时文件，必须落到固定的 Recordings 目录、用视频标题命名。
+                    let mdURL: URL = isRemote
+                        ? Self.resolveMarkdownOutputURL(forRemoteTitle: jobs.first(where: { $0.id == jobID })?.fileName ?? L("file.defaultName"))
+                        : Self.resolveMarkdownOutputURL(for: inputURL)
                     do {
                         try finalText.write(to: mdURL, atomically: true, encoding: .utf8)
                         updateJob(id: jobID) { $0.markdownURL = mdURL }
                     } catch {
                         print("[VowKy][FileTranscription] 自动落盘失败: \(error.localizedDescription)")
                     }
+                    cleanupWorkDir(for: jobID)   // 转写完即删临时媒体
                 } catch is CancellationError {
+                    cleanupWorkDir(for: jobID)
                     updateJob(id: jobID) { job in
                         job.state = .cancelled
                     }
                     markUnfinishedJobsCancelled(targetJobIDs: targetJobIDs)
                     return
                 } catch {
+                    cleanupWorkDir(for: jobID)
                     let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     updateJob(id: jobID) { job in
                         job.state = .failed(message)
@@ -491,6 +646,9 @@ final class FileTranscriptionViewModel: ObservableObject {
             return
         }
 
+        if let workDir = jobs[index].workDir {
+            try? FileManager.default.removeItem(at: workDir)
+        }
         let removedSelectedJob = selectedJobID == id
         jobs.remove(at: index)
         if jobs.isEmpty {
@@ -506,14 +664,26 @@ final class FileTranscriptionViewModel: ObservableObject {
         guard isRunning else { return }
         transcriptionTask?.cancel()
         markUnfinishedJobsCancelled(targetJobIDs: activeTargetJobIDs)
+        sweepAllWorkDirs()   // 兜底清掉链接任务的临时下载目录（窗口关闭/取消时 weak self 可能来不及清）
     }
 
     func clear() {
         guard !isRunning else { return }
+        sweepAllWorkDirs()
         jobs = []
         selectedJobID = nil
         statusMessage = nil
         refreshInsertionTarget()
+    }
+
+    /// 删除所有任务残留的临时下载目录。
+    private func sweepAllWorkDirs() {
+        for index in jobs.indices {
+            if let workDir = jobs[index].workDir {
+                try? FileManager.default.removeItem(at: workDir)
+                jobs[index].workDir = nil
+            }
+        }
     }
 
     func copyResult() {
@@ -635,6 +805,36 @@ final class FileTranscriptionViewModel: ObservableObject {
         return true
     }
 
+    private func applyDownload(_ update: DownloadProgress, to jobID: UUID) {
+        updateJob(id: jobID) { job in
+            job.state = .downloading
+            job.downloadPhase = update.phase
+            if update.fractionCompleted >= 0 {
+                job.progress = min(1, max(0, update.fractionCompleted))
+            }
+        }
+    }
+
+    /// 为链接任务建唯一临时下载目录（NSTemporaryDirectory 下，OS 会自动回收，适合大且短命的媒体）。
+    private static func makeWorkDir() -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("VowKy-URLDownloads", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// 删除某任务的临时下载目录并清空其媒体引用（转写完/失败/取消都调用）。
+    private func cleanupWorkDir(for jobID: UUID) {
+        guard let index = jobs.firstIndex(where: { $0.id == jobID }) else { return }
+        if let workDir = jobs[index].workDir {
+            try? FileManager.default.removeItem(at: workDir)
+        }
+        jobs[index].workDir = nil
+        jobs[index].mediaURL = nil
+        jobs[index].downloadPhase = nil
+    }
+
     private func apply(progressUpdate: FileTranscriptionProgress, to jobID: UUID) {
         updateJob(id: jobID) { job in
             job.progress = min(1, max(0, progressUpdate.progress))
@@ -682,7 +882,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         switch state {
         case .queued, .cancelled:
             return true
-        case .reading, .transcribing, .completed, .failed:
+        case .downloading, .reading, .transcribing, .completed, .failed:
             return false
         }
     }
@@ -691,6 +891,13 @@ final class FileTranscriptionViewModel: ObservableObject {
         switch job.state {
         case .queued:
             return L("file.row.waiting")
+        case .downloading:
+            switch job.downloadPhase {
+            case .provisioningTools: return L("file.status.provisioningTools")
+            case .resolving:         return L("file.status.resolving")
+            case .extractingAudio:   return L("file.status.extractingAudio")
+            case .downloading, .none: return L("file.status.downloading")
+            }
         case .reading:
             return L("file.status.readingAudio")
         case .transcribing:
@@ -756,6 +963,14 @@ final class FileTranscriptionViewModel: ObservableObject {
         return pickNonExisting(dir: fallback, base: safeBase)
     }
 
+    /// 链接任务的 .md 落盘：固定存到 `~/Documents/VowKy Recordings/`，用视频标题命名（临时媒体目录会被删，不能落那）。
+    static func resolveMarkdownOutputURL(forRemoteTitle title: String) -> URL {
+        let safeBase = sanitizedFileNameStatic(title)
+        let dir = RecordingTranscriptionOutputStore.defaultOutputDirectory()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return pickNonExisting(dir: dir, base: safeBase)
+    }
+
     private static func pickNonExisting(dir: URL, base: String) -> URL {
         var url = dir.appendingPathComponent("\(base).md")
         var suffix = 2
@@ -797,6 +1012,10 @@ struct FileTranscriptionView: View {
     var body: some View {
         VStack(spacing: 10) {
             header
+
+            if !viewModel.jobs.isEmpty {
+                urlInputBar
+            }
 
             Group {
                 if viewModel.jobs.isEmpty {
@@ -906,6 +1125,38 @@ struct FileTranscriptionView: View {
         .frame(height: 42)
     }
 
+    /// 链接输入条：粘贴 YouTube / 哔哩哔哩 / DeepLearning.AI 链接，回车或点「添加链接」入队。
+    private var urlInputBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "link")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(FileTranscriptionTheme.accentDark)
+            TextField(loc.string("file.url.placeholder"), text: $viewModel.urlInputText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundColor(FileTranscriptionTheme.textPrimary)
+                .onSubmit { viewModel.appendURLJobs(rawText: viewModel.urlInputText) }
+            Button {
+                viewModel.appendURLJobs(rawText: viewModel.urlInputText)
+            } label: {
+                Label(loc.string("file.url.add"), systemImage: "plus")
+            }
+            .buttonStyle(FileSecondaryButtonStyle())
+            .disabled(viewModel.urlInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 11)
+                .fill(FileTranscriptionTheme.cardBackground.opacity(0.92))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11)
+                        .stroke(FileTranscriptionTheme.borderLight, lineWidth: 1)
+                )
+        )
+        .help(loc.string("file.url.help"))
+    }
+
     private var dropArea: some View {
         VStack(spacing: 16) {
             Image(systemName: "tray.and.arrow.down.fill")
@@ -933,6 +1184,15 @@ struct FileTranscriptionView: View {
                 Label(loc.string("file.action.chooseFile"), systemImage: "folder")
             }
             .buttonStyle(FilePrimaryButtonStyle())
+
+            VStack(spacing: 8) {
+                Text(loc.string("file.drop.orPasteURL"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(FileTranscriptionTheme.textMuted)
+                urlInputBar
+                    .frame(maxWidth: 460)
+            }
+            .padding(.top, 2)
         }
         .frame(maxWidth: .infinity)
         .frame(maxHeight: .infinity)
@@ -1303,6 +1563,8 @@ struct FileTranscriptionView: View {
             return viewModel.canEditSelectedResult ? loc.string("file.badge.editableResult") : loc.string("file.badge.done")
         case .cancelled:
             return viewModel.resultText.isEmpty ? loc.string("file.badge.noResult") : loc.string("file.badge.editableDraft")
+        case .downloading:
+            return loc.string("file.badge.downloading")
         case .reading, .transcribing:
             return loc.string("file.badge.livePreview")
         case .failed:
@@ -1319,6 +1581,8 @@ struct FileTranscriptionView: View {
         switch job.state {
         case .queued:
             return loc.string("file.empty.queued")
+        case .downloading:
+            return loc.string("file.empty.downloading")
         case .reading:
             return loc.string("file.empty.reading")
         case .transcribing:
@@ -1336,6 +1600,8 @@ struct FileTranscriptionView: View {
         switch state {
         case .queued:
             return "clock"
+        case .downloading:
+            return "arrow.down.circle"
         case .reading:
             return "waveform"
         case .transcribing:
@@ -1379,6 +1645,8 @@ struct FileTranscriptionView: View {
             return "exclamationmark.triangle.fill"
         case .cancelled:
             return "minus.circle"
+        case .downloading:
+            return "arrow.down.circle"
         case .reading, .transcribing:
             return "waveform"
         case .queued:
@@ -1394,7 +1662,7 @@ struct FileTranscriptionView: View {
             return FileTranscriptionTheme.error
         case .cancelled:
             return FileTranscriptionTheme.warning
-        case .reading, .transcribing:
+        case .downloading, .reading, .transcribing:
             return FileTranscriptionTheme.accentDark
         case .queued:
             return FileTranscriptionTheme.textMuted

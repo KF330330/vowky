@@ -214,6 +214,46 @@
 
 "file.defaultName" = "VowKy Transcript";
 
+/* Transcribe from URL (YouTube / Bilibili / DeepLearning.AI) */
+"file.url.placeholder" = "Paste a video link (YouTube, Bilibili…)";
+"file.url.add" = "Add URL";
+"file.url.help" = "Paste a YouTube, Bilibili, or DeepLearning.AI link to download and transcribe it. Requires an internet connection.";
+"file.url.invalid" = "That doesn't look like a valid video link.";
+"file.drop.orPasteURL" = "or paste a video link";
+
+"file.row.downloading" = "Downloading";
+"file.status.provisioningTools" = "Setting up downloader (first time only)…";
+"file.status.resolving" = "Fetching video info…";
+"file.status.downloading" = "Downloading video…";
+"file.status.extractingAudio" = "Extracting audio…";
+"file.badge.downloading" = "Downloading";
+"file.empty.downloading" = "Downloading the video — transcription starts automatically when it finishes.";
+
+"file.url.error.invalidURL" = "That doesn't look like a valid video link.";
+"file.url.error.authRequired" = "This video requires sign-in. Choose a browser to use its cookies in Settings → URL Download, then retry.";
+"file.url.error.rateLimited" = "The site blocked the request (it needs login cookies). Choose a browser in Settings → URL Download, then retry.";
+"file.url.error.unsupported" = "This link isn't supported.";
+"file.url.error.unavailable" = "This video is unavailable (private, removed, or region-locked).";
+"file.url.error.network" = "Network error while downloading. Check your connection and retry.";
+"file.url.error.noAudio" = "No audio could be extracted from this link.";
+"file.url.error.ytDlpMissing" = "The downloader could not be started.";
+"file.url.error.generic" = "Download failed: %@";
+"file.url.error.genericFallback" = "Download failed.";
+
+"file.tool.error.download" = "Failed to download %@. Check your internet connection and try again.";
+"file.tool.error.checksum" = "Downloaded %@ failed verification. Please try again.";
+"file.tool.error.unpack" = "Failed to unpack %@.";
+"file.tool.error.notExecutable" = "%@ could not be prepared for use.";
+
+/* Settings → URL download cookies */
+"settings.section.urlDownload" = "URL Download";
+"settings.urlDownload.cookieSource" = "Use cookies from";
+"settings.urlDownload.cookie.none" = "None";
+"settings.urlDownload.cookie.safari" = "Safari";
+"settings.urlDownload.cookie.chrome" = "Chrome";
+"settings.urlDownload.cookie.firefox" = "Firefox";
+"settings.urlDownload.cookieHint" = "Some sites (e.g. Bilibili) need browser cookies to download. Safari requires Full Disk Access; Chrome may prompt for Keychain access.";
+
 /* Recording + Bilingual */
 
 /* Window */

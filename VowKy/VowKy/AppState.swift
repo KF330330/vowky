@@ -135,6 +135,37 @@ final class AppState: ObservableObject {
                 }
             }
         }
+
+        // 文件/链接转写窗：show 打开窗口；addURL 用 userInfo["url"] 入队一条链接任务（脚本化验证链接转写 UI）。
+        center.addObserver(
+            forName: Notification.Name("com.vowky.debug.fileTranscription.show"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                FileTranscriptionWindowController.shared.showWindow(appState: self)
+            }
+        }
+        center.addObserver(
+            forName: Notification.Name("com.vowky.debug.fileTranscription.addURL"),
+            object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                FileTranscriptionWindowController.shared.showWindow(appState: self)
+                let url = (note.userInfo?["url"] as? String) ?? "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                FileTranscriptionWindowController.shared.activeViewModel?.appendURLJobs(rawText: url)
+            }
+        }
+        center.addObserver(
+            forName: Notification.Name("com.vowky.debug.fileTranscription.start"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard self != nil else { return }
+                FileTranscriptionWindowController.shared.activeViewModel?.startTranscription()
+            }
+        }
     }
     #endif
 
@@ -392,6 +423,12 @@ final class AppState: ObservableObject {
             speechRecognizer: speechRecognizer,
             yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
         )
+    }
+
+    /// 「从链接转文字」的下载服务：spawn 已就绪的 yt-dlp 把视频链接下成本地 .m4a，再走上面的转写管线。
+    /// 无状态；工具二进制由 ToolProvisioner 首次按需联网下载并缓存。
+    func makeURLDownloadService() -> URLDownloadService {
+        URLDownloadService()
     }
 
     // MARK: - 语音输入礼让闸（供后台文件转录每个分块前调用）

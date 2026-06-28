@@ -214,6 +214,46 @@
 
 "file.defaultName" = "VowKy转录";
 
+/* 从链接转文字（YouTube / 哔哩哔哩 / DeepLearning.AI） */
+"file.url.placeholder" = "粘贴视频链接（YouTube、哔哩哔哩…）";
+"file.url.add" = "添加链接";
+"file.url.help" = "粘贴 YouTube、哔哩哔哩或 DeepLearning.AI 链接即可下载并转写。需要联网。";
+"file.url.invalid" = "这不是有效的视频链接。";
+"file.drop.orPasteURL" = "或粘贴视频链接";
+
+"file.row.downloading" = "下载中";
+"file.status.provisioningTools" = "正在准备下载工具（仅首次）…";
+"file.status.resolving" = "正在获取视频信息…";
+"file.status.downloading" = "正在下载视频…";
+"file.status.extractingAudio" = "正在提取音频…";
+"file.badge.downloading" = "下载中";
+"file.empty.downloading" = "正在下载视频，下载完成后会自动开始转写。";
+
+"file.url.error.invalidURL" = "这不是有效的视频链接。";
+"file.url.error.authRequired" = "该视频需要登录。请在「设置 → 链接下载」里选择一个浏览器以使用其 Cookie，然后重试。";
+"file.url.error.rateLimited" = "站点拦截了请求（需要登录 Cookie）。请在「设置 → 链接下载」里选择一个浏览器，然后重试。";
+"file.url.error.unsupported" = "暂不支持该链接。";
+"file.url.error.unavailable" = "该视频无法访问（私有、已删除或地区限制）。";
+"file.url.error.network" = "下载时网络出错。请检查网络后重试。";
+"file.url.error.noAudio" = "无法从该链接提取到音频。";
+"file.url.error.ytDlpMissing" = "下载器无法启动。";
+"file.url.error.generic" = "下载失败：%@";
+"file.url.error.genericFallback" = "下载失败。";
+
+"file.tool.error.download" = "下载 %@ 失败。请检查网络后重试。";
+"file.tool.error.checksum" = "下载的 %@ 校验失败。请重试。";
+"file.tool.error.unpack" = "解压 %@ 失败。";
+"file.tool.error.notExecutable" = "%@ 无法准备就绪。";
+
+/* 设置 → 链接下载 Cookie */
+"settings.section.urlDownload" = "链接下载";
+"settings.urlDownload.cookieSource" = "使用以下浏览器的 Cookie";
+"settings.urlDownload.cookie.none" = "不使用";
+"settings.urlDownload.cookie.safari" = "Safari";
+"settings.urlDownload.cookie.chrome" = "Chrome";
+"settings.urlDownload.cookie.firefox" = "Firefox";
+"settings.urlDownload.cookieHint" = "部分站点（如哔哩哔哩）需要浏览器 Cookie 才能下载。Safari 需要「完全磁盘访问权限」；Chrome 可能弹出钥匙串授权。";
+
 /* Recording + Bilingual */
 
 /* Window */
