@@ -420,9 +420,20 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
 
         let title = (parts[0] == "NA" || parts[0].isEmpty) ? nil : parts[0]
         let language = (parts[1] == "NA" || parts[1].isEmpty) ? nil : parts[1]
+        let origLang = language ?? Self.defaultLanguage(for: platform)
+
+        // 哔哩哔哩：轻量 `--print %(subtitles)j` / `-J` 都不填充 subtitles 字段（yt-dlp 只在
+        // `--list-subs`/`--write-subs` 时才去拉 B站字幕信息），必须用 list-subs 探测，
+        // 否则会漏掉 AI 字幕(ai-zh)误判为「无字幕」而回退下载音频。
+        if platform == .bilibili {
+            return try await bilibiliSubtitleOutcome(
+                url: url, title: title, prefer: origLang, priority: priority,
+                extras: extras, cookies: cookies, tools: tools, workDir: workDir)
+        }
+
+        // YouTube / 通用：metadata 探针里的 subtitles / automatic_captions 字段可靠。
         let manualKeys = parseSubDict(parts[2])
         let autoKeys = parseSubDict(parts[3])
-        let origLang = language ?? Self.defaultLanguage(for: platform)
 
         // 人工字幕：两种模式都优先用。
         if let lang = pickManualLang(manualKeys, prefer: origLang),
@@ -442,6 +453,77 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         }
 
         return .noSubtitle(title: title)
+    }
+
+    /// 哔哩哔哩字幕：用 `--list-subs` 探测可用轨（B站 AI 字幕 ai-zh 在轻量探针下不暴露）。
+    /// 人工 CC 两模式都用、AI 字幕(ai-*)仅「优先所有」时用；抓取一律 --write-subs（B站字幕不在 auto-captions 里）。
+    private func bilibiliSubtitleOutcome(
+        url: String, title: String?, prefer: String, priority: SubtitlePriority,
+        extras: [String], cookies: [String], tools: ProvisionedTools, workDir: URL
+    ) async throws -> SubtitleOutcome {
+        let listed = (try? await listSubLangs(url: url, extras: extras, cookies: cookies, tools: tools))
+            ?? (manual: Set<String>(), auto: Set<String>())
+        let usable = listed.manual.union(listed.auto)
+            .filter { $0 != "danmaku" && $0 != "live_chat" && !$0.isEmpty }
+        guard !usable.isEmpty else { return .noSubtitle(title: title) }
+
+        let humanLangs = usable.filter { !$0.hasPrefix("ai-") }
+        let aiLangs = usable.filter { $0.hasPrefix("ai-") }
+
+        // 人工 CC 字幕优先（两模式都用）。
+        if let lang = pickManualLang(humanLangs, prefer: prefer),
+           let text = try await fetchAndParseSub(
+            url: url, lang: lang, isAuto: false, platform: .bilibili,
+            extras: extras, cookies: cookies, tools: tools, workDir: workDir) {
+            return .transcript(text: text, source: .manualSubtitle(language: lang), title: title)
+        }
+
+        // AI 字幕：仅「优先所有字幕」时用（优先原语言 ai-<lang>，否则任意 ai- 轨）。
+        if priority == .all {
+            let aiLang = aiLangs.contains("ai-\(prefer)") ? "ai-\(prefer)" : aiLangs.sorted().first
+            if let lang = aiLang,
+               let text = try await fetchAndParseSub(
+                url: url, lang: lang, isAuto: false, platform: .bilibili,
+                extras: extras, cookies: cookies, tools: tools, workDir: workDir) {
+                return .transcript(text: text, source: .autoSubtitle(language: lang), title: title)
+            }
+        }
+
+        return .noSubtitle(title: title)
+    }
+
+    /// `--list-subs` 探测可用字幕语言（B站等平台的输出全在 stdout）。
+    private func listSubLangs(
+        url: String, extras: [String], cookies: [String], tools: ProvisionedTools
+    ) async throws -> (manual: Set<String>, auto: Set<String>) {
+        var args = ["--list-subs", "--skip-download", "--no-playlist", "--no-warnings"]
+        args += extras
+        args += cookies
+        args.append(url)
+        let r = try await run(executable: tools.ytDlp, arguments: args, isTitlePass: true)
+        guard r.exit == 0 else { return (manual: [], auto: []) }
+        return Self.parseListSubs(r.stdout)
+    }
+
+    /// 解析 `--list-subs` 表格（两段：Available subtitles / Available automatic captions），
+    /// 取每行首列语言键，剔除 danmaku / live_chat。
+    static func parseListSubs(_ output: String) -> (manual: Set<String>, auto: Set<String>) {
+        var manual = Set<String>(), auto = Set<String>()
+        var section = 0   // 0 未进入 / 1 人工字幕 / 2 自动字幕
+        for raw in output.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            let lower = line.lowercased()
+            if lower.contains("available subtitles for") { section = 1; continue }
+            if lower.contains("available automatic captions for") { section = 2; continue }
+            guard section != 0 else { continue }
+            if lower.hasPrefix("language") { continue }      // 表头 "Language Formats"
+            if line.hasPrefix("[") || lower.hasPrefix("warning") || lower.hasPrefix("error") { continue }
+            guard let lang = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).first.map(String.init),
+                  !lang.isEmpty, lang != "danmaku", lang != "live_chat" else { continue }
+            if section == 1 { manual.insert(lang) } else { auto.insert(lang) }
+        }
+        return (manual: manual, auto: auto)
     }
 
     /// 用 yt-dlp 抓单条字幕轨为 vtt，解析成纯文本。失败回 nil。
