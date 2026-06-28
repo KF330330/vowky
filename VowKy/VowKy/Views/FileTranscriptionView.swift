@@ -104,6 +104,8 @@ struct FileTranscriptionJob: Identifiable, Equatable {
     var workDir: URL?
     /// 下载子阶段（准备工具 / 解析 / 下载 / 提取音频），用于显示更准确的状态文案。
     var downloadPhase: DownloadProgress.Phase?
+    /// 文字来源：直接拉到平台字幕时记录人工/自动，nil 表示走本地 ASR 转写。
+    var transcriptSource: TranscriptSource?
 
     /// 实际喂给转写管线的本地文件 URL：链接任务用下载产物，本地任务用自身 url。
     var transcriptionInputURL: URL { mediaURL ?? url }
@@ -124,6 +126,8 @@ struct FileTranscriptionJob: Identifiable, Equatable {
 final class FileTranscriptionViewModel: ObservableObject {
     /// UserDefaults 里存 cookie 来源（与 SettingsView 共用）。
     static let cookieSourceDefaultsKey = "urlDownload.cookieSource"
+    /// UserDefaults 里存字幕优先级（与 SettingsView 共用）。
+    static let subtitlePriorityDefaultsKey = "urlDownload.subtitlePriority"
 
     @Published private(set) var jobs: [FileTranscriptionJob] = []
     @Published private(set) var selectedJobID: UUID?
@@ -136,6 +140,7 @@ final class FileTranscriptionViewModel: ObservableObject {
     private let fileTranscriptionServiceFactory: () -> FileTranscribing
     private let urlDownloadServiceFactory: () -> URLMediaDownloading
     private let cookieSourceProvider: () -> CookieSource
+    private let subtitlePriorityProvider: () -> SubtitlePriority
     private let yieldToVoiceInput: () async -> Void
     private let resultRecorder: (String) -> Void
     private var transcriptionTask: Task<Void, Never>?
@@ -146,6 +151,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         fileTranscriptionServiceFactory: (() -> FileTranscribing)? = nil,
         urlDownloadServiceFactory: (() -> URLMediaDownloading)? = nil,
         cookieSourceProvider: (() -> CookieSource)? = nil,
+        subtitlePriorityProvider: (() -> SubtitlePriority)? = nil,
         yieldToVoiceInput: (() async -> Void)? = nil,
         resultRecorder: ((String) -> Void)? = nil
     ) {
@@ -159,6 +165,10 @@ final class FileTranscriptionViewModel: ObservableObject {
         self.cookieSourceProvider = cookieSourceProvider ?? {
             let raw = UserDefaults.standard.string(forKey: FileTranscriptionViewModel.cookieSourceDefaultsKey) ?? "none"
             return CookieSource.fromRawValue(raw)
+        }
+        self.subtitlePriorityProvider = subtitlePriorityProvider ?? {
+            let raw = UserDefaults.standard.string(forKey: FileTranscriptionViewModel.subtitlePriorityDefaultsKey) ?? "all"
+            return SubtitlePriority.fromRawValue(raw)
         }
         self.yieldToVoiceInput = yieldToVoiceInput ?? { [weak appState] in
             await appState?.waitWhileVoiceInputActive()
@@ -545,10 +555,11 @@ final class FileTranscriptionViewModel: ObservableObject {
                     }
                     let downloader = urlDownloadServiceFactory()
                     do {
-                        let media = try await downloader.download(
+                        let result = try await downloader.download(
                             urlString: job.remoteURLString ?? "",
                             into: workDir,
-                            cookies: cookieSourceProvider()
+                            cookies: cookieSourceProvider(),
+                            subtitlePriority: subtitlePriorityProvider()
                         ) { [weak self] update in
                             self?.applyDownload(update, to: jobID)
                         }
@@ -558,10 +569,35 @@ final class FileTranscriptionViewModel: ObservableObject {
                             markUnfinishedJobsCancelled(targetJobIDs: targetJobIDs)
                             return
                         }
-                        updateJob(id: jobID) { item in
-                            item.mediaURL = media.mediaURL
-                            item.fileName = Self.sanitizedFileNameStatic(media.rawTitle)
-                            item.downloadPhase = nil
+                        switch result {
+                        case .media(let media):
+                            updateJob(id: jobID) { item in
+                                item.mediaURL = media.mediaURL
+                                item.fileName = Self.sanitizedFileNameStatic(media.rawTitle)
+                                item.downloadPhase = nil
+                            }
+                            // 落到下面与本地文件相同的 reading/transcribing 路径。
+                        case .transcript(let text, let source, let title):
+                            // 直接拿到平台字幕：跳过下载媒体 + ASR，直接出文字并落盘。
+                            let displayTitle = Self.sanitizedFileNameStatic(title)
+                            updateJob(id: jobID) { item in
+                                item.fileName = displayTitle
+                                item.resultText = text
+                                item.transcriptSource = source
+                                item.downloadPhase = nil
+                                item.progress = 1
+                                item.state = .completed
+                            }
+                            resultRecorder(text)
+                            let mdURL = Self.resolveMarkdownOutputURL(forRemoteTitle: displayTitle)
+                            do {
+                                try text.write(to: mdURL, atomically: true, encoding: .utf8)
+                                updateJob(id: jobID) { $0.markdownURL = mdURL }
+                            } catch {
+                                print("[VowKy][FileTranscription] 字幕落盘失败: \(error.localizedDescription)")
+                            }
+                            cleanupWorkDir(for: jobID)
+                            continue   // 跳过 reading/transcribing
                         }
                     } catch is CancellationError {
                         updateJob(id: jobID) { $0.state = .cancelled }
@@ -895,6 +931,7 @@ final class FileTranscriptionViewModel: ObservableObject {
             switch job.downloadPhase {
             case .provisioningTools: return L("file.status.provisioningTools")
             case .resolving:         return L("file.status.resolving")
+            case .fetchingSubtitles: return L("file.status.fetchingSubtitles")
             case .extractingAudio:   return L("file.status.extractingAudio")
             case .downloading, .none: return L("file.status.downloading")
             }
@@ -1560,6 +1597,16 @@ struct FileTranscriptionView: View {
         guard let job = viewModel.selectedJob else { return loc.string("file.badge.waitingContent") }
         switch job.state {
         case .completed:
+            // 链接任务区分来源：人工字幕 / 自动字幕 / 本地转写。
+            if let source = job.transcriptSource {
+                switch source {
+                case .manualSubtitle: return loc.string("file.badge.fromSubtitle")
+                case .autoSubtitle:   return loc.string("file.badge.fromAutoSubtitle")
+                }
+            }
+            if job.kind == .remoteURL {
+                return loc.string("file.badge.fromLocalASR")
+            }
             return viewModel.canEditSelectedResult ? loc.string("file.badge.editableResult") : loc.string("file.badge.done")
         case .cancelled:
             return viewModel.resultText.isEmpty ? loc.string("file.badge.noResult") : loc.string("file.badge.editableDraft")

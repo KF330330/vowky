@@ -68,6 +68,14 @@ actor ToolProvisioner {
     private static let fallbackYtDlpTag = "2026.06.09"
     private static let ytDlpRefreshInterval: TimeInterval = 7 * 24 * 3600
 
+    // lux（哔哩哔哩无 cookie 兜底）：goreleaser 资产名 `lux_<version>_Darwin_<arch>.tar.gz`（version 去掉前缀 v）。
+    #if arch(arm64)
+    private static let luxArchName = "arm64"
+    #else
+    private static let luxArchName = "x86_64"
+    #endif
+    private static let fallbackLuxTag = "v0.24.1"
+
     private init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 60
@@ -103,6 +111,15 @@ actor ToolProvisioner {
 
         progress?(ToolProvisionProgress(phase: .ready, tool: "", fractionCompleted: 1))
         return ProvisionedTools(binDir: binDir, ytDlp: ytDlp, ffmpeg: ffmpeg, ffprobe: ffprobe)
+    }
+
+    /// 懒加载 lux（仅哔哩哔哩无 cookie 兜底时才用，故不进 `ensureTools` 的 eager 路径）。返回可执行绝对路径。
+    func ensureLux(progress: (@Sendable (ToolProvisionProgress) -> Void)? = nil) async throws -> URL {
+        let binDir = try ensureBinDir()
+        let lux = binDir.appendingPathComponent("lux")
+        if isInstalled(lux) { return lux }
+        try await provisionLux(to: lux, progress: progress)
+        return lux
     }
 
     /// 工具是否已全部就绪（用于「首次告知弹窗」判断要不要联网）。
@@ -198,6 +215,53 @@ actor ToolProvisioner {
             }
         }
         return nil
+    }
+
+    // MARK: - lux（tar.gz 内单个二进制）
+
+    private func provisionLux(to dest: URL, progress: (@Sendable (ToolProvisionProgress) -> Void)?) async throws {
+        let tool = "lux"
+        let tag = await resolveLuxTag()
+        let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+        let asset = "lux_\(version)_Darwin_\(Self.luxArchName).tar.gz"
+        guard let url = URL(string: "https://github.com/iawia002/lux/releases/download/\(tag)/\(asset)") else {
+            throw ToolProvisionError.downloadFailed(tool: tool)
+        }
+
+        progress?(ToolProvisionProgress(phase: .downloading, tool: tool, fractionCompleted: -1))
+        let tgz = try await downloadToTemp(from: url, tool: tool)
+        defer { try? fileManager.removeItem(at: tgz) }
+
+        progress?(ToolProvisionProgress(phase: .installing, tool: tool, fractionCompleted: -1))
+        let unpackDir = tgz.deletingLastPathComponent().appendingPathComponent("unpack-\(tool)-\(UUID().uuidString)")
+        try fileManager.createDirectory(at: unpackDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: unpackDir) }
+
+        // tar.gz 用 tar 解包（ditto -k 只认 zip）。资产根部就是一个 `lux` 可执行。
+        guard runProcess("/usr/bin/tar", ["-xzf", tgz.path, "-C", unpackDir.path]) == 0 else {
+            throw ToolProvisionError.unpackFailed(tool: tool)
+        }
+        guard let extracted = firstExecutableLikeFile(named: "lux", in: unpackDir) else {
+            throw ToolProvisionError.unpackFailed(tool: tool)
+        }
+        try install(from: extracted, to: dest, tool: tool)
+        writeManifest(luxFetchedAt: Date())
+    }
+
+    private func resolveLuxTag() async -> String {
+        guard let url = URL(string: "https://api.github.com/repos/iawia002/lux/releases/latest") else {
+            return Self.fallbackLuxTag
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tag = json["tag_name"] as? String, !tag.isEmpty else {
+            return Self.fallbackLuxTag
+        }
+        return tag
     }
 
     // MARK: - ffmpeg / ffprobe（zip 内单个二进制）
@@ -316,6 +380,7 @@ actor ToolProvisioner {
         var ytDlpFetchedAt: Date?
         var ffmpegFetchedAt: Date?
         var ffprobeFetchedAt: Date?
+        var luxFetchedAt: Date?
         var arch: String?
     }
 
@@ -332,13 +397,14 @@ actor ToolProvisioner {
         return manifest
     }
 
-    private func writeManifest(ytDlpFetchedAt: Date?? = nil, ytDlpTag: String? = nil, staticTool: String? = nil) {
+    private func writeManifest(ytDlpFetchedAt: Date?? = nil, ytDlpTag: String? = nil, staticTool: String? = nil, luxFetchedAt: Date? = nil) {
         guard let url = manifestURL() else { return }
         var manifest = readManifest()
         if case let .some(value) = ytDlpFetchedAt { manifest.ytDlpFetchedAt = value }
         if let tag = ytDlpTag { manifest.ytDlpTag = tag }
         if staticTool == "ffmpeg" { manifest.ffmpegFetchedAt = Date() }
         if staticTool == "ffprobe" { manifest.ffprobeFetchedAt = Date() }
+        if let luxFetchedAt { manifest.luxFetchedAt = luxFetchedAt }
         manifest.arch = Self.ffmpegArchPath
         if let data = try? JSONEncoder.toolManifest.encode(manifest) {
             try? data.write(to: url, options: .atomic)

@@ -226,7 +226,11 @@
 "file.status.resolving" = "Fetching video info…";
 "file.status.downloading" = "Downloading video…";
 "file.status.extractingAudio" = "Extracting audio…";
+"file.status.fetchingSubtitles" = "Fetching subtitles…";
 "file.badge.downloading" = "Downloading";
+"file.badge.fromSubtitle" = "Subtitle";
+"file.badge.fromAutoSubtitle" = "Auto captions";
+"file.badge.fromLocalASR" = "Local transcription";
 "file.empty.downloading" = "Downloading the video — transcription starts automatically when it finishes.";
 
 "file.url.error.invalidURL" = "That doesn't look like a valid video link.";
@@ -253,6 +257,11 @@
 "settings.urlDownload.cookie.chrome" = "Chrome";
 "settings.urlDownload.cookie.firefox" = "Firefox";
 "settings.urlDownload.cookieHint" = "Some sites (e.g. Bilibili) need browser cookies to download. Safari requires Full Disk Access; Chrome may prompt for Keychain access.";
+"settings.urlDownload.subtitlePriority" = "Subtitle priority";
+"settings.urlDownload.subtitlePriority.all" = "Prefer all subtitles (incl. auto)";
+"settings.urlDownload.subtitlePriority.manualOnly" = "Manual subtitles only";
+"settings.urlDownload.subtitlePriority.never" = "Always local transcription";
+"settings.urlDownload.subtitlePriorityHint" = "Videos with subtitles can be pulled directly — faster and more accurate than transcribing the audio. Falls back to local transcription when no subtitles are available.";
 
 /* Recording + Bilingual */
 

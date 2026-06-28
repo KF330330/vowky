@@ -170,6 +170,7 @@ struct SettingsView: View {
     @StateObject private var hotkeyRecorder = HotkeyRecorder()
     @State private var autoCopyToClipboard = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
     @State private var urlCookieSource: String = UserDefaults.standard.string(forKey: FileTranscriptionViewModel.cookieSourceDefaultsKey) ?? "none"
+    @State private var urlSubtitlePriority: String = UserDefaults.standard.string(forKey: FileTranscriptionViewModel.subtitlePriorityDefaultsKey) ?? "all"
     @State private var automaticUpdateChecks: Bool = {
         let defaults = UserDefaults.standard
         if defaults.object(forKey: VowKyApp.automaticUpdateChecksDefaultsKey) == nil {
@@ -321,6 +322,18 @@ struct SettingsView: View {
 
             // URL 下载（链接转文字的 Cookie 来源）
             Section(loc.string("settings.section.urlDownload")) {
+                Picker(loc.string("settings.urlDownload.subtitlePriority"), selection: $urlSubtitlePriority) {
+                    Text(loc.string("settings.urlDownload.subtitlePriority.all")).tag("all")
+                    Text(loc.string("settings.urlDownload.subtitlePriority.manualOnly")).tag("manualOnly")
+                    Text(loc.string("settings.urlDownload.subtitlePriority.never")).tag("never")
+                }
+                .onChange(of: urlSubtitlePriority) { newValue in
+                    UserDefaults.standard.set(newValue, forKey: FileTranscriptionViewModel.subtitlePriorityDefaultsKey)
+                }
+                Text(loc.string("settings.urlDownload.subtitlePriorityHint"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
                 Picker(loc.string("settings.urlDownload.cookieSource"), selection: $urlCookieSource) {
                     Text(loc.string("settings.urlDownload.cookie.none")).tag("none")
                     Text(loc.string("settings.urlDownload.cookie.safari")).tag("safari")

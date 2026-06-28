@@ -31,7 +31,7 @@ enum CookieSource: Equatable, Sendable {
 }
 
 struct DownloadProgress: Sendable {
-    enum Phase: Sendable { case provisioningTools, resolving, downloading, extractingAudio }
+    enum Phase: Sendable { case provisioningTools, resolving, fetchingSubtitles, downloading, extractingAudio }
     let phase: Phase
     /// 0...1；-1 表示不定态。
     let fractionCompleted: Double
@@ -51,6 +51,29 @@ struct DownloadedMedia: Sendable {
     let mediaURL: URL    // workDir 内的本地 .m4a
     let rawTitle: String // 视频标题（用于命名）
     let workDir: URL     // 唯一临时子目录，调用方用完删除
+}
+
+/// 字幕优先级（设置项）。
+enum SubtitlePriority: String, Sendable {
+    case all         // 优先所有字幕（人工 + 自动）
+    case manualOnly  // 仅人工字幕优先，自动字幕走本地 ASR
+    case never       // 总是本地转写
+
+    static func fromRawValue(_ raw: String) -> SubtitlePriority {
+        SubtitlePriority(rawValue: raw) ?? .all
+    }
+}
+
+/// 文字结果的来源（用于 UI 徽章区分）。
+enum TranscriptSource: Sendable, Equatable {
+    case manualSubtitle(language: String?)
+    case autoSubtitle(language: String?)
+}
+
+/// `download()` 的结果：要么是待转写的本地媒体，要么是已直接拿到的字幕文字。
+enum DownloadResult: Sendable {
+    case media(DownloadedMedia)
+    case transcript(text: String, source: TranscriptSource, title: String)
 }
 
 enum URLDownloadError: LocalizedError, Equatable {
@@ -86,8 +109,9 @@ protocol URLMediaDownloading: Sendable {
         urlString: String,
         into workDir: URL,
         cookies: CookieSource,
+        subtitlePriority: SubtitlePriority,
         progress: @escaping @MainActor (DownloadProgress) -> Void
-    ) async throws -> DownloadedMedia
+    ) async throws -> DownloadResult
 }
 
 // MARK: - 服务
@@ -156,8 +180,9 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         urlString: String,
         into workDir: URL,
         cookies: CookieSource,
+        subtitlePriority: SubtitlePriority,
         progress: @escaping @MainActor (DownloadProgress) -> Void
-    ) async throws -> DownloadedMedia {
+    ) async throws -> DownloadResult {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let _ = URL(string: trimmed), trimmed.hasPrefix("http") else {
             throw URLDownloadError.invalidURL
@@ -186,14 +211,48 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         let extras = extraArgs(for: platform)
         let cookieArguments = cookieArgs(cookies)
 
-        // 2) Pass A：取标题 + 快速失败（在长下载前暴露 bot-check / 登录 / 不支持 等错误）。
+        // 2) 字幕优先：先尝试直接拉平台字幕（快 + 质量高）。拿到就直接出文字，跳过下载 + ASR。
+        var knownTitle: String?
+        if subtitlePriority != .never {
+            await progress(DownloadProgress(phase: .fetchingSubtitles, fractionCompleted: -1))
+            switch await trySubtitle(
+                platform: platform, url: trimmed, extras: extras,
+                cookies: cookieArguments, priority: subtitlePriority, tools: tools, workDir: workDir
+            ) {
+            case .transcript(let text, let source, let title):
+                let resolved = (title?.isEmpty == false) ? title! : fallbackTitle(for: trimmed)
+                return .transcript(text: text, source: source, title: resolved)
+            case .noSubtitle(let title):
+                knownTitle = title
+            }
+            try Task.checkCancellation()
+        }
+
+        // 3) 没字幕 → 下载音频走 ASR。先确定标题（复用字幕步已取到的，否则单独取，B站无cookie取不到则回退）。
         await progress(DownloadProgress(phase: .resolving, fractionCompleted: -1))
-        let title = try await resolveTitle(
-            ytDlp: tools.ytDlp, url: trimmed, extras: extras, cookies: cookieArguments
-        )
+        let title: String
+        if let knownTitle, !knownTitle.isEmpty {
+            title = knownTitle
+        } else {
+            title = (try? await resolveTitle(ytDlp: tools.ytDlp, url: trimmed, extras: extras, cookies: cookieArguments))
+                ?? fallbackTitle(for: trimmed)
+        }
         try Task.checkCancellation()
 
-        // 3) Pass B：下载并提取音频为 m4a。
+        let media = try await downloadAudio(
+            platform: platform, url: trimmed, title: title,
+            extras: extras, cookies: cookieArguments, tools: tools, workDir: workDir, progress: progress
+        )
+        return .media(media)
+    }
+
+    // MARK: 音频下载（Pass B）+ lux 无 cookie 兜底
+
+    private func downloadAudio(
+        platform: Platform, url: String, title: String,
+        extras: [String], cookies: [String], tools: ProvisionedTools, workDir: URL,
+        progress: @escaping @MainActor (DownloadProgress) -> Void
+    ) async throws -> DownloadedMedia {
         let outputTemplate = workDir.appendingPathComponent("media.%(ext)s").path
         var arguments = [
             "-f", "bestaudio/best",
@@ -205,8 +264,8 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
             "-o", outputTemplate
         ]
         arguments += extras
-        arguments += cookieArguments
-        arguments.append(trimmed)
+        arguments += cookies
+        arguments.append(url)
 
         let result = try await run(
             executable: tools.ytDlp,
@@ -230,15 +289,309 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         )
 
         try Task.checkCancellation()
-        guard result.exit == 0 else {
-            throw Self.mapError(stdout: result.stdout, stderr: result.stderr)
+        if result.exit != 0 {
+            let mapped = Self.mapError(stdout: result.stdout, stderr: result.stderr)
+            // 哔哩哔哩无 cookie 被 412 拦 → 用 lux（独立二进制，无需登录）下视频再抽音频。
+            if platform == .bilibili, case .rateLimited = mapped {
+                return try await downloadViaLux(url: url, title: title, tools: tools, workDir: workDir, progress: progress)
+            }
+            throw mapped
         }
 
-        // 4) 定位产物：必须是解码器认识的扩展名。
         guard let media = locateOutput(in: workDir) else {
             throw URLDownloadError.noAudioProduced
         }
         return DownloadedMedia(mediaURL: media, rawTitle: title, workDir: workDir)
+    }
+
+    private func downloadViaLux(
+        url: String, title: String, tools: ProvisionedTools, workDir: URL,
+        progress: @escaping @MainActor (DownloadProgress) -> Void
+    ) async throws -> DownloadedMedia {
+        let lux: URL
+        do {
+            lux = try await provisioner.ensureLux { update in
+                Task { @MainActor in
+                    progress(DownloadProgress(phase: .provisioningTools, fractionCompleted: update.fractionCompleted,
+                                              toolName: update.tool.isEmpty ? nil : update.tool))
+                }
+            }
+        } catch {
+            let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            throw URLDownloadError.toolSetupFailed(reason)
+        }
+        try Task.checkCancellation()
+
+        await progress(DownloadProgress(phase: .downloading, fractionCompleted: -1))
+        // lux 下载到 workDir/luxmedia.<ext>；PATH 带上 binDir 以便 lux 必要时找到 ffmpeg 合流。
+        let luxArgs = ["--output-path", workDir.path, "--output-name", "luxmedia", url]
+        let r = try await run(executable: lux, arguments: luxArgs, additionalPath: tools.binDir.path)
+        try Task.checkCancellation()
+        guard r.exit == 0 else {
+            throw Self.mapError(stdout: r.stdout, stderr: r.stderr)
+        }
+        guard let videoFile = locateLuxOutput(in: workDir) else {
+            throw URLDownloadError.noAudioProduced
+        }
+
+        // ffmpeg 抽音频成 m4a（lux 产物可能是 flv/mp4，统一交解码器一个 .m4a）。
+        await progress(DownloadProgress(phase: .extractingAudio, fractionCompleted: -1))
+        let m4a = workDir.appendingPathComponent("media.m4a")
+        let ff = try await run(executable: tools.ffmpeg, arguments: [
+            "-y", "-i", videoFile.path, "-vn", "-c:a", "aac", "-b:a", "160k", m4a.path
+        ])
+        try Task.checkCancellation()
+        guard ff.exit == 0, FileManager.default.fileExists(atPath: m4a.path) else {
+            throw URLDownloadError.noAudioProduced
+        }
+        try? FileManager.default.removeItem(at: videoFile)   // 删掉 lux 下的大视频，只留 m4a
+        return DownloadedMedia(mediaURL: m4a, rawTitle: title, workDir: workDir)
+    }
+
+    /// lux 产物定位：workDir 里非 media.m4a 的那个媒体文件（lux 命名 luxmedia.*，但多 part 时可能带后缀）。
+    private func locateLuxOutput(in workDir: URL) -> URL? {
+        guard let items = try? FileManager.default.contentsOfDirectory(at: workDir, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return nil
+        }
+        let candidates = items.filter {
+            $0.lastPathComponent != "media.m4a" && !$0.hasDirectoryPath && $0.pathExtension.lowercased() != "part"
+        }
+        // 取最大的那个（视频文件远大于杂项）。
+        return candidates.max { a, b in
+            let sa = (try? a.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            let sb = (try? b.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            return sa < sb
+        }
+    }
+
+    // MARK: 字幕优先
+
+    private enum SubtitleOutcome {
+        case transcript(text: String, source: TranscriptSource, title: String?)
+        case noSubtitle(title: String?)   // 没字幕时把已取到的标题带回去，供音频路径命名复用
+    }
+
+    /// 尝试直接拉字幕。**永不抛错**：任何失败/无字幕都回 `.noSubtitle`，让主流程平滑退回音频 ASR。
+    private func trySubtitle(
+        platform: Platform, url: String, extras: [String], cookies: [String],
+        priority: SubtitlePriority, tools: ProvisionedTools, workDir: URL
+    ) async -> SubtitleOutcome {
+        do {
+            switch platform {
+            case .deeplearningAI:
+                return try await fetchDeepLearningSubtitle(
+                    url: url, extras: extras, cookies: cookies, tools: tools, workDir: workDir)
+            case .youtube, .bilibili, .generic:
+                return try await fetchYtDlpSubtitle(
+                    platform: platform, url: url, extras: extras, cookies: cookies,
+                    priority: priority, tools: tools, workDir: workDir)
+            }
+        } catch {
+            return .noSubtitle(title: nil)
+        }
+    }
+
+    /// YouTube / 哔哩哔哩 / 通用：先一次 metadata 取「标题+语言+人工字幕+自动字幕」，再按优先级选轨抓取。
+    private func fetchYtDlpSubtitle(
+        platform: Platform, url: String, extras: [String], cookies: [String],
+        priority: SubtitlePriority, tools: ProvisionedTools, workDir: URL
+    ) async throws -> SubtitleOutcome {
+        // 单行多字段，自定义分隔符避开标题里的换行/竖线；j 修饰符把字幕字典输出成 JSON。
+        let sep = "@@VOWKYF@@"
+        var metaArgs = ["--skip-download", "--no-playlist", "--no-warnings",
+                        "--print", "%(title)s\(sep)%(language)s\(sep)%(subtitles)j\(sep)%(automatic_captions)j"]
+        metaArgs += extras
+        metaArgs += cookies
+        metaArgs.append(url)
+
+        let meta = try await run(executable: tools.ytDlp, arguments: metaArgs, isTitlePass: true)
+        guard meta.exit == 0 else { return .noSubtitle(title: nil) }   // B站无 cookie 412 等 → 退音频
+        guard let dataLine = meta.stdout
+            .split(whereSeparator: \.isNewline)
+            .map({ $0.trimmingCharacters(in: .whitespaces) })
+            .last(where: { $0.contains(sep) }) else {
+            return .noSubtitle(title: nil)
+        }
+        let parts = dataLine.components(separatedBy: sep)
+        guard parts.count >= 4 else { return .noSubtitle(title: parts.first) }
+
+        let title = (parts[0] == "NA" || parts[0].isEmpty) ? nil : parts[0]
+        let language = (parts[1] == "NA" || parts[1].isEmpty) ? nil : parts[1]
+        let manualKeys = parseSubDict(parts[2])
+        let autoKeys = parseSubDict(parts[3])
+        let origLang = language ?? Self.defaultLanguage(for: platform)
+
+        // 人工字幕：两种模式都优先用。
+        if let lang = pickManualLang(manualKeys, prefer: origLang),
+           let text = try await fetchAndParseSub(
+            url: url, lang: lang, isAuto: false, platform: platform,
+            extras: extras, cookies: cookies, tools: tools, workDir: workDir) {
+            return .transcript(text: text, source: .manualSubtitle(language: lang), title: title)
+        }
+
+        // 自动字幕：仅「优先所有字幕」时用，且只认原语言（避开 157 个翻译版）。
+        if priority == .all,
+           let lang = pickAutoLang(autoKeys, prefer: origLang),
+           let text = try await fetchAndParseSub(
+            url: url, lang: lang, isAuto: true, platform: platform,
+            extras: extras, cookies: cookies, tools: tools, workDir: workDir) {
+            return .transcript(text: text, source: .autoSubtitle(language: lang), title: title)
+        }
+
+        return .noSubtitle(title: title)
+    }
+
+    /// 用 yt-dlp 抓单条字幕轨为 vtt，解析成纯文本。失败回 nil。
+    private func fetchAndParseSub(
+        url: String, lang: String, isAuto: Bool, platform: Platform,
+        extras: [String], cookies: [String], tools: ProvisionedTools, workDir: URL
+    ) async throws -> String? {
+        let subFlag = isAuto ? "--write-auto-subs" : "--write-subs"
+        let outTemplate = workDir.appendingPathComponent("sub.%(ext)s").path
+        var args = [
+            "--skip-download", "--no-playlist", "--no-warnings",
+            subFlag, "--sub-langs", lang, "--sub-format", "vtt/best", "--convert-subs", "vtt",
+            "--ffmpeg-location", tools.binDir.path,
+            "-o", outTemplate
+        ]
+        args += extras
+        args += cookies
+        args.append(url)
+
+        let r = try await run(executable: tools.ytDlp, arguments: args)
+        try Task.checkCancellation()
+        guard r.exit == 0, let vtt = locateSubtitleFile(in: workDir) else { return nil }
+        let raw = (try? String(contentsOf: vtt, encoding: .utf8)) ?? ""
+        try? FileManager.default.removeItem(at: vtt)
+        // 仅 YouTube/通用的自动字幕是滚动重复格式；人工字幕、B站 AI 字幕都不是。
+        let rolling = isAuto && (platform == .youtube || platform == .generic)
+        let text = SubtitleParser.plainText(from: raw, rolling: rolling)
+        return text.isEmpty ? nil : text
+    }
+
+    /// DeepLearning.AI：从 HLS master m3u8 里取 WebVTT 字幕轨（比爬 React 页面稳）。
+    private func fetchDeepLearningSubtitle(
+        url: String, extras: [String], cookies: [String], tools: ProvisionedTools, workDir: URL
+    ) async throws -> SubtitleOutcome {
+        var jArgs = ["-J", "--skip-download", "--no-playlist", "--no-warnings"]
+        jArgs += extras
+        jArgs += cookies
+        jArgs.append(url)
+        let j = try await run(executable: tools.ytDlp, arguments: jArgs, isTitlePass: true)
+        guard j.exit == 0 else { return .noSubtitle(title: nil) }
+
+        let jsonLine = j.stdout.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("{") })
+            .map(String.init) ?? j.stdout
+        guard let data = jsonLine.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .noSubtitle(title: nil)
+        }
+        let title = root["title"] as? String
+        guard let master = firstManifestURL(root) else { return .noSubtitle(title: title) }
+        guard let subPlaylist = try await deeplearningSubtitlePlaylist(master: master) else {
+            return .noSubtitle(title: title)
+        }
+        let vtt = try await fetchVTTFromPlaylist(subPlaylist)
+        guard !vtt.isEmpty else { return .noSubtitle(title: title) }
+        let text = SubtitleParser.plainText(from: vtt, rolling: false)
+        guard !text.isEmpty else { return .noSubtitle(title: title) }
+        return .transcript(text: text, source: .manualSubtitle(language: "en"), title: title)
+    }
+
+    // MARK: 字幕选轨 / 解析 / HLS 小工具
+
+    private static func defaultLanguage(for platform: Platform) -> String {
+        platform == .bilibili ? "zh" : "en"
+    }
+
+    private func parseSubDict(_ json: String) -> Set<String> {
+        let t = json.trimmingCharacters(in: .whitespaces)
+        guard t.hasPrefix("{"), let data = t.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        return Set(dict.keys)
+    }
+
+    private func pickManualLang(_ keys: Set<String>, prefer: String) -> String? {
+        let usable = keys.filter { $0 != "live_chat" && !$0.isEmpty }
+        guard !usable.isEmpty else { return nil }
+        if usable.contains(prefer) { return prefer }
+        if usable.contains(prefer + "-orig") { return prefer + "-orig" }
+        if let regional = usable.first(where: { $0.hasPrefix(prefer + "-") }) { return regional }
+        if usable.contains("en") { return "en" }
+        return usable.sorted().first
+    }
+
+    /// 自动字幕只认原语言（exact / `-orig` / 同语言区域变体），绝不回退到任意键——否则会抓到翻译版。
+    private func pickAutoLang(_ keys: Set<String>, prefer: String) -> String? {
+        let usable = keys.filter { $0 != "live_chat" && !$0.isEmpty }
+        guard !usable.isEmpty else { return nil }
+        if usable.contains(prefer) { return prefer }
+        if usable.contains(prefer + "-orig") { return prefer + "-orig" }
+        if let regional = usable.first(where: { $0.hasPrefix(prefer + "-") }) { return regional }
+        return nil
+    }
+
+    private func locateSubtitleFile(in workDir: URL) -> URL? {
+        guard let items = try? FileManager.default.contentsOfDirectory(at: workDir, includingPropertiesForKeys: nil) else {
+            return nil
+        }
+        return items.first {
+            $0.lastPathComponent.hasPrefix("sub.") && $0.pathExtension.lowercased() == "vtt"
+        }
+    }
+
+    private func firstManifestURL(_ root: [String: Any]) -> URL? {
+        let formats = (root["formats"] as? [[String: Any]]) ?? []
+        for f in formats {
+            if let m = f["manifest_url"] as? String, m.contains(".m3u8"), let u = URL(string: m) { return u }
+        }
+        return nil
+    }
+
+    /// 从 master m3u8 找 `#EXT-X-MEDIA:TYPE=SUBTITLES` 轨，优先英文，返回字幕子播放列表 URL。
+    private func deeplearningSubtitlePlaylist(master: URL) async throws -> URL? {
+        let (data, _) = try await URLSession.shared.data(from: master)
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        var candidates: [(lang: String, uri: String)] = []
+        for raw in text.split(whereSeparator: \.isNewline) {
+            let line = String(raw)
+            guard line.hasPrefix("#EXT-X-MEDIA:"), line.contains("TYPE=SUBTITLES") else { continue }
+            let lang = m3u8Attr(line, "LANGUAGE") ?? m3u8Attr(line, "NAME") ?? ""
+            if let uri = m3u8Attr(line, "URI") { candidates.append((lang, uri)) }
+        }
+        guard !candidates.isEmpty else { return nil }
+        let chosen = candidates.first(where: { $0.lang.lowercased().hasPrefix("en") }) ?? candidates[0]
+        return URL(string: chosen.uri, relativeTo: master)?.absoluteURL
+    }
+
+    /// 抓字幕子播放列表里的 .vtt 段并拼接（通常一段；子列表本身就是 vtt 时直接返回）。
+    private func fetchVTTFromPlaylist(_ playlist: URL) async throws -> String {
+        let (data, _) = try await URLSession.shared.data(from: playlist)
+        guard let text = String(data: data, encoding: .utf8) else { return "" }
+        var segments: [URL] = []
+        for raw in text.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+            if let u = URL(string: line, relativeTo: playlist)?.absoluteURL { segments.append(u) }
+        }
+        if segments.isEmpty {
+            return text.contains("WEBVTT") ? text : ""
+        }
+        var combined = ""
+        for seg in segments {
+            try Task.checkCancellation()
+            let (segData, _) = try await URLSession.shared.data(from: seg)
+            if let s = String(data: segData, encoding: .utf8) { combined += s + "\n\n" }
+        }
+        return combined
+    }
+
+    /// 从 m3u8 标签行抽 `KEY="value"`。
+    private func m3u8Attr(_ line: String, _ key: String) -> String? {
+        guard let r = line.range(of: "\(key)=\"") else { return nil }
+        let rest = line[r.upperBound...]
+        guard let end = rest.firstIndex(of: "\"") else { return nil }
+        return String(rest[rest.startIndex..<end])
     }
 
     // MARK: Pass A
@@ -357,6 +710,7 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         executable: URL,
         arguments: [String],
         isTitlePass: Bool = false,
+        additionalPath: String? = nil,
         onStdoutLine: @escaping (String) -> Void = { _ in },
         onStderrLine: @escaping (String) -> Void = { _ in }
     ) async throws -> RunResult {
@@ -364,6 +718,12 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         process.executableURL = executable
         process.arguments = arguments
         // environment 继承父进程，保住 $HOME 供 --cookies-from-browser 读取浏览器 profile。
+        if let additionalPath {
+            var env = ProcessInfo.processInfo.environment
+            let existing = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+            env["PATH"] = additionalPath + ":" + existing
+            process.environment = env
+        }
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
