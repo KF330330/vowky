@@ -135,7 +135,7 @@
 "window.fileTranscription.title" = "VowKy File Transcription";
 
 "file.title" = "File Transcription";
-"file.subtitle" = "Batch audio & video, processed locally offline";
+"file.subtitle" = "Video links or local files — transcribed offline";
 "file.selectFile" = "Select a file";
 
 "file.action.transcribeAll" = "Transcribe All";
@@ -156,6 +156,15 @@
 "file.drop.prompt" = "Drop audio or video files here";
 "file.drop.release" = "Release to add to queue";
 "file.drop.formats" = "Supports batch selection of MP3, M4A, MP4, MOV, WAV, FLAC and more — all processed locally.";
+
+"file.empty.fileTitle" = "Local files";
+"file.empty.fileSubtitle" = "Drop or choose audio & video files";
+"file.empty.dropHere" = "Drop files here";
+"file.empty.formatsShort" = "MP3 · M4A · MP4 · MOV · WAV · FLAC…";
+"file.empty.linkTitle" = "Transcribe a video link";
+"file.empty.linkSubtitle" = "Subtitles first, local transcription as fallback";
+"file.empty.or" = "or";
+"file.platform.bilibili" = "Bilibili";
 
 "file.queue.title" = "Queue";
 "file.queue.fileCount" = "%lld files";

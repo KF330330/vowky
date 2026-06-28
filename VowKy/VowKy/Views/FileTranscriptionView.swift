@@ -1194,58 +1194,162 @@ struct FileTranscriptionView: View {
         .help(loc.string("file.url.help"))
     }
 
+    /// 空状态：左「本地文件」拖拽 / 选择，右「转视频链接」粘贴转写，中间「或」分隔。
     private var dropArea: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "tray.and.arrow.down.fill")
-                .font(.system(size: 34, weight: .semibold))
-                .foregroundColor(isDropTargeted ? FileTranscriptionTheme.accentDark : FileTranscriptionTheme.accentDeep)
-                .frame(width: 76, height: 76)
-                .background(
-                    Circle()
-                        .fill(FileTranscriptionTheme.accentBright.opacity(isDropTargeted ? 0.48 : 0.32))
-                )
+        HStack(spacing: 0) {
+            fileColumn
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            orDivider
+            linkColumn
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 2)
+    }
 
-            VStack(spacing: 6) {
-                Text(isDropTargeted ? loc.string("file.drop.release") : loc.string("file.drop.prompt"))
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(FileTranscriptionTheme.textPrimary)
-                Text(loc.string("file.drop.formats"))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(FileTranscriptionTheme.textMuted)
-                    .multilineTextAlignment(.center)
+    /// 左栏：本地文件拖拽 + 选择文件。拖拽落点是整个空状态区域（父级 .onDrop），此处仅作视觉落区。
+    private var fileColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            emptyPanelHead(
+                icon: "doc.text",
+                title: loc.string("file.empty.fileTitle"),
+                subtitle: loc.string("file.empty.fileSubtitle")
+            )
+
+            VStack(spacing: 12) {
+                Image(systemName: "tray.and.arrow.down")
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundColor(isDropTargeted ? FileTranscriptionTheme.accentDark : FileTranscriptionTheme.accentDeep)
+                VStack(spacing: 3) {
+                    Text(isDropTargeted ? loc.string("file.drop.release") : loc.string("file.empty.dropHere"))
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundColor(FileTranscriptionTheme.textSecondary)
+                    Text(loc.string("file.empty.formatsShort"))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(FileTranscriptionTheme.textMuted)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(FileTranscriptionTheme.accentBright.opacity(isDropTargeted ? 0.16 : 0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        isDropTargeted ? FileTranscriptionTheme.accentMain : FileTranscriptionTheme.border,
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                    )
+            )
+            .padding(.top, 18)
 
             Button {
                 viewModel.chooseFile()
             } label: {
                 Label(loc.string("file.action.chooseFile"), systemImage: "folder")
             }
-            .buttonStyle(FilePrimaryButtonStyle())
-
-            VStack(spacing: 8) {
-                Text(loc.string("file.drop.orPasteURL"))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(FileTranscriptionTheme.textMuted)
-                urlInputBar
-                    .frame(maxWidth: 460)
-            }
-            .padding(.top, 2)
+            .buttonStyle(FileSecondaryButtonStyle())
+            .padding(.top, 16)
         }
-        .frame(maxWidth: .infinity)
-        .frame(maxHeight: .infinity)
-        .padding(22)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(FileTranscriptionTheme.cardBackground.opacity(0.96))
-                .shadow(color: FileTranscriptionTheme.shadow, radius: 18, x: 0, y: 8)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(
-                    isDropTargeted ? FileTranscriptionTheme.accentMain : FileTranscriptionTheme.borderLight,
-                    style: StrokeStyle(lineWidth: isDropTargeted ? 1.5 : 1, dash: isDropTargeted ? [6, 4] : [])
+        .padding(EdgeInsets(top: 24, leading: 24, bottom: 22, trailing: 24))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .fileTranscriptionCardStyle()
+    }
+
+    /// 右栏：粘贴 YouTube / 哔哩哔哩 / DeepLearning.AI 链接转写。
+    private var linkColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            emptyPanelHead(
+                icon: "link",
+                title: loc.string("file.empty.linkTitle"),
+                subtitle: loc.string("file.empty.linkSubtitle")
+            )
+
+            HStack(spacing: 8) {
+                importChip("YouTube")
+                importChip(loc.string("file.platform.bilibili"))
+                importChip("DeepLearning.AI")
+            }
+            .padding(.top, 20)
+
+            HStack(spacing: 10) {
+                Image(systemName: "link")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(FileTranscriptionTheme.accentDark)
+                TextField(loc.string("file.url.placeholder"), text: $viewModel.urlInputText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12.5))
+                    .foregroundColor(FileTranscriptionTheme.textPrimary)
+                    .onSubmit { viewModel.appendURLJobs(rawText: viewModel.urlInputText) }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 48)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(FileTranscriptionTheme.cardBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(FileTranscriptionTheme.accentMain, lineWidth: 1.5)
+                    )
+            )
+            .padding(.top, 16)
+            .help(loc.string("file.url.help"))
+
+            Spacer(minLength: 16)
+
+            Button {
+                viewModel.appendURLJobs(rawText: viewModel.urlInputText)
+            } label: {
+                Label(loc.string("file.url.add"), systemImage: "plus")
+            }
+            .buttonStyle(FilePrimaryButtonStyle())
+            .disabled(viewModel.urlInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(EdgeInsets(top: 24, leading: 24, bottom: 22, trailing: 24))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .fileTranscriptionCardStyle()
+    }
+
+    /// 双栏中间的「或」分隔（竖线 + 圆形徽章）。
+    private var orDivider: some View {
+        ZStack {
+            Rectangle()
+                .fill(FileTranscriptionTheme.border)
+                .frame(width: 1)
+                .padding(.vertical, 16)
+            Text(loc.string("file.empty.or"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(FileTranscriptionTheme.textMuted)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(FileTranscriptionTheme.cardBackground))
+                .overlay(Circle().stroke(FileTranscriptionTheme.border, lineWidth: 1))
+        }
+        .frame(width: 46)
+    }
+
+    /// 双栏的小标题：图标方块 + 标题 + 副标题。
+    private func emptyPanelHead(icon: String, title: String, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(FileTranscriptionTheme.accentDark)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(FileTranscriptionTheme.accentBright.opacity(0.30))
                 )
-        )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(FileTranscriptionTheme.textPrimary)
+                Text(subtitle)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(FileTranscriptionTheme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     private func importChip(_ text: String) -> some View {

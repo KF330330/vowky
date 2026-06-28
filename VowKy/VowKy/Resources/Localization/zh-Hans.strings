@@ -135,7 +135,7 @@
 "window.fileTranscription.title" = "VowKy 文件转录";
 
 "file.title" = "文件转录";
-"file.subtitle" = "批量音视频，本地离线处理";
+"file.subtitle" = "链接或本地音视频，离线转文字";
 "file.selectFile" = "请选择文件";
 
 "file.action.transcribeAll" = "全部转录";
@@ -156,6 +156,15 @@
 "file.drop.prompt" = "拖入音频或视频文件";
 "file.drop.release" = "松开后加入队列";
 "file.drop.formats" = "支持批量选择 MP3、M4A、MP4、MOV、WAV、FLAC 等格式，全程本地处理。";
+
+"file.empty.fileTitle" = "本地文件";
+"file.empty.fileSubtitle" = "拖入或选择音视频文件";
+"file.empty.dropHere" = "把文件拖到这里";
+"file.empty.formatsShort" = "MP3 · M4A · MP4 · MOV · WAV · FLAC…";
+"file.empty.linkTitle" = "转视频链接";
+"file.empty.linkSubtitle" = "自动抓字幕，没有字幕再本地转写";
+"file.empty.or" = "或";
+"file.platform.bilibili" = "哔哩哔哩";
 
 "file.queue.title" = "队列";
 "file.queue.fileCount" = "%lld 个文件";
