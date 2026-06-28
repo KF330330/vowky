@@ -209,7 +209,10 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
 
         let platform = Self.platform(for: trimmed)
         let extras = extraArgs(for: platform)
-        let cookieArguments = cookieArgs(cookies)
+        // Cookie 只发给哔哩哔哩（它的 412 闸需要登录 cookie）。YouTube 带 cookie 会被迫走需要 JS runtime(nsig)
+        // 的格式解析，本机无 deno/node → 连「只取字幕」都报「Requested format is not available」而失败；
+        // DeepLearning/通用的公开内容也不需要 cookie。这样全局 cookie 设成浏览器后，转 YouTube 不再被搞坏。
+        let cookieArguments = platform == .bilibili ? cookieArgs(cookies) : []
 
         // 2) 字幕优先：先尝试直接拉平台字幕（快 + 质量高）。拿到就直接出文字，跳过下载 + ASR。
         var knownTitle: String?
