@@ -296,9 +296,12 @@ final class FileTranscriptionViewModel: ObservableObject {
         case .queued:
             return L("file.row.waiting")
         case .downloading:
-            // 真正下载阶段显示百分比，其余子阶段（准备工具/解析/提取）显示短词。
+            // 真正下载阶段显示百分比；拉字幕子阶段显示「获取字幕」；其余子阶段显示短词。
             if job.downloadPhase == .downloading, job.progress > 0 {
                 return "\(Int(clampedProgress(job.progress) * 100))%"
+            }
+            if job.downloadPhase == .fetchingSubtitles {
+                return L("file.phase.fetchingSubtitle")
             }
             return L("file.row.downloading")
         case .reading, .transcribing:
@@ -483,6 +486,14 @@ final class FileTranscriptionViewModel: ObservableObject {
         if shouldSelectFirstNewJob {
             selectedJobID = newJobs.first?.id
         }
+    }
+
+    /// 空状态「转录」按钮：抽取链接入队，并立即开始转写（无有效链接则只提示、不启动）。
+    func addURLsAndStart(rawText: String) {
+        let before = jobs.count
+        appendURLJobs(rawText: rawText)
+        guard jobs.count > before else { return }
+        startTranscription()
     }
 
     /// 解析空白/换行分隔的多条 http(s) 链接。
@@ -1281,7 +1292,7 @@ struct FileTranscriptionView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5))
                     .foregroundColor(FileTranscriptionTheme.textPrimary)
-                    .onSubmit { viewModel.appendURLJobs(rawText: viewModel.urlInputText) }
+                    .onSubmit { viewModel.addURLsAndStart(rawText: viewModel.urlInputText) }
             }
             .padding(.horizontal, 14)
             .frame(height: 48)
@@ -1299,9 +1310,9 @@ struct FileTranscriptionView: View {
             Spacer(minLength: 16)
 
             Button {
-                viewModel.appendURLJobs(rawText: viewModel.urlInputText)
+                viewModel.addURLsAndStart(rawText: viewModel.urlInputText)
             } label: {
-                Label(loc.string("file.url.add"), systemImage: "plus")
+                Label(loc.string("file.url.transcribe"), systemImage: "play.fill")
             }
             .buttonStyle(FilePrimaryButtonStyle())
             .disabled(viewModel.urlInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -1715,7 +1726,9 @@ struct FileTranscriptionView: View {
         case .cancelled:
             return viewModel.resultText.isEmpty ? loc.string("file.badge.noResult") : loc.string("file.badge.editableDraft")
         case .downloading:
-            return loc.string("file.badge.downloading")
+            return job.downloadPhase == .fetchingSubtitles
+                ? loc.string("file.phase.fetchingSubtitle")
+                : loc.string("file.badge.downloading")
         case .reading, .transcribing:
             return loc.string("file.badge.livePreview")
         case .failed:
@@ -1733,7 +1746,14 @@ struct FileTranscriptionView: View {
         case .queued:
             return loc.string("file.empty.queued")
         case .downloading:
-            return loc.string("file.empty.downloading")
+            // 按子阶段显示，避免「拉字幕」时误显示「正在下载视频」。
+            switch job.downloadPhase {
+            case .provisioningTools: return loc.string("file.status.provisioningTools")
+            case .resolving:         return loc.string("file.status.resolving")
+            case .fetchingSubtitles: return loc.string("file.status.fetchingSubtitles")
+            case .extractingAudio:   return loc.string("file.status.extractingAudio")
+            case .downloading, .none: return loc.string("file.empty.downloading")
+            }
         case .reading:
             return loc.string("file.empty.reading")
         case .transcribing:

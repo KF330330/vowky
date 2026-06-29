@@ -226,6 +226,7 @@
 /* 从链接转文字（YouTube / 哔哩哔哩 / DeepLearning.AI） */
 "file.url.placeholder" = "粘贴视频链接（YouTube、哔哩哔哩…）";
 "file.url.add" = "添加链接";
+"file.url.transcribe" = "转录";
 "file.url.help" = "粘贴 YouTube、哔哩哔哩或 DeepLearning.AI 链接即可下载并转写。需要联网。";
 "file.url.invalid" = "这不是有效的视频链接。";
 "file.drop.orPasteURL" = "或粘贴视频链接";
@@ -237,6 +238,7 @@
 "file.status.extractingAudio" = "正在提取音频…";
 "file.status.fetchingSubtitles" = "正在获取字幕…";
 "file.badge.downloading" = "下载中";
+"file.phase.fetchingSubtitle" = "获取字幕";
 "file.badge.fromSubtitle" = "字幕";
 "file.badge.fromAutoSubtitle" = "自动字幕";
 "file.badge.fromLocalASR" = "本地转写";

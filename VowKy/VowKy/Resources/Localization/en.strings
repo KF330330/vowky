@@ -226,6 +226,7 @@
 /* Transcribe from URL (YouTube / Bilibili / DeepLearning.AI) */
 "file.url.placeholder" = "Paste a video link (YouTube, Bilibili…)";
 "file.url.add" = "Add URL";
+"file.url.transcribe" = "Transcribe";
 "file.url.help" = "Paste a YouTube, Bilibili, or DeepLearning.AI link to download and transcribe it. Requires an internet connection.";
 "file.url.invalid" = "That doesn't look like a valid video link.";
 "file.drop.orPasteURL" = "or paste a video link";
@@ -237,6 +238,7 @@
 "file.status.extractingAudio" = "Extracting audio…";
 "file.status.fetchingSubtitles" = "Fetching subtitles…";
 "file.badge.downloading" = "Downloading";
+"file.phase.fetchingSubtitle" = "Fetching subtitles";
 "file.badge.fromSubtitle" = "Subtitle";
 "file.badge.fromAutoSubtitle" = "Auto captions";
 "file.badge.fromLocalASR" = "Local transcription";

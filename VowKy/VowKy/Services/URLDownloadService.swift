@@ -384,7 +384,11 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
             case .deeplearningAI:
                 return try await fetchDeepLearningSubtitle(
                     url: url, extras: extras, cookies: cookies, tools: tools, workDir: workDir)
-            case .youtube, .bilibili, .generic:
+            case .bilibili:
+                return try await fetchBilibiliSubtitle(
+                    url: url, extras: extras, cookies: cookies,
+                    priority: priority, tools: tools, workDir: workDir)
+            case .youtube, .generic:
                 return try await fetchYtDlpSubtitle(
                     platform: platform, url: url, extras: extras, cookies: cookies,
                     priority: priority, tools: tools, workDir: workDir)
@@ -422,16 +426,7 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         let language = (parts[1] == "NA" || parts[1].isEmpty) ? nil : parts[1]
         let origLang = language ?? Self.defaultLanguage(for: platform)
 
-        // 哔哩哔哩：轻量 `--print %(subtitles)j` / `-J` 都不填充 subtitles 字段（yt-dlp 只在
-        // `--list-subs`/`--write-subs` 时才去拉 B站字幕信息），必须用 list-subs 探测，
-        // 否则会漏掉 AI 字幕(ai-zh)误判为「无字幕」而回退下载音频。
-        if platform == .bilibili {
-            return try await bilibiliSubtitleOutcome(
-                url: url, title: title, prefer: origLang, priority: priority,
-                extras: extras, cookies: cookies, tools: tools, workDir: workDir)
-        }
-
-        // YouTube / 通用：metadata 探针里的 subtitles / automatic_captions 字段可靠。
+        // YouTube / 通用：metadata 探针里的 subtitles / automatic_captions 字段可靠（哔哩哔哩另走 fetchBilibiliSubtitle）。
         let manualKeys = parseSubDict(parts[2])
         let autoKeys = parseSubDict(parts[3])
 
@@ -455,41 +450,71 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         return .noSubtitle(title: title)
     }
 
-    /// 哔哩哔哩字幕：用 `--list-subs` 探测可用轨（B站 AI 字幕 ai-zh 在轻量探针下不暴露）。
-    /// 人工 CC 两模式都用、AI 字幕(ai-*)仅「优先所有」时用；抓取一律 --write-subs（B站字幕不在 auto-captions 里）。
-    private func bilibiliSubtitleOutcome(
-        url: String, title: String?, prefer: String, priority: SubtitlePriority,
-        extras: [String], cookies: [String], tools: ProvisionedTools, workDir: URL
+    /// 哔哩哔哩字幕（独立路径，**不经 `--print` 元数据探针**——那步对 B站 subtitles 恒为 NA、纯多余，
+    /// 且其 45s 超时会误判「无字幕」去下视频）。直接 `--list-subs` 探测可用轨，2 次 yt-dlp 调用即可。
+    /// 人工 CC 两模式都用(`manualSubtitle`)、AI 字幕(`ai-*`)仅「优先所有」时用(`autoSubtitle`)；抓取一律 `--write-subs`。
+    private func fetchBilibiliSubtitle(
+        url: String, extras: [String], cookies: [String],
+        priority: SubtitlePriority, tools: ProvisionedTools, workDir: URL
     ) async throws -> SubtitleOutcome {
+        // 无 cookie → `--list-subs` 直接 412 → 空 → .noSubtitle → 主流程回退音频，行为不变。
         let listed = (try? await listSubLangs(url: url, extras: extras, cookies: cookies, tools: tools))
             ?? (manual: Set<String>(), auto: Set<String>())
         let usable = listed.manual.union(listed.auto)
             .filter { $0 != "danmaku" && $0 != "live_chat" && !$0.isEmpty }
-        guard !usable.isEmpty else { return .noSubtitle(title: title) }
+        guard !usable.isEmpty else { return .noSubtitle(title: nil) }
 
+        let prefer = Self.defaultLanguage(for: .bilibili)   // "zh"
         let humanLangs = usable.filter { !$0.hasPrefix("ai-") }
         let aiLangs = usable.filter { $0.hasPrefix("ai-") }
 
-        // 人工 CC 字幕优先（两模式都用）。
-        if let lang = pickManualLang(humanLangs, prefer: prefer),
-           let text = try await fetchAndParseSub(
-            url: url, lang: lang, isAuto: false, platform: .bilibili,
-            extras: extras, cookies: cookies, tools: tools, workDir: workDir) {
-            return .transcript(text: text, source: .manualSubtitle(language: lang), title: title)
+        // 选轨：人工 CC 优先（两模式都用）；否则 AI 字幕（仅「优先所有」时用，优先原语言 ai-<lang>）。
+        var chosen: (lang: String, isAI: Bool)?
+        if let lang = pickManualLang(humanLangs, prefer: prefer) {
+            chosen = (lang, false)
+        } else if priority == .all,
+                  let lang = (aiLangs.contains("ai-\(prefer)") ? "ai-\(prefer)" : aiLangs.sorted().first) {
+            chosen = (lang, true)
         }
+        guard let chosen else { return .noSubtitle(title: nil) }
 
-        // AI 字幕：仅「优先所有字幕」时用（优先原语言 ai-<lang>，否则任意 ai- 轨）。
-        if priority == .all {
-            let aiLang = aiLangs.contains("ai-\(prefer)") ? "ai-\(prefer)" : aiLangs.sorted().first
-            if let lang = aiLang,
-               let text = try await fetchAndParseSub(
-                url: url, lang: lang, isAuto: false, platform: .bilibili,
-                extras: extras, cookies: cookies, tools: tools, workDir: workDir) {
-                return .transcript(text: text, source: .autoSubtitle(language: lang), title: title)
-            }
-        }
+        // 抓字幕 + 同步取标题（一次调用：`--write-subs ... --print %(title)s --no-simulate`）。
+        let (text, title) = try await fetchBilibiliSubText(
+            url: url, lang: chosen.lang, extras: extras, cookies: cookies, tools: tools, workDir: workDir)
+        guard let text, !text.isEmpty else { return .noSubtitle(title: title) }
+        let source: TranscriptSource = chosen.isAI
+            ? .autoSubtitle(language: chosen.lang)
+            : .manualSubtitle(language: chosen.lang)
+        return .transcript(text: text, source: source, title: title)
+    }
 
-        return .noSubtitle(title: title)
+    /// 抓 B站单条字幕轨为 vtt 并**同时**取标题。`--print` 默认隐含 `--simulate` 会不写字幕，故加 `--no-simulate`。
+    private func fetchBilibiliSubText(
+        url: String, lang: String, extras: [String], cookies: [String], tools: ProvisionedTools, workDir: URL
+    ) async throws -> (text: String?, title: String?) {
+        let outTemplate = workDir.appendingPathComponent("sub.%(ext)s").path
+        var args = [
+            "--skip-download", "--no-playlist", "--no-warnings",
+            "--write-subs", "--sub-langs", lang, "--sub-format", "vtt/best", "--convert-subs", "vtt",
+            "--print", "%(title)s", "--no-simulate",
+            "--ffmpeg-location", tools.binDir.path,
+            "-o", outTemplate
+        ]
+        args += extras
+        args += cookies
+        args.append(url)
+
+        let r = try await run(executable: tools.ytDlp, arguments: args)
+        try Task.checkCancellation()
+        let title = r.stdout
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last(where: { !$0.isEmpty && $0 != "NA" })
+        guard r.exit == 0, let vtt = locateSubtitleFile(in: workDir) else { return (nil, title) }
+        let raw = (try? String(contentsOf: vtt, encoding: .utf8)) ?? ""
+        try? FileManager.default.removeItem(at: vtt)
+        let text = SubtitleParser.plainText(from: raw, rolling: false)   // B站字幕是离散 cue，非滚动
+        return (text.isEmpty ? nil : text, title)
     }
 
     /// `--list-subs` 探测可用字幕语言（B站等平台的输出全在 stdout）。
