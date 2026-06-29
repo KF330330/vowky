@@ -25,7 +25,12 @@ final class FileTranscriptionWindowController {
             return
         }
 
-        let viewModel = FileTranscriptionViewModel(appState: appState)
+        let viewModel = FileTranscriptionViewModel(
+            appState: appState,
+            metadataRecorder: { text, meta in
+                HistoryStore.shared.insertWithMetadata(content: text, sourceType: meta.sourceType, metadata: meta)
+            }
+        )
         let view = FileTranscriptionView(viewModel: viewModel)
             .environmentObject(LocalizationManager.shared)
         let hostingController = NSHostingController(rootView: view)
@@ -143,6 +148,8 @@ final class FileTranscriptionViewModel: ObservableObject {
     private let subtitlePriorityProvider: () -> SubtitlePriority
     private let yieldToVoiceInput: () async -> Void
     private let resultRecorder: (String) -> Void
+    /// 带元数据写历史库的闭包。仅生产环境（窗口控制器）注入；测试不注入即为 nil，绝不触碰真实 DB。
+    private let metadataRecorder: ((String, TranscriptionMetadata) -> Void)?
     private var transcriptionTask: Task<Void, Never>?
     private var activeTargetJobIDs: Set<UUID>?
 
@@ -153,7 +160,8 @@ final class FileTranscriptionViewModel: ObservableObject {
         cookieSourceProvider: (() -> CookieSource)? = nil,
         subtitlePriorityProvider: (() -> SubtitlePriority)? = nil,
         yieldToVoiceInput: (() async -> Void)? = nil,
-        resultRecorder: ((String) -> Void)? = nil
+        resultRecorder: ((String) -> Void)? = nil,
+        metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil
     ) {
         self.appState = appState
         self.fileTranscriptionServiceFactory = fileTranscriptionServiceFactory ?? {
@@ -174,9 +182,28 @@ final class FileTranscriptionViewModel: ObservableObject {
             await appState?.waitWhileVoiceInputActive()
         }
         self.resultRecorder = resultRecorder ?? { text in
-            appState.recordRecognitionResult(text: text, sourceType: "file")
+            // 只更新菜单栏最近结果；历史库由 metadataRecorder 带元数据写入，避免重复插入。
+            appState.recordRecognitionResult(text: text, sourceType: "file", persistToHistory: false)
         }
+        self.metadataRecorder = metadataRecorder
         refreshInsertionTarget()
+    }
+
+    /// 为文件/链接转录结果构造历史元数据（标题=文件名/视频标题，路径=落盘的 .md）。
+    private static func makeFileMetadata(title: String, markdownURL: URL?) -> TranscriptionMetadata {
+        TranscriptionMetadata(
+            id: UUID(),
+            title: title,
+            summary: "",
+            audioPath: nil,
+            markdownPath: markdownURL?.path ?? "",
+            generatedAt: Date(),
+            durationSeconds: nil,
+            provider: "local",
+            sourceType: "file",
+            aiEnhancementSucceeded: false,
+            warnings: []
+        )
     }
 
     var isRunning: Bool {
@@ -607,6 +634,7 @@ final class FileTranscriptionViewModel: ObservableObject {
                             } catch {
                                 print("[VowKy][FileTranscription] 字幕落盘失败: \(error.localizedDescription)")
                             }
+                            metadataRecorder?(text, Self.makeFileMetadata(title: displayTitle, markdownURL: mdURL))
                             cleanupWorkDir(for: jobID)
                             continue   // 跳过 reading/transcribing
                         }
@@ -663,6 +691,8 @@ final class FileTranscriptionViewModel: ObservableObject {
                     } catch {
                         print("[VowKy][FileTranscription] 自动落盘失败: \(error.localizedDescription)")
                     }
+                    let fileTitle = jobs.first(where: { $0.id == jobID })?.fileName ?? mdURL.deletingPathExtension().lastPathComponent
+                    metadataRecorder?(finalText, Self.makeFileMetadata(title: fileTitle, markdownURL: mdURL))
                     cleanupWorkDir(for: jobID)   // 转写完即删临时媒体
                 } catch is CancellationError {
                     cleanupWorkDir(for: jobID)
@@ -1160,6 +1190,14 @@ struct FileTranscriptionView: View {
                 .keyboardShortcut(.return, modifiers: [])
                 .help(loc.string("file.help.transcribeAll"))
             }
+
+            Button {
+                TranscriptionHistoryWindowController.shared.showWindow(filter: .file)
+            } label: {
+                Label(loc.string("file.action.history"), systemImage: "clock.arrow.circlepath")
+            }
+            .buttonStyle(FileSecondaryButtonStyle())
+            .help(loc.string("file.action.history"))
 
             Button {
                 viewModel.chooseFile()

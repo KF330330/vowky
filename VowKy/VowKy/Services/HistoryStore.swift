@@ -130,19 +130,26 @@ final class HistoryStore {
 
     // MARK: - Fetch
 
-    func fetchAll(query: String? = nil, limit: Int = 500) -> [HistoryRecord] {
+    func fetchAll(query: String? = nil, limit: Int = 500, sourceTypes: [String]? = nil) -> [HistoryRecord] {
         guard let db = db else { return [] }
 
         var records: [HistoryRecord] = []
         var stmt: OpaquePointer?
 
         let baseColumns = "id, content, source_type, created_at, title, summary, audio_path, markdown_path, ai_provider"
-        let sql: String
-        if let query = query, !query.isEmpty {
-            sql = "SELECT \(baseColumns) FROM input_history WHERE content LIKE ? OR title LIKE ? OR summary LIKE ? ORDER BY created_at DESC LIMIT ?;"
-        } else {
-            sql = "SELECT \(baseColumns) FROM input_history ORDER BY created_at DESC LIMIT ?;"
+        let hasQuery = (query?.isEmpty == false)
+        let filterTypes = (sourceTypes?.isEmpty == false) ? sourceTypes : nil
+
+        var clauses: [String] = []
+        if hasQuery {
+            clauses.append("(content LIKE ? OR title LIKE ? OR summary LIKE ?)")
         }
+        if let filterTypes = filterTypes {
+            let placeholders = Array(repeating: "?", count: filterTypes.count).joined(separator: ", ")
+            clauses.append("source_type IN (\(placeholders))")
+        }
+        let whereClause = clauses.isEmpty ? "" : " WHERE " + clauses.joined(separator: " AND ")
+        let sql = "SELECT \(baseColumns) FROM input_history\(whereClause) ORDER BY created_at DESC LIMIT ?;"
 
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(stmt) }
@@ -150,12 +157,18 @@ final class HistoryStore {
         let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
         var paramIdx: Int32 = 1
-        if let query = query, !query.isEmpty {
+        if hasQuery, let query = query {
             let pattern = "%\(query)%"
             sqlite3_bind_text(stmt, paramIdx, pattern, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, paramIdx + 1, pattern, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, paramIdx + 2, pattern, -1, SQLITE_TRANSIENT)
             paramIdx += 3
+        }
+        if let filterTypes = filterTypes {
+            for sourceType in filterTypes {
+                sqlite3_bind_text(stmt, paramIdx, sourceType, -1, SQLITE_TRANSIENT)
+                paramIdx += 1
+            }
         }
         sqlite3_bind_int(stmt, paramIdx, Int32(limit))
 
@@ -231,13 +244,30 @@ final class HistoryStore {
 
     // MARK: - Count
 
-    func count() -> Int {
+    func count(sourceTypes: [String]? = nil) -> Int {
         guard let db = db else { return 0 }
 
+        let filterTypes = (sourceTypes?.isEmpty == false) ? sourceTypes : nil
         var stmt: OpaquePointer?
-        let sql = "SELECT COUNT(*) FROM input_history;"
+        let whereClause: String
+        if let filterTypes = filterTypes {
+            let placeholders = Array(repeating: "?", count: filterTypes.count).joined(separator: ", ")
+            whereClause = " WHERE source_type IN (\(placeholders))"
+        } else {
+            whereClause = ""
+        }
+        let sql = "SELECT COUNT(*) FROM input_history\(whereClause);"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
         defer { sqlite3_finalize(stmt) }
+
+        if let filterTypes = filterTypes {
+            let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            var paramIdx: Int32 = 1
+            for sourceType in filterTypes {
+                sqlite3_bind_text(stmt, paramIdx, sourceType, -1, SQLITE_TRANSIENT)
+                paramIdx += 1
+            }
+        }
 
         if sqlite3_step(stmt) == SQLITE_ROW {
             return Int(sqlite3_column_int(stmt, 0))

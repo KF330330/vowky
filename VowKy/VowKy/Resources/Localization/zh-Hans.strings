@@ -393,6 +393,22 @@
 "history.date.today" = "今天 %@";
 "history.date.yesterday" = "昨天 %@";
 
+/* Transcription / Recording History */
+"file.action.history" = "历史";
+"recording.action.history" = "历史";
+"transcriptionHistory.file.windowTitle" = "转录历史";
+"transcriptionHistory.recording.windowTitle" = "录音历史";
+"transcriptionHistory.type.file" = "文件转录";
+"transcriptionHistory.type.recording" = "录音";
+"transcriptionHistory.search.placeholder" = "搜索...";
+"transcriptionHistory.empty.title" = "还没有记录";
+"transcriptionHistory.empty.noResults" = "未找到相关记录";
+"transcriptionHistory.empty.hint" = "你转录的文件和录音都会显示在这里";
+"transcriptionHistory.count" = "共 %lld 条";
+"transcriptionHistory.action.open" = "打开转录稿";
+"transcriptionHistory.action.reveal" = "在访达中显示";
+"transcriptionHistory.untitled" = "未命名";
+
 /* Update Available popup */
 "window.update.title" = "VowKy 更新";
 "update.available.heading" = "VowKy %@ 可更新";

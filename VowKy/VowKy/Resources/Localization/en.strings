@@ -393,6 +393,22 @@
 "history.date.today" = "Today %@";
 "history.date.yesterday" = "Yesterday %@";
 
+/* Transcription / Recording History */
+"file.action.history" = "History";
+"recording.action.history" = "History";
+"transcriptionHistory.file.windowTitle" = "Transcription History";
+"transcriptionHistory.recording.windowTitle" = "Recording History";
+"transcriptionHistory.type.file" = "File";
+"transcriptionHistory.type.recording" = "Recording";
+"transcriptionHistory.search.placeholder" = "Search...";
+"transcriptionHistory.empty.title" = "No records yet";
+"transcriptionHistory.empty.noResults" = "No matching records found";
+"transcriptionHistory.empty.hint" = "Transcripts and recordings you make will show up here";
+"transcriptionHistory.count" = "%lld records";
+"transcriptionHistory.action.open" = "Open transcript";
+"transcriptionHistory.action.reveal" = "Show in Finder";
+"transcriptionHistory.untitled" = "Untitled";
+
 /* Update Available popup */
 "window.update.title" = "VowKy Update";
 "update.available.heading" = "VowKy %@ is available";

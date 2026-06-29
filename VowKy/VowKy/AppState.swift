@@ -166,6 +166,24 @@ final class AppState: ObservableObject {
                 FileTranscriptionWindowController.shared.activeViewModel?.startTranscription()
             }
         }
+
+        // 转录/录音历史窗：直接打开，供脚本化截图验证「历史」窗口 UI。
+        center.addObserver(
+            forName: Notification.Name("com.vowky.debug.transcriptionHistory.showFile"),
+            object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                TranscriptionHistoryWindowController.shared.showWindow(filter: .file)
+            }
+        }
+        center.addObserver(
+            forName: Notification.Name("com.vowky.debug.transcriptionHistory.showRecording"),
+            object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                TranscriptionHistoryWindowController.shared.showWindow(filter: .recording)
+            }
+        }
     }
     #endif
 
@@ -382,17 +400,21 @@ final class AppState: ObservableObject {
 
     // MARK: - Recent Results
 
-    func recordRecognitionResult(text: String, sourceType: String = "voice") {
+    func recordRecognitionResult(text: String, sourceType: String = "voice", persistToHistory: Bool = true) {
         lastResult = text
-        addToRecentResults(text, sourceType: sourceType)
+        addToRecentResults(text, sourceType: sourceType, persistToHistory: persistToHistory)
     }
 
-    private func addToRecentResults(_ text: String, sourceType: String) {
+    private func addToRecentResults(_ text: String, sourceType: String, persistToHistory: Bool = true) {
         recentResults.insert(text, at: 0)
         if recentResults.count > 3 {
             recentResults.removeLast()
         }
-        HistoryStore.shared.insert(content: text, sourceType: sourceType)
+        // 文件转录 / 录音走 metadataRecorder 写库（带标题与文件路径），此处只更新菜单栏最近结果，
+        // 避免与之重复插入一条无元数据的历史。语音听写仍走默认 true，行为不变。
+        if persistToHistory {
+            HistoryStore.shared.insert(content: text, sourceType: sourceType)
+        }
     }
 
     // MARK: - File Transcription

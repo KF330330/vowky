@@ -24,7 +24,12 @@ final class RecordingTranscriptionWindowController {
             return
         }
 
-        let viewModel = RecordingTranscriptionViewModel(appState: appState)
+        let viewModel = RecordingTranscriptionViewModel(
+            appState: appState,
+            metadataRecorder: { text, meta in
+                HistoryStore.shared.insertWithMetadata(content: text, sourceType: meta.sourceType, metadata: meta)
+            }
+        )
         let view = RecordingTranscriptionView(viewModel: viewModel)
             .environmentObject(LocalizationManager.shared)
         let hostingController = NSHostingController(rootView: view)
@@ -150,6 +155,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private let finalRecognizer: SpeechRecognizerProtocol
     private let outputStore: RecordingTranscriptionOutputStore
     private let resultRecorder: (String) -> Void
+    /// 带元数据写历史库的闭包。仅生产环境（窗口控制器）注入；测试不注入即为 nil，绝不触碰真实 DB。
+    private let metadataRecorder: ((String, TranscriptionMetadata) -> Void)?
 
     private var activePreparedOutput: PreparedRecordingTranscriptionOutput?
     private var sampleContinuation: AsyncStream<[Float]>.Continuation?
@@ -166,15 +173,35 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         audioRecorder: AudioRecorderProtocol? = nil,
         finalRecognizer: SpeechRecognizerProtocol? = nil,
         outputStore: RecordingTranscriptionOutputStore = RecordingTranscriptionOutputStore(),
-        resultRecorder: ((String) -> Void)? = nil
+        resultRecorder: ((String) -> Void)? = nil,
+        metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil
     ) {
         self.appState = appState
         self.audioRecorder = audioRecorder ?? appState.audioRecorder
         self.finalRecognizer = finalRecognizer ?? appState.finalSpeechRecognizerForRecordingTranscription()
         self.outputStore = outputStore
         self.resultRecorder = resultRecorder ?? { text in
-            appState.recordRecognitionResult(text: text, sourceType: "recording")
+            // 只更新菜单栏最近结果；历史库由 metadataRecorder 带元数据写入，避免重复插入。
+            appState.recordRecognitionResult(text: text, sourceType: "recording", persistToHistory: false)
         }
+        self.metadataRecorder = metadataRecorder
+    }
+
+    /// 为录音转录结果构造历史元数据（标题=录音文件名，路径=落盘的 .md 与 .wav）。
+    private static func makeRecordingMetadata(audioURL: URL, markdownURL: URL, duration: TimeInterval) -> TranscriptionMetadata {
+        TranscriptionMetadata(
+            id: UUID(),
+            title: audioURL.deletingPathExtension().lastPathComponent,
+            summary: "",
+            audioPath: audioURL.path,
+            markdownPath: markdownURL.path,
+            generatedAt: Date(),
+            durationSeconds: duration,
+            provider: "local",
+            sourceType: "recording",
+            aiEnhancementSucceeded: false,
+            warnings: []
+        )
     }
 
     var canStart: Bool {
@@ -619,6 +646,14 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             )
             if !finalText.isEmpty {
                 resultRecorder(finalText)
+                metadataRecorder?(
+                    finalText,
+                    Self.makeRecordingMetadata(
+                        audioURL: preparedOutput.audioURL,
+                        markdownURL: preparedOutput.textURL,
+                        duration: duration
+                    )
+                )
             }
 
             state = .completed
@@ -977,6 +1012,14 @@ struct RecordingTranscriptionView: View {
             }
 
             Spacer()
+
+            Button {
+                TranscriptionHistoryWindowController.shared.showWindow(filter: .recording)
+            } label: {
+                Label(loc.string("recording.action.history"), systemImage: "clock.arrow.circlepath")
+            }
+            .buttonStyle(RecordingGhostButtonStyle())
+            .help(loc.string("recording.action.history"))
 
             statusPill
         }

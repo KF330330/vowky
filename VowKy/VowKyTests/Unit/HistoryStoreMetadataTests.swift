@@ -138,4 +138,31 @@ final class HistoryStoreMetadataTests: XCTestCase {
         let byContent = store.fetchAll(query: "原文")
         XCTAssertEqual(byContent.count, 2)
     }
+
+    // MARK: - 按 source_type 过滤（转录历史 / 录音历史 各看自己）
+
+    func testFetchAndCountFilterBySourceType() {
+        store.insert(content: "随手听写", sourceType: "voice")
+        store.insertWithMetadata(content: "文件转录 1", sourceType: "file", metadata: makeMetadata(title: "会议.mp4"))
+        store.insertWithMetadata(content: "文件转录 2", sourceType: "file", metadata: makeMetadata(title: "video"))
+        store.insertWithMetadata(content: "录音 1", sourceType: "recording", metadata: makeMetadata(title: "Recording A"))
+
+        let fileOnly = store.fetchAll(sourceTypes: ["file"])
+        XCTAssertEqual(fileOnly.count, 2)
+        XCTAssertTrue(fileOnly.allSatisfy { $0.sourceType == "file" })
+        XCTAssertEqual(store.count(sourceTypes: ["file"]), 2)
+
+        let recordingOnly = store.fetchAll(sourceTypes: ["recording"])
+        XCTAssertEqual(recordingOnly.count, 1)
+        XCTAssertEqual(recordingOnly[0].content, "录音 1")
+        XCTAssertEqual(store.count(sourceTypes: ["recording"]), 1)
+
+        // 过滤可与搜索词组合：file 类型里搜“转录”命中 2 条，搜“随手”不命中（被类型挡掉）。
+        XCTAssertEqual(store.fetchAll(query: "转录", sourceTypes: ["file"]).count, 2)
+        XCTAssertEqual(store.fetchAll(query: "随手", sourceTypes: ["file"]).count, 0)
+
+        // 不传过滤＝旧行为，全部 4 条都在。
+        XCTAssertEqual(store.fetchAll().count, 4)
+        XCTAssertEqual(store.count(), 4)
+    }
 }
