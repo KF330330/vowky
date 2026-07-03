@@ -1,6 +1,6 @@
 import Foundation
 
-/// helper 就绪标志(speech / punct),供代理类同步读取(协议的 isReady 是同步的)。
+/// helper 就绪标志(speech),供代理类同步读取(协议的 isReady 是同步的)。
 /// 用锁保护,可跨线程安全读写。
 final class HelperReadyState: @unchecked Sendable {
     private let lock = NSLock()
@@ -61,12 +61,6 @@ final class HelperTransport: @unchecked Sendable {
                 cont.resume(returning: self.performLocked(payload, timeout: timeout))
             }
         }
-    }
-
-    /// 同步请求(标点走这条:协议方法是同步的)。阻塞调用线程等待往返,
-    /// 时长与改造前在进程内跑 CT-Transformer 相当。失败返回 nil。
-    func requestSync(_ payload: Data, timeout: TimeInterval) -> Data? {
-        queue.sync { performLocked(payload, timeout: timeout) }
     }
 
     /// 关闭 helper(app 退出 / Sparkle 安装前):关 stdin → helper 收 EOF 退出;兜底 terminate。

@@ -85,6 +85,20 @@ final class OpenAICompatibleTranslationProviderTests: XCTestCase {
         }
     }
 
+    func test03b_httpError_withServerMessage_mapped() async {
+        StubURLProtocol.handler = { _ in
+            (402, Data(#"{"error":{"message":"Insufficient Balance"}}"#.utf8))
+        }
+        do {
+            _ = try await makeProvider().translate("Hello", to: .zhHans)
+            XCTFail("应抛出错误")
+        } catch let error as TranslationError {
+            XCTAssertEqual(error, .underlying("HTTP 402: Insufficient Balance"))
+        } catch {
+            XCTFail("错误类型不符：\(error)")
+        }
+    }
+
     func test04_emptyContent_throwsEmptyResult() async {
         StubURLProtocol.handler = { _ in
             (200, Data(#"{"choices":[{"message":{"content":"  "}}]}"#.utf8))

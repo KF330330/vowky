@@ -166,7 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Launch Diagnostics
 
-    /// 记录启动时的关键环境信息，用于诊断 Sparkle 更新后 TCC 权限失效问题
+    /// 记录启动时的关键环境信息，用于诊断 Sparkle 更新后 TCC 权限失效问题。
+    /// xattr/codesign 子进程调用放后台执行，不阻塞启动主线程（仅日志用途）。
     private func logLaunchDiagnostics() {
         let bundle = Bundle.main
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -175,54 +176,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrusted()
         let lastVersion = UserDefaults.standard.string(forKey: "diag_lastVersion") ?? "(none)"
 
-        // 检测 quarantine xattr
-        let hasQuarantine: Bool = {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-            process.arguments = ["-p", "com.apple.quarantine", bundlePath]
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            do {
-                try process.run()
-                process.waitUntilExit()
-                return process.terminationStatus == 0
-            } catch {
-                return false
-            }
-        }()
-
-        // 检测 App Translocation
-        let isTranslocated = bundlePath.contains("/AppTranslocation/")
-
-        // 获取代码签名身份
-        let signingInfo: String = {
-            let process = Process()
-            let pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-            process.arguments = ["-d", "--verbose=1", bundlePath]
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = pipe
-            do {
-                try process.run()
-                process.waitUntilExit()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
-            } catch {
-                return "codesign failed: \(error.localizedDescription)"
-            }
-        }()
-
-        CrashLogger.log("[Diag] === Launch Diagnostics ===")
-        CrashLogger.log("[Diag] Version: \(version) (\(build)), lastVersion: \(lastVersion)")
-        CrashLogger.log("[Diag] Path: \(bundlePath)")
-        CrashLogger.log("[Diag] AXIsProcessTrusted: \(trusted)")
-        CrashLogger.log("[Diag] Quarantine: \(hasQuarantine)")
-        CrashLogger.log("[Diag] Translocated: \(isTranslocated)")
-        CrashLogger.log("[Diag] Signing: \(signingInfo)")
-        CrashLogger.log("[Diag] ===========================")
-
-        // 更新记录的版本
+        // 更新记录的版本（主线程立即写，与后台日志无依赖）
         UserDefaults.standard.set(version, forKey: "diag_lastVersion")
+
+        Task.detached(priority: .utility) {
+            // 检测 quarantine xattr
+            let hasQuarantine: Bool = {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+                process.arguments = ["-p", "com.apple.quarantine", bundlePath]
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    return process.terminationStatus == 0
+                } catch {
+                    return false
+                }
+            }()
+
+            // 检测 App Translocation
+            let isTranslocated = bundlePath.contains("/AppTranslocation/")
+
+            // 获取代码签名身份
+            let signingInfo: String = {
+                let process = Process()
+                let pipe = Pipe()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+                process.arguments = ["-d", "--verbose=1", bundlePath]
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = pipe
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
+                } catch {
+                    return "codesign failed: \(error.localizedDescription)"
+                }
+            }()
+
+            CrashLogger.log("[Diag] === Launch Diagnostics ===")
+            CrashLogger.log("[Diag] Version: \(version) (\(build)), lastVersion: \(lastVersion)")
+            CrashLogger.log("[Diag] Path: \(bundlePath)")
+            CrashLogger.log("[Diag] AXIsProcessTrusted: \(trusted)")
+            CrashLogger.log("[Diag] Quarantine: \(hasQuarantine)")
+            CrashLogger.log("[Diag] Translocated: \(isTranslocated)")
+            CrashLogger.log("[Diag] Signing: \(signingInfo)")
+            CrashLogger.log("[Diag] ===========================")
+        }
     }
 
     // MARK: - Accessibility Permission

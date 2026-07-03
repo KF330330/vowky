@@ -26,9 +26,9 @@ struct HotkeyEvaluator {
         keyCode: Int64,
         modifiers: HotkeyModifiers,
         isRepeat: Bool,
-        isKeyUp: Bool
+        isKeyUp: Bool,
+        config: HotkeyConfig = HotkeyConfig.current
     ) -> HotkeyAction {
-        let config = HotkeyConfig.current
         let isTargetKey = keyCode == config.keyCode
         let modifiersMatch = modifiers.option == config.needsOption
             && modifiers.command == config.needsCommand
@@ -64,6 +64,8 @@ final class HotkeyManager {
     private var eventTapPort: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var tapHolder: UnsafeMutablePointer<CFMachPort?>?
+    /// tapCreate userInfo 指向的上下文；stop() 必须释放，否则每次 stop→start 泄漏一份
+    private var tapContext: UnsafeMutablePointer<HotkeyTapContext>?
 
     /// Called on main thread when hotkey is pressed (toggle mode: keyDown only)
     var onHotkeyPressed: (() -> Void)?
@@ -132,6 +134,7 @@ final class HotkeyManager {
 
         holder.pointee = tap
         self.tapHolder = holder
+        self.tapContext = context
         self.eventTapPort = tap
 
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
@@ -145,15 +148,20 @@ final class HotkeyManager {
     }
 
     /// Stop listening for the global hotkey.
+    /// tap 回调与 stop() 都在主 runloop 上执行，移除 source 后不会再有回调，
+    /// 此时释放 context/holder 无并发风险。
     func stop() {
         if let tap = eventTapPort {
             CGEvent.tapEnable(tap: tap, enable: false)
             if let source = runLoopSource {
                 CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
             }
-            // CFMachPort is managed by the RunLoop; invalidating it cleans up
+            CFMachPortInvalidate(tap)
         }
 
+        tapContext?.deinitialize(count: 1)
+        tapContext?.deallocate()
+        tapContext = nil
         tapHolder?.deinitialize(count: 1)
         tapHolder?.deallocate()
         tapHolder = nil
@@ -203,7 +211,7 @@ private func hotkeyTapCallback(
         return handleModifierOnlyMode(type: type, event: event, config: config, manager: manager)
     } else {
         // ===== 原有组合键模式 =====
-        return handleComboKeyMode(type: type, event: event, manager: manager)
+        return handleComboKeyMode(type: type, event: event, config: config, manager: manager)
     }
 }
 
@@ -315,6 +323,7 @@ private func handleModifierOnlyMode(
 private func handleComboKeyMode(
     type: CGEventType,
     event: CGEvent,
+    config: HotkeyConfig,
     manager: HotkeyManager
 ) -> Unmanaged<CGEvent>? {
 
@@ -326,7 +335,6 @@ private func handleComboKeyMode(
     let flags = event.flags
     let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
     let isKeyUp = (type == .keyUp)
-    let config = HotkeyConfig.current
 
     // 长按模式：松手时只匹配 keyCode，不匹配修饰键
     // （解决 ⌘\ 先松 ⌘ 再松 \ 时修饰符不匹配的问题）
@@ -356,7 +364,8 @@ private func handleComboKeyMode(
         keyCode: keyCode,
         modifiers: modifiers,
         isRepeat: isRepeat,
-        isKeyUp: isKeyUp
+        isKeyUp: isKeyUp,
+        config: config
     )
 
     switch action {

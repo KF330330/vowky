@@ -7,11 +7,19 @@ final class AudioRecorder: AudioRecorderProtocol {
     private var converter: AVAudioConverter?
     private var recordedSamples: [Float] = []
     private let lock = NSLock()
+    /// tap 回调只做 downmix/重采样后立刻把样本切到这条串行队列；
+    /// 聚合、备份写盘、下游回调都不在 AVAudioEngine 实时线程上跑，且 FIFO 保序。
+    private let processingQueue = DispatchQueue(label: "com.vowky.audio.processing")
 
     /// Optional backup service for content protection
     var backupService: AudioBackupProtocol?
 
-    private(set) var audioLevel: Float = 0
+    private var _audioLevel: Float = 0
+    /// 跨线程读安全（processingQueue 写 / 主线程 UI 轮询读）
+    var audioLevel: Float {
+        lock.lock(); defer { lock.unlock() }
+        return _audioLevel
+    }
     var onSamplesCaptured: (([Float]) -> Void)?
 
     private let targetSampleRate: Double = 16000
@@ -68,6 +76,7 @@ final class AudioRecorder: AudioRecorderProtocol {
 
         lock.lock()
         recordedSamples = []
+        _audioLevel = 0
         lock.unlock()
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
@@ -95,15 +104,24 @@ final class AudioRecorder: AudioRecorderProtocol {
         self.engine = nil
         self.converter = nil
 
+        // 排空处理队列：确保所有已捕获的 buffer 都完成聚合与备份写盘，避免截尾
+        processingQueue.sync {}
+
         lock.lock()
         let samples = recordedSamples
         recordedSamples = []
+        _audioLevel = 0
         lock.unlock()
 
-        audioLevel = 0
-        // 统计音频采样信息，帮助诊断是否录到有效音频
-        let maxVal = samples.map { abs($0) }.max() ?? 0
-        let avgVal = samples.isEmpty ? 0 : samples.map { abs($0) }.reduce(0, +) / Float(samples.count)
+        // 统计音频采样信息，帮助诊断是否录到有效音频（单次遍历，不建中间数组）
+        var maxVal: Float = 0
+        var sumVal: Float = 0
+        for s in samples {
+            let a = abs(s)
+            if a > maxVal { maxVal = a }
+            sumVal += a
+        }
+        let avgVal = samples.isEmpty ? 0 : sumVal / Float(samples.count)
         let duration = Double(samples.count) / targetSampleRate
         NSLog("[VowKy][Audio] Returning \(samples.count) samples (duration=\(String(format: "%.1f", duration))s, maxAmp=\(String(format: "%.4f", maxVal)), avgAmp=\(String(format: "%.6f", avgVal)))")
         CrashLogger.log("[Audio] samples=\(samples.count) duration=\(String(format: "%.1f", duration))s maxAmp=\(String(format: "%.4f", maxVal)) avgAmp=\(String(format: "%.6f", avgVal))")
@@ -176,18 +194,20 @@ final class AudioRecorder: AudioRecorderProtocol {
             count: Int(outputBuffer.frameLength)
         ))
 
-        // Compute RMS audio level
-        let rms = computeRMS(samples)
+        // 实时 tap 线程到此为止：加锁、数组扩容、磁盘写全部转移到串行队列
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let rms = self.computeRMS(samples)
 
-        lock.lock()
-        recordedSamples.append(contentsOf: samples)
-        lock.unlock()
+            self.lock.lock()
+            self.recordedSamples.append(contentsOf: samples)
+            self._audioLevel = rms
+            self.lock.unlock()
 
-        // Write to backup file for content protection
-        backupService?.appendSamples(samples)
-        onSamplesCaptured?(samples)
-
-        audioLevel = rms
+            // Write to backup file for content protection
+            self.backupService?.appendSamples(samples)
+            self.onSamplesCaptured?(samples)
+        }
     }
 
     private func computeRMS(_ samples: [Float]) -> Float {

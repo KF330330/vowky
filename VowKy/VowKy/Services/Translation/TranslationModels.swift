@@ -158,7 +158,7 @@ enum TranslationConfigStore {
             target: target,
             llmBaseURL: defaults.string(forKey: Keys.llmBaseURL) ?? "",
             llmModel: defaults.string(forKey: Keys.llmModel) ?? "",
-            llmAPIKey: defaults.string(forKey: Keys.llmAPIKey) ?? ""
+            llmAPIKey: loadAPIKey(defaults: defaults)
         )
     }
 
@@ -168,6 +168,21 @@ enum TranslationConfigStore {
         defaults.set(config.target.bcp47, forKey: Keys.targetLanguage)
         defaults.set(config.llmBaseURL, forKey: Keys.llmBaseURL)
         defaults.set(config.llmModel, forKey: Keys.llmModel)
-        defaults.set(config.llmAPIKey, forKey: Keys.llmAPIKey)
+        // API Key 只进 Keychain，不落 UserDefaults（plist 任何本地进程可读）
+        KeychainStore.set(config.llmAPIKey, forKey: Keys.llmAPIKey)
+        defaults.removeObject(forKey: Keys.llmAPIKey)
+    }
+
+    /// 读 Keychain；老版本存在 UserDefaults 里的明文 key 首次读取时自动迁移并抹除。
+    private static func loadAPIKey(defaults: UserDefaults) -> String {
+        if let key = KeychainStore.string(forKey: Keys.llmAPIKey) {
+            return key
+        }
+        if let legacy = defaults.string(forKey: Keys.llmAPIKey), !legacy.isEmpty {
+            KeychainStore.set(legacy, forKey: Keys.llmAPIKey)
+            defaults.removeObject(forKey: Keys.llmAPIKey)
+            return legacy
+        }
+        return ""
     }
 }

@@ -69,6 +69,12 @@ final class OpenAICompatibleTranslationProvider: TranslationProviding {
         }
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            // 带上服务端 error.message（如「余额不足」「模型不存在」），比裸状态码好排障
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let err = json["error"] as? [String: Any],
+               let message = err["message"] as? String, !message.isEmpty {
+                throw TranslationError.underlying("HTTP \(http.statusCode): \(message)")
+            }
             throw TranslationError.http(http.statusCode)
         }
 

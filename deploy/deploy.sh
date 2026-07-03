@@ -54,14 +54,6 @@ rm -rf "${SITE_STAGING}"
 cp -R "${WEBSITE_DIR}" "${SITE_STAGING}"
 # 下载链接已改为指向 GitHub Releases，无需替换文件名
 
-# 注入 Umami website-id（从 config.local.sh 读取）
-if [ -n "${UMAMI_WEBSITE_ID:-}" ]; then
-    sed -i '' "s|YOUR_WEBSITE_ID|${UMAMI_WEBSITE_ID}|g" "${SITE_STAGING}/index.html"
-    log_ok "Umami website-id 已注入"
-else
-    log_warn "UMAMI_WEBSITE_ID 未设置，跳过注入"
-fi
-
 # --exclude appcast.xml：appcast 不属于网站源（在 step 5 单独上传）。
 # 若被 --delete 误删，而后续步骤（如 GitHub 上传）中断没走到 step 5，
 # 服务器 appcast 就会缺失 → 线上 /appcast.xml 404 → 所有用户自动更新全挂。
@@ -305,14 +297,15 @@ upload_dmg_to_github() {
         gh_delete_asset "VowKy.dmg"
         # 同时上传带版本号 + 不带版本号两个名字（后者支撑 /releases/latest/download/VowKy.dmg）。
         # 远端 'REMOTE_UPLOAD'（单引号）heredoc：所有 ${..} 在远端展开，避免本机/远端引号混淆。
+        # token 不进 argv/环境注入（远端 ps 不可见）：curl 用 -H @file 从 0600 头文件读。
         if ssh "${SERVER}" \
-            "GH_TOKEN_VAL='${GH_TOKEN_VAL}' GH_REPO='${GH_REPO}' RELEASE_ID='${RELEASE_ID}' DMG_NAME='${DMG_NAME}' WEB_ROOT='${WEB_ROOT}' bash -s" <<'REMOTE_UPLOAD'
+            "GH_REPO='${GH_REPO}' RELEASE_ID='${RELEASE_ID}' DMG_NAME='${DMG_NAME}' WEB_ROOT='${WEB_ROOT}' bash -s" <<'REMOTE_UPLOAD'
 set -e
 cd "${WEB_ROOT}/downloads"
 for upload_name in "${DMG_NAME}" "VowKy.dmg"; do
     curl -fsS --connect-timeout 30 --max-time 1800 --retry 3 --retry-delay 10 \
         -X POST \
-        -H "Authorization: token ${GH_TOKEN_VAL}" \
+        -H @"${HOME}/.vowky_gh_header" \
         -H "Content-Type: application/octet-stream" \
         -T "${DMG_NAME}" \
         "https://uploads.github.com/repos/${GH_REPO}/releases/${RELEASE_ID}/assets?name=${upload_name}" >/dev/null
@@ -329,8 +322,12 @@ REMOTE_UPLOAD
 }
 
 log_info "经服务器中转上传 DMG 到 GitHub Release..."
-GH_TOKEN_VAL="$(gh auth token)"
-upload_dmg_to_github
+# token 经 stdin 写入服务器 0600 头文件，全程不出现在本机/远端任何进程的 argv 或环境里（ps 不可见）
+gh auth token | ssh "${SERVER}" 'umask 077 && { printf "Authorization: token "; cat; } > "$HOME/.vowky_gh_header"'
+GH_UPLOAD_RC=0
+upload_dmg_to_github || GH_UPLOAD_RC=$?
+ssh "${SERVER}" 'rm -f "$HOME/.vowky_gh_header"' || true
+[ "${GH_UPLOAD_RC}" -eq 0 ] || exit "${GH_UPLOAD_RC}"
 
 # 确保该版本为 latest（两个 tag 指向同一 commit 时 GitHub 的 latest 判定会有歧义）
 gh release edit "v${VERSION}" --latest >/dev/null

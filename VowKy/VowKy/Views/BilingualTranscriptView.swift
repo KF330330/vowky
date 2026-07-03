@@ -25,7 +25,7 @@ struct BilingualTranscriptView: View {
         if coordinator.paragraphs.isEmpty {
             Text(emptyText)
                 .font(.system(size: 14))
-                .foregroundColor(RecordingTheme.textMuted)
+                .foregroundColor(TranscriptionTheme.textMuted)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 13)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -131,7 +131,7 @@ private struct JumpToBottomButton: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundColor(.white)
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(RecordingTheme.accentMain))
+                .background(Circle().fill(TranscriptionTheme.accentMain))
                 .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
@@ -148,7 +148,7 @@ private struct BilingualParagraphRow: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(paragraph.text)
                 .font(.system(size: 14))
-                .foregroundColor(RecordingTheme.textPrimary)
+                .foregroundColor(TranscriptionTheme.textPrimary)
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .opacity(paragraph.isPartial ? 0.6 : 1)
@@ -164,11 +164,11 @@ private struct BilingualParagraphRow: View {
         case .translated(let translation):
             HStack(alignment: .top, spacing: 8) {
                 RoundedRectangle(cornerRadius: 1)
-                    .fill(RecordingTheme.accentMain.opacity(0.85))
+                    .fill(TranscriptionTheme.accentMain.opacity(0.85))
                     .frame(width: 2)
                 Text(translation)
                     .font(.system(size: 12.5))
-                    .foregroundColor(RecordingTheme.textSecondary)
+                    .foregroundColor(TranscriptionTheme.textSecondary)
                     .lineSpacing(3)
                     .textSelection(.enabled)
                     .opacity(paragraph.isPartial ? 0.6 : 1)
@@ -184,7 +184,7 @@ private struct BilingualParagraphRow: View {
                         .controlSize(.mini)
                     Text(loc.string("bilingual.translating"))
                         .font(.system(size: 11))
-                        .foregroundColor(RecordingTheme.textMuted)
+                        .foregroundColor(TranscriptionTheme.textMuted)
                 }
             }
 
@@ -192,15 +192,15 @@ private struct BilingualParagraphRow: View {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 10))
-                    .foregroundColor(RecordingTheme.warning)
+                    .foregroundColor(TranscriptionTheme.warning)
                 Text(message)
                     .font(.system(size: 11))
-                    .foregroundColor(RecordingTheme.textMuted)
+                    .foregroundColor(TranscriptionTheme.textMuted)
                     .lineLimit(1)
                 Button(loc.string("bilingual.retry"), action: onRetry)
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(RecordingTheme.accentDark)
+                    .foregroundColor(TranscriptionTheme.accentDark)
             }
 
         case .skippedSameLanguage:

@@ -46,6 +46,8 @@ final class TranscriptionHistoryWindowController {
 
     private var fileWindow: NSPanel?
     private var recordingWindow: NSPanel?
+    /// willClose 观察者 token：窗口关闭时移除，避免每次开→关累积一个僵尸注册
+    private var closeObservers: [TranscriptionHistoryFilter: NSObjectProtocol] = [:]
 
     func showWindow(filter: TranscriptionHistoryFilter) {
         NSApp.setActivationPolicy(.regular)
@@ -76,15 +78,21 @@ final class TranscriptionHistoryWindowController {
             panel.makeFirstResponder(hostingController.view)
         }
 
-        NotificationCenter.default.addObserver(
+        closeObservers[filter] = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: panel,
             queue: .main
         ) { [weak self] _ in
-            self?.setWindow(nil, for: filter)
-            // 两个历史窗口都关了才隐藏 Dock 图标，避免父窗口（转录/录音）仍开着时被连带隐藏。
-            if self?.fileWindow == nil && self?.recordingWindow == nil {
-                NSApp.setActivationPolicy(.prohibited)
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let token = self.closeObservers.removeValue(forKey: filter) {
+                    NotificationCenter.default.removeObserver(token)
+                }
+                self.setWindow(nil, for: filter)
+                // 两个历史窗口都关了才隐藏 Dock 图标，避免父窗口（转录/录音）仍开着时被连带隐藏。
+                if self.fileWindow == nil && self.recordingWindow == nil {
+                    NSApp.setActivationPolicy(.prohibited)
+                }
             }
         }
 
@@ -106,18 +114,18 @@ final class TranscriptionHistoryWindowController {
     }
 }
 
-// MARK: - Brand Colors (与 HistoryView 一致的米绿配色)
+// MARK: - Brand Colors（别名到共享 TranscriptionTheme，色值唯一来源）
 
 private enum THBrand {
-    static let main = Color(red: 0.722, green: 0.831, blue: 0.345)
-    static let bright = Color(red: 0.831, green: 0.910, blue: 0.486)
-    static let deep = Color(red: 0.541, green: 0.682, blue: 0.227)
-    static let bg = Color(red: 0.969, green: 0.980, blue: 0.941)
-    static let bgSecondary = Color(red: 0.941, green: 0.961, blue: 0.894)
-    static let textPrimary = Color(red: 0.102, green: 0.133, blue: 0.063)
-    static let textSecondary = Color(red: 0.306, green: 0.361, blue: 0.227)
-    static let textMuted = Color(red: 0.541, green: 0.596, blue: 0.447)
-    static let border = Color(red: 0.863, green: 0.902, blue: 0.784)
+    static let main = TranscriptionTheme.accentMain
+    static let bright = TranscriptionTheme.accentBright
+    static let deep = TranscriptionTheme.accentDeep
+    static let bg = TranscriptionTheme.background
+    static let bgSecondary = TranscriptionTheme.secondaryBackground
+    static let textPrimary = TranscriptionTheme.textPrimary
+    static let textSecondary = TranscriptionTheme.textSecondary
+    static let textMuted = TranscriptionTheme.textMuted
+    static let border = TranscriptionTheme.border
 }
 
 // MARK: - Transcription History View
@@ -130,6 +138,8 @@ struct TranscriptionHistoryView: View {
     @State private var searchText = ""
     @State private var totalCount = 0
     @FocusState private var isSearchFocused: Bool
+    /// 搜索防抖：逐字符敲击不再每键都查库
+    @State private var searchDebounceTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -142,7 +152,14 @@ struct TranscriptionHistoryView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .focused($isSearchFocused)
-                    .onChange(of: searchText) { _ in loadRecords() }
+                    .onChange(of: searchText) { _ in
+                        searchDebounceTask?.cancel()
+                        searchDebounceTask = Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 250_000_000)
+                            guard !Task.isCancelled else { return }
+                            loadRecords()
+                        }
+                    }
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
@@ -228,10 +245,15 @@ struct TranscriptionHistoryView: View {
 
     private func loadRecords() {
         let query = searchText.isEmpty ? nil : searchText
-        records = HistoryStore.shared.fetchAll(query: query, sourceTypes: filter.sourceTypes)
-        totalCount = searchText.isEmpty
-            ? HistoryStore.shared.count(sourceTypes: filter.sourceTypes)
-            : records.count
+        let wasEmptyQuery = searchText.isEmpty
+        let sourceTypes = filter.sourceTypes
+        // 后台查询、主线程更新，避免历史量大时卡 UI
+        HistoryStore.shared.fetchAllAsync(query: query, sourceTypes: sourceTypes) { fetched in
+            records = fetched
+            totalCount = wasEmptyQuery
+                ? HistoryStore.shared.count(sourceTypes: sourceTypes)
+                : fetched.count
+        }
     }
 }
 

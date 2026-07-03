@@ -32,7 +32,28 @@ struct HotkeyConfig {
 
     // MARK: - Read / Write
 
+    /// `current` 的缓存：全局 event tap 对系统内每一次按键都会读配置，
+    /// 不能每次都去 UserDefaults 读 7 个 key。app 内所有写入都走 `save()`（会失效缓存）；
+    /// 代价是外部 `defaults write` 直改需重启 app 才生效（此前也仅用于故障排查场景）。
+    private static var _cachedCurrent: HotkeyConfig?
+    private static let cacheLock = NSLock()
+
     static var current: HotkeyConfig {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if let cached = _cachedCurrent { return cached }
+        let loaded = loadFromDefaults()
+        _cachedCurrent = loaded
+        return loaded
+    }
+
+    static func invalidateCache() {
+        cacheLock.lock()
+        _cachedCurrent = nil
+        cacheLock.unlock()
+    }
+
+    private static func loadFromDefaults() -> HotkeyConfig {
         let defaults = UserDefaults.standard
         let hasStored = defaults.object(forKey: keyCodeKey) != nil
         guard hasStored else {
@@ -79,6 +100,7 @@ struct HotkeyConfig {
         defaults.set(needsShift, forKey: Self.shiftKey)
         defaults.set(isModifierOnly, forKey: Self.isModifierOnlyKey)
         defaults.set(isHoldMode, forKey: Self.isHoldModeKey)
+        Self.invalidateCache()  // 让 event tap 下一次按键即读到新配置
     }
 
     // MARK: - Display Name

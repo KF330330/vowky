@@ -8,7 +8,9 @@ import Combine
 final class RecordingPanel {
     private var panel: NSPanel?
     private var cancellables = Set<AnyCancellable>()
-    private let appState: AppState
+    /// unowned 打破 AppState.recordingPanel ↔ RecordingPanel.appState 的强引用环。
+    /// 两者同为 app 生命周期对象，AppState 必然比本面板长寿。
+    private unowned let appState: AppState
     private var toastWorkItem: DispatchWorkItem?
     private var previousState: AppState.State = .idle
 

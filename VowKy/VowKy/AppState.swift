@@ -223,13 +223,20 @@ final class AppState: ObservableObject {
     // MARK: - Permission Polling
 
     private var permissionPollTimer: Timer?
+    private var permissionPollTicks = 0
 
-    /// 轮询辅助功能权限，授权后自动启动快捷键
+    /// 轮询辅助功能权限，授权后自动启动快捷键。
+    /// 前 3 分钟每 1.5s 查一次；此后降频到每 6s（跳过 3/4 的 tick），
+    /// 既不放弃"用户很晚才授权"的场景，也不长期高频空转。
     private func startPermissionPolling() {
         print("[VowKy][AppState] Starting permission polling...")
+        permissionPollTicks = 0
         permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.checkAndRetryHotkey()
+                guard let self else { return }
+                self.permissionPollTicks += 1
+                if self.permissionPollTicks > 120 && self.permissionPollTicks % 4 != 0 { return }
+                self.checkAndRetryHotkey()
             }
         }
     }
@@ -352,7 +359,15 @@ final class AppState: ObservableObject {
         print("[VowKy][AppState] Recording stopped, samples count: \(samples.count)")
 
         // 静音检测：录音波形几乎为 0 时直接给出明确提示，避免把垃圾喂给识别引擎产生乱码
-        let maxAmp = samples.map { abs($0) }.max() ?? 0
+        // （单次遍历+早退出：长录音不必为日志在主线程扫全量数组）
+        var maxAmp: Float = 0
+        for s in samples {
+            let a = abs(s)
+            if a > maxAmp {
+                maxAmp = a
+                if maxAmp >= 0.0001 { break }  // 已确认非静音，无需继续扫
+            }
+        }
         if !samples.isEmpty && maxAmp < 0.0001 {
             CrashLogger.log("[Recognize] Audio is silent (maxAmp=\(maxAmp)), aborting recognition")
             backupService?.deleteBackup()
@@ -533,6 +548,13 @@ final class AppState: ObservableObject {
             return false
         }
         return app.activate(options: [.activateIgnoringOtherApps])
+    }
+
+    deinit {
+        // AppState 实际是 app 生命周期单例，此处属兜底清理（removeObserver 线程安全）
+        if let workspaceActivationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
+        }
     }
 
     private func startApplicationFocusTracking() {

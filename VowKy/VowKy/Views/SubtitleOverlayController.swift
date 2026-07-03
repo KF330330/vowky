@@ -37,6 +37,10 @@ final class SubtitleOverlayController {
     let model: SubtitleModel
     private let defaults: UserDefaults
     private var moveObserver: NSObjectProtocol?
+    /// 原文/译文当前各占的渲染行数（钳到 1-2，与视图 lineLimit(2) 对齐）。
+    /// 仅当行数组合变化时才重设窗口高度，普通内容刷新窗口纹丝不动。
+    private var originalLines = 1
+    private var translationLines = 1
 
     /// 关闭按钮回调：回写 ViewModel 的字幕开关，保持 Toggle 状态一致。
     var requestDisable: (() -> Void)?
@@ -73,13 +77,15 @@ final class SubtitleOverlayController {
     func update(paragraph: TranscriptParagraph?) {
         model.original = paragraph?.text ?? ""
         model.translation = paragraph?.translation ?? .pending
-        // 只换文字，不动窗口尺寸/位置 → 内容刷新时字幕条纹丝不动，杜绝横跳
+        // 只换文字；仅当所需行数（1↔2）变化时才调整窗口高度，其余刷新纹丝不动，杜绝横跳
+        if recomputeLineCounts() { applyPanelSize() }
     }
 
     /// 翻译关闭场景：只有原文，无译文段。
     func updateOriginalOnly(_ text: String) {
         model.original = text
         model.translation = .skippedSameLanguage  // 不渲染译文行
+        if recomputeLineCounts() { applyPanelSize() }
     }
 
     // MARK: Font
@@ -89,7 +95,8 @@ final class SubtitleOverlayController {
         guard v != model.fontSize else { return }
         model.fontSize = v
         defaults.set(Double(v), forKey: SubtitleDefaults.fontSize)
-        applyPanelSize()  // 仅字号变化时才调整窗口高度
+        _ = recomputeLineCounts()  // 字号变了，换行结果可能随之变化
+        applyPanelSize()
     }
 
     // MARK: Private
@@ -139,6 +146,7 @@ final class SubtitleOverlayController {
 
         self.panel = panel
         restorePosition(width: width, screen: screen)
+        _ = recomputeLineCounts()  // 建窗前若已有内容（如先 update 后 show），按实际行数定初始高度
         applyPanelSize()
     }
 
@@ -162,15 +170,53 @@ final class SubtitleOverlayController {
         return NSPoint(x: vf.midX - size.width / 2, y: vf.minY + 80)
     }
 
-    /// 固定窗口高度（按字号算，够放 1 行原文 + 1 行译文 + 少量留白）。内容刷新**不**调用它，
-    /// 只有创建/字号变化时才重算 → 窗口尺寸恒定，从根上消除字幕横跳。
+    /// 按「当前行数组合 × 字号」计算窗口高度（原文/译文各最多 2 行 + 少量留白）。
+    /// 只在创建、字号变化、行数变化（1↔2）时调用；行数不变的内容刷新不动窗口，消除横跳。
+    /// 调整时 origin 不变（AppKit 底边固定），窗口向上生长，`ensureVisible` 兜底钳屏。
     private func applyPanelSize() {
         guard let panel else { return }
         let f = model.fontSize
-        let height = ceil(f * 1.3 + f * 0.82 * 1.3 + 6 + 18)
+        let height = ceil(f * 1.3 * CGFloat(originalLines)
+            + f * 0.82 * 1.3 * CGFloat(translationLines)
+            + 6 + 18)
         let old = panel.frame
         panel.setFrame(NSRect(x: old.minX, y: old.minY, width: old.width, height: height), display: true)
         ensureVisible()
+    }
+
+    /// 重算原文/译文所需行数，返回是否发生变化。译文行隐藏时按 1 行占位（与旧固定高度一致）。
+    private func recomputeLineCounts() -> Bool {
+        let newOriginal = lineCount(of: model.original, fontSize: model.fontSize, weight: .semibold)
+        let newTranslation: Int
+        switch model.translation {
+        case .skippedSameLanguage, .failed:
+            newTranslation = 1
+        case .pending:
+            newTranslation = 1
+        case .translated(let text):
+            newTranslation = lineCount(of: text, fontSize: model.fontSize * 0.82, weight: .regular)
+        }
+        guard newOriginal != originalLines || newTranslation != translationLines else { return false }
+        originalLines = newOriginal
+        translationLines = newTranslation
+        return true
+    }
+
+    /// 估算文本在字幕内容宽度下的渲染行数，钳到 1-2（视图侧 lineLimit(2)，超出仍头部截断）。
+    private func lineCount(of text: String, fontSize: CGFloat, weight: NSFont.Weight) -> Int {
+        guard let panel, !text.isEmpty else { return 1 }
+        let contentWidth = panel.frame.width - 56  // 2 × 28 水平 padding
+        guard contentWidth > 0 else { return 1 }
+        let font = NSFont.systemFont(ofSize: fontSize, weight: weight)
+        let options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+        let unbounded = CGFloat.greatestFiniteMagnitude
+        let wrapped = NSAttributedString(string: text, attributes: [.font: font])
+            .boundingRect(with: NSSize(width: contentWidth, height: unbounded),
+                          options: options)
+        let singleLine = NSAttributedString(string: "M", attributes: [.font: font])
+            .boundingRect(with: NSSize(width: unbounded, height: unbounded),
+                          options: options)
+        return wrapped.height > singleLine.height * 1.5 ? 2 : 1
     }
 
     /// 把字幕窗钳进「与它相交面积最大的屏」的可见区；完全不在任何屏上则回主屏底部居中。
@@ -246,7 +292,7 @@ struct SubtitleContentView: View {
                 Text(model.original.isEmpty ? " " : model.original)
                     .font(.system(size: model.fontSize, weight: .semibold))
                     .foregroundColor(.white)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.head)
                     .multilineTextAlignment(.center)
 
@@ -254,7 +300,7 @@ struct SubtitleContentView: View {
                     Text(translationText ?? " ")
                         .font(.system(size: model.fontSize * 0.82, weight: .regular))
                         .foregroundColor(.white.opacity(0.72))
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.head)
                         .multilineTextAlignment(.center)
                         .opacity(translationText == nil ? 0 : 1)  // pending 占位不闪

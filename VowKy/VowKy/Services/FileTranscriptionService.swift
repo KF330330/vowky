@@ -92,6 +92,8 @@ final class FileTranscriptionService: FileTranscribing {
         let totalDuration = max(0, info.duration)
         let totalSegments = max(1, Int(ceil(totalDuration / targetChunkDuration)))
         var recognizedSegments: [String] = []
+        /// 增量维护的 partialText：避免每段都 joined 整篇（段数多时 O(n²)）
+        var accumulatedText = ""
         var currentStart: TimeInterval = 0
         var segmentIndex = 0
 
@@ -99,13 +101,12 @@ final class FileTranscriptionService: FileTranscribing {
             // 实时语音输入活动时在此挂起（解码前完全礼让），语音结束后继续。取消会立即唤醒。
             await yieldToVoiceInput?()
             try Task.checkCancellation()
-            let partialText = recognizedSegments.joined(separator: "\n")
             await progress(FileTranscriptionProgress(
                 phase: .transcribing,
                 progress: totalDuration > 0 ? min(0.99, currentStart / totalDuration) : 0,
                 currentSegment: segmentIndex + 1,
                 totalSegments: max(totalSegments, segmentIndex + 1),
-                partialText: partialText
+                partialText: accumulatedText
             ))
 
             let remainingDuration = totalDuration > 0 ? max(0, totalDuration - currentStart) : targetChunkDuration
@@ -155,6 +156,11 @@ final class FileTranscriptionService: FileTranscribing {
             }
 
             recognizedSegments.append(rawText)
+            if accumulatedText.isEmpty {
+                accumulatedText = rawText
+            } else {
+                accumulatedText += "\n" + rawText
+            }
             currentStart += max(chunk.duration, 0.01)
             segmentIndex += 1
 
@@ -163,7 +169,7 @@ final class FileTranscriptionService: FileTranscribing {
                 progress: totalDuration > 0 ? min(0.99, currentStart / totalDuration) : 0.99,
                 currentSegment: segmentIndex,
                 totalSegments: max(totalSegments, segmentIndex),
-                partialText: recognizedSegments.joined(separator: "\n")
+                partialText: accumulatedText
             ))
 
             if totalDuration == 0 { break }

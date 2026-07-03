@@ -17,11 +17,18 @@ final class HistoryStore {
     static let shared = HistoryStore()
 
     private var db: OpaquePointer?
+    /// 所有 DB 访问都串行化到这条队列：单个 sqlite3 连接不允许跨线程并发使用。
+    /// 同步 API 语义不变（queue.sync）；重查询/导出走 *Async 变体避免卡 UI。
+    private let dbQueue = DispatchQueue(label: "com.vowky.history.db")
 
     // MARK: - Open / Close
 
     /// 打开数据库。`customPath` 仅供单测使用；生产环境一律走 Application Support。
     func open(at customPath: URL? = nil) {
+        dbQueue.sync { _open(at: customPath) }
+    }
+
+    private func _open(at customPath: URL?) {
         guard db == nil else { return }
 
         let dbPath: String
@@ -69,10 +76,12 @@ final class HistoryStore {
 
     /// 关闭并清除连接（仅供单测使用）。
     func closeForTesting() {
-        if let db = db {
-            sqlite3_close(db)
+        dbQueue.sync {
+            if let db = db {
+                sqlite3_close(db)
+            }
+            db = nil
         }
-        db = nil
     }
 
     // MARK: - Insert
@@ -83,6 +92,14 @@ final class HistoryStore {
 
     @discardableResult
     func insertWithMetadata(
+        content: String,
+        sourceType: String,
+        metadata: TranscriptionMetadata?
+    ) -> Int64 {
+        dbQueue.sync { _insertWithMetadata(content: content, sourceType: sourceType, metadata: metadata) }
+    }
+
+    private func _insertWithMetadata(
         content: String,
         sourceType: String,
         metadata: TranscriptionMetadata?
@@ -131,6 +148,23 @@ final class HistoryStore {
     // MARK: - Fetch
 
     func fetchAll(query: String? = nil, limit: Int = 500, sourceTypes: [String]? = nil) -> [HistoryRecord] {
+        dbQueue.sync { _fetchAll(query: query, limit: limit, sourceTypes: sourceTypes) }
+    }
+
+    /// 后台线程查询、主线程回调；供视图（搜索/首屏加载）使用，不阻塞 UI。
+    func fetchAllAsync(
+        query: String? = nil,
+        limit: Int = 500,
+        sourceTypes: [String]? = nil,
+        completion: @escaping ([HistoryRecord]) -> Void
+    ) {
+        dbQueue.async { [weak self] in
+            let records = self?._fetchAll(query: query, limit: limit, sourceTypes: sourceTypes) ?? []
+            DispatchQueue.main.async { completion(records) }
+        }
+    }
+
+    private func _fetchAll(query: String?, limit: Int, sourceTypes: [String]?) -> [HistoryRecord] {
         guard let db = db else { return [] }
 
         var records: [HistoryRecord] = []
@@ -203,35 +237,62 @@ final class HistoryStore {
     // MARK: - Delete
 
     func delete(id: Int64) {
-        guard let db = db else { return }
+        dbQueue.sync {
+            guard let db = db else { return }
 
-        let sql = "DELETE FROM input_history WHERE id = ?;"
-        var stmt: OpaquePointer?
+            let sql = "DELETE FROM input_history WHERE id = ?;"
+            var stmt: OpaquePointer?
 
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_int64(stmt, 1, id)
-        sqlite3_step(stmt)
+            sqlite3_bind_int64(stmt, 1, id)
+            sqlite3_step(stmt)
+        }
     }
 
     func deleteAll() {
-        guard let db = db else { return }
-        sqlite3_exec(db, "DELETE FROM input_history;", nil, nil, nil)
+        dbQueue.sync {
+            guard let db = db else { return }
+            sqlite3_exec(db, "DELETE FROM input_history;", nil, nil, nil)
+        }
     }
 
     // MARK: - Export
 
     func exportAsText() -> String {
         let records = fetchAll(limit: Int(Int32.max))
+        return Self.composeText(records)
+    }
+
+    func exportAsCSV() -> String {
+        let records = fetchAll(limit: Int(Int32.max))
+        return Self.composeCSV(records)
+    }
+
+    /// 全表导出在后台完成（拉全量 + 拼超大字符串），主线程只收结果。
+    func exportAsTextAsync(completion: @escaping (String) -> Void) {
+        dbQueue.async { [weak self] in
+            let text = Self.composeText(self?._fetchAll(query: nil, limit: Int(Int32.max), sourceTypes: nil) ?? [])
+            DispatchQueue.main.async { completion(text) }
+        }
+    }
+
+    func exportAsCSVAsync(completion: @escaping (String) -> Void) {
+        dbQueue.async { [weak self] in
+            let csv = Self.composeCSV(self?._fetchAll(query: nil, limit: Int(Int32.max), sourceTypes: nil) ?? [])
+            DispatchQueue.main.async { completion(csv) }
+        }
+    }
+
+    private static func composeText(_ records: [HistoryRecord]) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return records.map { "[\(formatter.string(from: $0.createdAt))] \($0.content)" }
             .joined(separator: "\n")
     }
 
-    func exportAsCSV() -> String {
-        let records = fetchAll(limit: Int(Int32.max))
+    private static func composeCSV(_ records: [HistoryRecord]) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         var lines = [LL("history.export.csvHeader")]
@@ -245,6 +306,10 @@ final class HistoryStore {
     // MARK: - Count
 
     func count(sourceTypes: [String]? = nil) -> Int {
+        dbQueue.sync { _count(sourceTypes: sourceTypes) }
+    }
+
+    private func _count(sourceTypes: [String]?) -> Int {
         guard let db = db else { return 0 }
 
         let filterTypes = (sourceTypes?.isEmpty == false) ? sourceTypes : nil

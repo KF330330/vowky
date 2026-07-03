@@ -7,10 +7,13 @@ import CryptoKit
 ///
 /// 该功能本质就是在线的（要下载网络视频），所以「首次联网取工具」不额外牺牲 VowKy 的「核心听写全离线」定位。
 ///
-/// 设计要点（均已在 2026-06-28 真机验证）：
-/// - yt-dlp：`yt-dlp_macos`（GitHub release，universal2，ad-hoc 签名，Apple Silicon 可直接执行）。按 release 自带的
-///   `SHA2-256SUMS` 校验，无需在代码里硬编码哈希；解析最新 tag，过期(>7天)best-effort 刷新（失败则继续用旧的）。
-/// - ffmpeg/ffprobe：martin-riedl.de 的 **原生 arch** 静态构建（Developer-ID 签名 + hardened runtime，可直接执行）。
+/// 设计要点（2026-06-28 真机验证；2026-07-04 起校验全面 fail-closed）：
+/// - **所有工具（yt-dlp/ffmpeg/ffprobe/lux）下载后强制 SHA256 校验**：期望哈希来自发布方的校验文件
+///   （yt-dlp=release 的 SHA2-256SUMS，ffmpeg/ffprobe=版本化 URL 旁的 `.sha256` sidecar，
+///   lux=goreleaser 的 checksums.txt），无需硬编码；**取不到校验文件同样中止安装**，绝不无校验落盘。
+/// - yt-dlp：`yt-dlp_macos`（GitHub release，universal2，ad-hoc 签名，Apple Silicon 可直接执行）。
+///   解析最新 tag，过期(>7天)best-effort 刷新（失败则继续用旧的）。
+/// - ffmpeg/ffprobe：martin-riedl.de 的 **原生 arch** 静态构建（上游实为 ad-hoc 签名，2026-07-04 核实）。
 ///   只下当前架构，省一半体积。
 /// - App 未沙盒（project.yml `ENABLE_APP_SANDBOX: NO`）+ URLSession 自写文件不带 `com.apple.quarantine`，
 ///   故下载的二进制无 Gatekeeper 拦截、无需公证即可作为子进程执行。
@@ -167,17 +170,12 @@ actor ToolProvisioner {
         }
 
         progress?(ToolProvisionProgress(phase: .downloading, tool: tool, fractionCompleted: -1))
-        let tmp = try await downloadToTemp(from: binURL, tool: tool)
+        let (tmp, _) = try await downloadToTemp(from: binURL, tool: tool)
         defer { try? fileManager.removeItem(at: tmp) }
 
-        // 用 release 自带的 SHA2-256SUMS 校验，无需硬编码哈希。
-        progress?(ToolProvisionProgress(phase: .verifying, tool: tool, fractionCompleted: -1))
-        if let expected = await expectedYtDlpSHA(from: sumsURL) {
-            let actual = try sha256Hex(of: tmp)
-            guard actual.caseInsensitiveCompare(expected) == .orderedSame else {
-                throw ToolProvisionError.checksumMismatch(tool: tool)
-            }
-        }
+        // 用 release 自带的 SHA2-256SUMS 强制校验：取不到期望哈希同样视为失败，绝不无校验安装。
+        let expected = await fetchExpectedSHA(checksumURL: sumsURL, assetName: "yt-dlp_macos")
+        try verifySHA256(of: tmp, expected: expected, tool: tool, progress: progress)
 
         progress?(ToolProvisionProgress(phase: .installing, tool: tool, fractionCompleted: -1))
         try install(from: tmp, to: dest, tool: tool)
@@ -201,20 +199,46 @@ actor ToolProvisioner {
         return tag
     }
 
-    private func expectedYtDlpSHA(from sumsURL: URL) async -> String? {
-        guard let (data, response) = try? await session.data(from: sumsURL),
+    /// 下载并解析校验文件，返回目标资产的期望 SHA256。
+    /// 兼容两种格式：`<sha256>  <文件名>` 多行（yt-dlp SUMS / goreleaser checksums.txt），
+    /// 以及整个文件只有一个 64 位十六进制 token 的单哈希 sidecar（martin-riedl 的 `<asset>.sha256`）。
+    private func fetchExpectedSHA(checksumURL: URL, assetName: String) async -> String? {
+        guard let (data, response) = try? await session.data(from: checksumURL),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let text = String(data: data, encoding: .utf8) else {
             return nil
         }
-        // 每行形如「<sha256>  yt-dlp_macos」。
-        for line in text.split(whereSeparator: \.isNewline) {
+        let lines = text.split(whereSeparator: \.isNewline)
+        for line in lines {
             let parts = line.split(whereSeparator: \.isWhitespace)
-            if parts.count == 2, parts[1] == "yt-dlp_macos" {
+            if parts.count >= 2, String(parts.last!) == assetName {
                 return String(parts[0])
             }
         }
+        if lines.count == 1 {
+            let parts = lines[0].split(whereSeparator: \.isWhitespace)
+            if let first = parts.first, first.count == 64 {
+                return String(first)
+            }
+        }
         return nil
+    }
+
+    /// 强制 SHA256 校验：拿不到期望哈希、或哈希不匹配，一律中止安装（fail-closed）。
+    private func verifySHA256(
+        of file: URL,
+        expected: String?,
+        tool: String,
+        progress: (@Sendable (ToolProvisionProgress) -> Void)?
+    ) throws {
+        progress?(ToolProvisionProgress(phase: .verifying, tool: tool, fractionCompleted: -1))
+        guard let expected, expected.count == 64 else {
+            throw ToolProvisionError.checksumMismatch(tool: tool)
+        }
+        let actual = try sha256Hex(of: file)
+        guard actual.caseInsensitiveCompare(expected) == .orderedSame else {
+            throw ToolProvisionError.checksumMismatch(tool: tool)
+        }
     }
 
     // MARK: - lux（tar.gz 内单个二进制）
@@ -224,13 +248,19 @@ actor ToolProvisioner {
         let tag = await resolveLuxTag()
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
         let asset = "lux_\(version)_Darwin_\(Self.luxArchName).tar.gz"
-        guard let url = URL(string: "https://github.com/iawia002/lux/releases/download/\(tag)/\(asset)") else {
+        let base = "https://github.com/iawia002/lux/releases/download/\(tag)"
+        guard let url = URL(string: "\(base)/\(asset)"),
+              let sumsURL = URL(string: "\(base)/lux_\(version)_checksums.txt") else {
             throw ToolProvisionError.downloadFailed(tool: tool)
         }
 
         progress?(ToolProvisionProgress(phase: .downloading, tool: tool, fractionCompleted: -1))
-        let tgz = try await downloadToTemp(from: url, tool: tool)
+        let (tgz, _) = try await downloadToTemp(from: url, tool: tool)
         defer { try? fileManager.removeItem(at: tgz) }
+
+        // goreleaser 的 checksums.txt 强制校验，取不到即中止。
+        let expected = await fetchExpectedSHA(checksumURL: sumsURL, assetName: asset)
+        try verifySHA256(of: tgz, expected: expected, tool: tool, progress: progress)
 
         progress?(ToolProvisionProgress(phase: .installing, tool: tool, fractionCompleted: -1))
         let unpackDir = tgz.deletingLastPathComponent().appendingPathComponent("unpack-\(tool)-\(UUID().uuidString)")
@@ -273,8 +303,18 @@ actor ToolProvisioner {
         progress: (@Sendable (ToolProvisionProgress) -> Void)?
     ) async throws {
         progress?(ToolProvisionProgress(phase: .downloading, tool: name, fractionCompleted: -1))
-        let zipTmp = try await downloadToTemp(from: zipURL, tool: name)
+        let (zipTmp, finalURL) = try await downloadToTemp(from: zipURL, tool: name)
         defer { try? fileManager.removeItem(at: zipTmp) }
+
+        // martin-riedl 只在**版本化最终 URL** 旁提供 `<asset>.zip.sha256`（redirect URL 下是 404），
+        // 所以用重定向后的最终地址拼 sidecar，强制校验，取不到即中止。
+        let expected: String?
+        if let shaURL = URL(string: finalURL.absoluteString + ".sha256") {
+            expected = await fetchExpectedSHA(checksumURL: shaURL, assetName: finalURL.lastPathComponent)
+        } else {
+            expected = nil
+        }
+        try verifySHA256(of: zipTmp, expected: expected, tool: name, progress: progress)
 
         progress?(ToolProvisionProgress(phase: .installing, tool: name, fractionCompleted: -1))
         let unpackDir = zipTmp.deletingLastPathComponent().appendingPathComponent("unpack-\(name)-\(UUID().uuidString)")
@@ -308,6 +348,10 @@ actor ToolProvisioner {
     // MARK: - 安装 / 校验 / 工具方法
 
     /// 落位：复制到目标 → chmod 0755 → 确认签名有效（无效则 ad-hoc 重签，满足 Apple Silicon AMFI）。
+    ///
+    /// 安全不变量：**调用方必须先对下载内容做强制 SHA256 校验再调用本方法**（四个工具的
+    /// provision 路径均已 fail-closed）。信任判定完全由校验承担；这里的 ad-hoc 重签只是
+    /// 让「内容已验证但签名在复制后失效」的二进制可执行，不构成信任放行。
     private func install(from source: URL, to dest: URL, tool: String) throws {
         if fileManager.fileExists(atPath: dest.path) {
             try fileManager.removeItem(at: dest)
@@ -315,7 +359,6 @@ actor ToolProvisioner {
         try fileManager.copyItem(at: source, to: dest)
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
 
-        // 下载的二进制本身有签名（yt-dlp=ad-hoc、ffmpeg=Developer-ID）。复制后若校验失败，ad-hoc 重签让其可执行。
         if runProcess("/usr/bin/codesign", ["--verify", "--quiet", dest.path]) != 0 {
             _ = runProcess("/usr/bin/codesign", ["--force", "--sign", "-", dest.path])
         }
@@ -325,7 +368,8 @@ actor ToolProvisioner {
     }
 
     /// 流式下载到临时文件（URLSession 自写文件不带 quarantine）。
-    private func downloadToTemp(from url: URL, tool: String) async throws -> URL {
+    /// 返回 (本地临时文件, 重定向后的最终 URL)——后者用于拼校验文件 sidecar 地址。
+    private func downloadToTemp(from url: URL, tool: String) async throws -> (file: URL, finalURL: URL) {
         do {
             let (tempURL, response) = try await session.download(from: url)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -337,7 +381,7 @@ actor ToolProvisioner {
                 .appendingPathComponent("vowky-tool-\(tool)-\(UUID().uuidString)")
             if fileManager.fileExists(atPath: dest.path) { try fileManager.removeItem(at: dest) }
             try fileManager.moveItem(at: tempURL, to: dest)
-            return dest
+            return (dest, response.url ?? url)
         } catch let error as ToolProvisionError {
             throw error
         } catch {
@@ -358,19 +402,29 @@ actor ToolProvisioner {
     }
 
     @discardableResult
-    private func runProcess(_ launchPath: String, _ arguments: [String]) -> Int32 {
+    private func runProcess(_ launchPath: String, _ arguments: [String], timeout: TimeInterval = 120) -> Int32 {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: launchPath)
         proc.arguments = arguments
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError = FileHandle.nullDevice
+        let finished = DispatchSemaphore(value: 0)
+        proc.terminationHandler = { _ in finished.signal() }
         do {
             try proc.run()
-            proc.waitUntilExit()
-            return proc.terminationStatus
         } catch {
             return -1
         }
+        // 有界等待：卡死的子进程不再永久阻塞整个 actor（先 SIGTERM，2 秒不退再 SIGKILL）。
+        if finished.wait(timeout: .now() + timeout) == .timedOut {
+            proc.terminate()
+            if finished.wait(timeout: .now() + 2) == .timedOut {
+                kill(proc.processIdentifier, SIGKILL)
+                _ = finished.wait(timeout: .now() + 5)
+            }
+            return -1
+        }
+        return proc.terminationStatus
     }
 
     // MARK: - manifest（记录刷新时间，用于过期判断）
