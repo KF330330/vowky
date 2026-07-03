@@ -225,6 +225,76 @@ final class SubtitlePacerTests: XCTestCase {
         )
     }
 
+    func test14_punctuationDriftMerge_locatesMergedParagraph_keepsBacklog() async {
+        let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
+        var shown: [String] = []
+        pacer.onDisplay = { shown.append($0.text) }
+
+        // 快语速短句先分段上屏
+        pacer.ingest([p("p-0", "第一点是进度。")])
+        pacer.ingest([p("c-0", "第一点是进度。"), p("c-1", "第二点是风险。"), p("p-0", "第三点是预算")])
+        await waitUntil { shown.last == "第三点是预算" }
+        XCTAssertEqual(shown.count, 3, "前置条件：三句依序上屏 \(shown)")
+
+        // 重解码标点漂移（。→，）把三句并成一大段，displayed 成为其中段子串：
+        // 必须命中合并段原地演化，且后续排队句（第四点）不能被「跳最新」清掉
+        pacer.ingest([
+            p("p-0", "第一点是进度，第二点是风险，第三点是预算，"),
+            p("p-1", "第四点是人员。"),
+        ])
+        await waitUntil { shown.last == "第四点是人员。" }
+        XCTAssertEqual(
+            Array(shown.suffix(2)),
+            ["第一点是进度，第二点是风险，第三点是预算，", "第四点是人员。"],
+            "合并段原地演化后应继续补播新句，不丢句：\(shown)"
+        )
+    }
+
+    func test15_mergedParagraphResplit_resumesAtTail_noReplayFromHead() async {
+        let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
+        var shown: [String] = []
+        pacer.onDisplay = { shown.append($0.text) }
+
+        // 当前显示的是一个合并大段
+        pacer.ingest([p("p-0", "第一点是进度，第二点是风险，第三点是预算，第四点是人员，")])
+        XCTAssertEqual(shown.count, 1)
+
+        // 定稿把标点还原（，→。），大段拆回小段 + 一条新内容：
+        // 阅读头应落在「内容仍被已显示文本覆盖」的最后一个片段，
+        // 只补播新内容，不从「第一点」起整段重播
+        pacer.ingest([
+            p("c-0", "第一点是进度。", isPartial: false),
+            p("c-1", "第二点是风险。第三点是预算。", isPartial: false),
+            p("c-2", "第四点是人员。", isPartial: false),
+            p("p-0", "全部说完了"),
+        ])
+        await waitUntil { shown.last == "全部说完了" }
+        let replayed = shown.dropFirst().filter { $0.hasPrefix("第一点") || $0.hasPrefix("第二点") }
+        XCTAssertTrue(replayed.isEmpty, "不得从头重播已显示片段：\(shown)")
+        XCTAssertEqual(shown.last, "全部说完了")
+    }
+
+    func test16_freezeShrink_suppressed_untilNextParagraphTakesOver() async {
+        let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
+        var shown: [String] = []
+        pacer.onDisplay = { shown.append($0.text) }
+
+        // 长句 partial 增长越过了未来冻结点
+        pacer.ingest([p("p-0", "这个句子很长很长，而且还在")])
+        XCTAssertEqual(shown, ["这个句子很长很长，而且还在"])
+
+        // 冻结：当前句被截短（尾巴划归下一段）→ 不应把「回缩」上屏（闪缩），
+        // 屏幕保持长文，等 advance 显示下一段自然衔接
+        pacer.ingest([
+            p("c-0", "这个句子很长很长。", isPartial: false),
+            p("p-0", "而且还在继续说下去"),
+        ])
+        XCTAssertEqual(shown.count, 1, "回缩不应上屏：\(shown)")
+
+        await waitUntil { shown.count == 2 }
+        XCTAssertEqual(shown.last, "而且还在继续说下去", "advance 后由下一段接管")
+    }
+
     func test12_rewrittenPartial_matchingFarBackDuplicate_jumpsToLatestInstead() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
