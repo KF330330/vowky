@@ -25,6 +25,8 @@ final class TranslationCoordinator: ObservableObject {
 
     private var committedTasks: [String: Task<Void, Never>] = [:]
     private var partialTask: Task<Void, Never>?
+    /// 切分锚定：已输出的终结句只追加不回改，重解码标点漂移不再把已读短句并成大段
+    private let splitter = AnchoredParagraphSplitter()
     /// setTarget 时自增，丢弃旧目标语言的 in-flight 结果
     private var generation = 0
     private var isShutDown = false
@@ -49,8 +51,9 @@ final class TranslationCoordinator: ObservableObject {
 
     func ingest(update: StreamingRecognitionUpdate) {
         guard !isShutDown else { return }
-        committedTexts = Self.splitParagraphs(update.committedText)
-        partialTexts = Self.splitParagraphs(update.partialText)
+        let split = splitter.split(committed: update.committedText, partial: update.partialText)
+        committedTexts = split.committed
+        partialTexts = split.partial
         updateDetectedSource()
         rebuildParagraphs()
         translatePendingCommitted()
@@ -62,6 +65,8 @@ final class TranslationCoordinator: ObservableObject {
         guard !isShutDown else { return }
         partialTask?.cancel()
         partialTask = nil
+        // 最终稿权威：锚清空，整稿全量重切（此时字幕已收起，无重现风险；双语落盘保真）
+        splitter.reset()
         committedTexts = Self.splitParagraphs(text)
         partialTexts = []
         updateDetectedSource()

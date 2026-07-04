@@ -34,6 +34,18 @@ enum SentenceSplitter {
         return result
     }
 
+    /// 句子是否以终止标点结尾（供锚定切分判断「边界句是否已终结」）。
+    /// 半角句点沿用 isTerminator 的数字保护：前一字符是数字则不算句末（如「3.」可能是 3.14 续写中）。
+    static func endsWithTerminator(_ text: String) -> Bool {
+        let chars = Array(text)
+        guard let last = chars.last else { return false }
+        if last == "." {
+            if chars.count >= 2, chars[chars.count - 2].isNumber { return false }
+            return true
+        }
+        return terminators.contains(last)
+    }
+
     private static func isTerminator(at index: Int, in chars: [Character]) -> Bool {
         let ch = chars[index]
         if ch == "." {

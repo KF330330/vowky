@@ -47,6 +47,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         return controller
     }()
     private var subtitleCancellable: AnyCancellable?
+    /// 翻译关路径的切分锚定（翻译开时由 TranslationCoordinator 内部的锚负责，二者互斥使用）
+    private let plainSplitter = AnchoredParagraphSplitter()
     /// 字幕节奏调度：排队按序上屏，杜绝一次更新跨多句时跳句
     private lazy var subtitlePacer: SubtitlePacer = {
         let pacer = SubtitlePacer()
@@ -224,6 +226,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         waveformBands = Self.silentWaveformBands
         state = .loadingModel
         lastStreamingUpdate = nil
+        plainSplitter.reset()
         bilingualSaveCancellable = nil
         refreshTranslationSetup(resetCoordinator: true)
 
@@ -443,9 +446,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         if let coordinator = translationCoordinator {
             subtitlePacer.ingest(Self.subtitleWorthy(coordinator.paragraphs))
         } else {
-            subtitlePacer.ingest(Self.subtitleWorthy(
-                Self.plainParagraphs(of: lastStreamingUpdate?.displayText ?? transcriptText)
-            ))
+            let update = lastStreamingUpdate
+                ?? StreamingRecognitionUpdate(committedText: "", partialText: transcriptText, isFinal: false)
+            subtitlePacer.ingest(Self.subtitleWorthy(plainParagraphs(of: update)))
         }
     }
 
@@ -454,9 +457,11 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         paragraphs.filter { !TranslationCoordinator.isTrivialText($0.text) }
     }
 
-    /// 翻译关时的字幕数据源：按句拆分全文，标记为跳过翻译（字幕不渲染译文行）。
-    private static func plainParagraphs(of text: String) -> [TranscriptParagraph] {
-        TranslationCoordinator.splitParagraphs(text).enumerated().map { index, piece in
+    /// 翻译关时的字幕数据源：锚定切分全文（已显示短句不因标点漂移合并回改），
+    /// 标记为跳过翻译（字幕不渲染译文行）。
+    private func plainParagraphs(of update: StreamingRecognitionUpdate) -> [TranscriptParagraph] {
+        let split = plainSplitter.split(committed: update.committedText, partial: update.partialText)
+        return (split.committed + split.partial).enumerated().map { index, piece in
             TranscriptParagraph(
                 id: "plain-\(index)",
                 text: piece,
@@ -544,7 +549,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         translationCoordinator?.ingest(update: update)
         // 翻译关时无 coordinator 订阅驱动字幕，这里把按句拆分的全文喂给 pacer 调度
         if subtitleEnabled, state == .recording, translationCoordinator == nil {
-            let paragraphs = Self.subtitleWorthy(Self.plainParagraphs(of: update.displayText))
+            let paragraphs = Self.subtitleWorthy(plainParagraphs(of: update))
             Self.debugSubtitleTrace("PARAS", paragraphs.map(\.text).joined(separator: "|"))
             subtitlePacer.ingest(paragraphs)
         }

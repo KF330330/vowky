@@ -290,4 +290,80 @@ final class TranslationCoordinatorTests: XCTestCase {
         XCTAssertFalse(TranslationCoordinator.isTrivialText("a."))
         XCTAssertFalse(TranslationCoordinator.isTrivialText("啊。"))
     }
+
+    // MARK: - 切分锚定（重解码标点漂移不合并已显示句）
+
+    func test20_punctuationDrift_paragraphsAppendOnly_noRetranslation() async {
+        let provider = MockTranslationProvider()
+        let coordinator = makeCoordinator(provider: provider, target: english)
+
+        coordinator.ingest(update: update(committed: "", partial: "第一点讲进度。第二点讲风险。"))
+        await waitUntil {
+            coordinator.paragraphs.count == 2 && coordinator.paragraphs.allSatisfy {
+                if case .translated = $0.translation { return true }
+                return false
+            }
+        }
+
+        // 重解码标点漂移：句号变逗号。旧的全量重切会把前两句并成一个大段（已读内容重现）
+        coordinator.ingest(update: update(committed: "", partial: "第一点讲进度，第二点讲风险，第三点讲预算。"))
+
+        XCTAssertEqual(
+            coordinator.paragraphs.map(\.text),
+            ["第一点讲进度。", "第二点讲风险。", "第三点讲预算。"],
+            "已显示句保持首次成句形态，只追加新句、不合并"
+        )
+        // 前两句文本 key 未变 → 缓存命中，重建后立即保持已译状态
+        XCTAssertEqual(coordinator.paragraphs[0].translation, .translated("译:第一点讲进度。"))
+        XCTAssertEqual(coordinator.paragraphs[1].translation, .translated("译:第二点讲风险。"))
+        await waitUntil { coordinator.paragraphs.count == 3
+            && coordinator.paragraphs[2].translation == .translated("译:第三点讲预算。") }
+        XCTAssertEqual(
+            provider.requestedTexts.filter { $0 == "第一点讲进度。" }.count, 1,
+            "锚定句不应重复请求翻译"
+        )
+        XCTAssertFalse(
+            provider.requestedTexts.contains { $0.contains("第一点讲进度，") },
+            "合并大段不应产生，更不应送翻译"
+        )
+    }
+
+    func test21_handoffPunctuationDrift_keepsTexts_reclassifiesCommitted() async {
+        let provider = MockTranslationProvider()
+        let coordinator = makeCoordinator(provider: provider, target: english)
+
+        // 预览期：两条冻结句（partial 区两行）
+        coordinator.ingest(update: update(committed: "", partial: "早上好各位。\n今天讲三件事情。"))
+        await waitUntil {
+            coordinator.paragraphs.count == 2 && coordinator.paragraphs.allSatisfy {
+                if case .translated = $0.translation { return true }
+                return false
+            }
+        }
+
+        // 交接：段最终稿一行逗号连写替换预览行
+        coordinator.ingest(update: update(committed: "早上好各位，今天讲三件事情。", partial: ""))
+
+        XCTAssertEqual(coordinator.paragraphs.map(\.text), ["早上好各位。", "今天讲三件事情。"])
+        XCTAssertEqual(coordinator.paragraphs.map(\.id), ["c-0", "c-1"])
+        XCTAssertTrue(coordinator.paragraphs.allSatisfy { !$0.isPartial })
+        // 文本 key 未变 → 交接不触发重译
+        XCTAssertEqual(provider.requestedTexts.filter { $0 == "早上好各位。" }.count, 1)
+        XCTAssertFalse(provider.requestedTexts.contains("早上好各位，今天讲三件事情。"))
+    }
+
+    func test22_ingestFinal_resetsAnchors_splitsFinalTextFresh() async {
+        let provider = MockTranslationProvider()
+        let coordinator = makeCoordinator(provider: provider, target: english)
+
+        coordinator.ingest(update: update(committed: "", partial: "第一句讲开场。第二句讲结尾。"))
+        await waitUntil { coordinator.paragraphs.count == 2 }
+
+        // 最终稿权威：即使与锚形态不同也整稿全量重切（此时字幕已收起，无重现风险）
+        coordinator.ingestFinal(text: "第一句讲开场，第二句讲结尾。")
+
+        XCTAssertEqual(coordinator.paragraphs.map(\.text), ["第一句讲开场，第二句讲结尾。"])
+        XCTAssertEqual(coordinator.paragraphs.map(\.id), ["c-0"])
+        XCTAssertTrue(coordinator.paragraphs.allSatisfy { !$0.isPartial })
+    }
 }
