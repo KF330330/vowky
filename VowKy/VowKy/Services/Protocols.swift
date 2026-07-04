@@ -12,6 +12,7 @@ protocol SpeechRecognizerProtocol {
     func recognize(samples: [Float], sampleRate: Int) async -> String?
     func recognizeDetailed(samples: [Float], sampleRate: Int) async -> DetailedRecognition?
     var isReady: Bool { get }
+    func warmUp() async
 }
 
 extension SpeechRecognizerProtocol {
@@ -20,6 +21,9 @@ extension SpeechRecognizerProtocol {
         guard let text = await recognize(samples: samples, sampleRate: sampleRate) else { return nil }
         return DetailedRecognition(text: text, tokens: [], timestamps: [])
     }
+
+    /// 默认实现：无预热动作。进程外实现（RemoteSpeechRecognizer）覆盖为 spawn+handshake。
+    func warmUp() async {}
 }
 
 protocol AudioRecorderProtocol {
@@ -62,6 +66,8 @@ protocol AudioBackupProtocol {
     func finalizeAndDelete()
     func recoverSamples() -> [Float]?
     func deleteBackup()
+    /// 识别失败时把备份音频移到用户可见目录（修好 WAV header），返回目标 URL；失败返回 nil 且保留原备份。
+    func preserveBackup(to directory: URL, baseName: String) -> URL?
 }
 
 protocol UsageTrackerProtocol {

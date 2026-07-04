@@ -432,6 +432,9 @@
 "appState.error.noVoice" = "No sound detected — check microphone permission or your system input device";
 "appState.error.fileTaskRunning" = "A file transcription task is already running";
 "appState.error.recordingTaskRunning" = "A recording task is already running";
+"appState.error.recognitionFailedAudioSaved" = "Recognition failed — recording saved to VowKy Recordings";
+"appState.error.recognitionFailed" = "Recognition failed — please try again";
+"appState.backup.unrecognizedFilename" = "VowKy Unrecognized";
 
 /* AppDelegate alerts */
 "alert.recovery.title" = "Unfinished recording detected";

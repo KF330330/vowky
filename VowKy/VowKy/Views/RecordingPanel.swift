@@ -188,7 +188,8 @@ struct RecordingPanelContent: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.white)
-            Text(loc.string("recordingPanel.noVoice"))
+            // 优先显示真实失败原因（如「识别失败，录音已保存」），无具体错误才回退默认文案
+            Text(appState.errorMessage ?? loc.string("recordingPanel.noVoice"))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.white)
         }

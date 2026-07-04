@@ -432,6 +432,9 @@
 "appState.error.noVoice" = "未检测到声音，请检查麦克风权限或系统输入设备设置";
 "appState.error.fileTaskRunning" = "已有文件转录任务正在进行";
 "appState.error.recordingTaskRunning" = "已有录音任务正在进行";
+"appState.error.recognitionFailedAudioSaved" = "识别失败，录音已保存到 VowKy Recordings";
+"appState.error.recognitionFailed" = "识别失败，请重试";
+"appState.backup.unrecognizedFilename" = "VowKy 未识别";
 
 /* AppDelegate alerts */
 "alert.recovery.title" = "检测到未完成的录音";

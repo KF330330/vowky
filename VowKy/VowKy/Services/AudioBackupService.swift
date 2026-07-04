@@ -67,6 +67,54 @@ final class AudioBackupService: AudioBackupProtocol {
         try? FileManager.default.removeItem(at: backupURL)
     }
 
+    func preserveBackup(to directory: URL, baseName: String) -> URL? {
+        guard hasBackup else { return nil }
+
+        // 先修 WAV header（fileSize/dataSize 只在 finalize 时回写），否则外部播放器认为时长为 0
+        if let writer {
+            writer.finalize()
+            self.writer = nil
+        } else {
+            // 无 writer（如启动恢复场景的遗留备份）：原地修 header + 清理崩溃遗留的 sidecar
+            WAVSampleFileWriter.repairHeaderInPlace(at: backupURL)
+            try? FileManager.default.removeItem(at: WAVSampleFileWriter.inProgressSidecarURL(for: backupURL))
+        }
+
+        let fileManager = FileManager.default
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            print("[VowKy][Backup] preserveBackup: cannot create directory: \(error)")
+            return nil
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let stem = "\(baseName) \(formatter.string(from: Date()))"
+        var candidate = stem
+        var suffix = 2
+        while fileManager.fileExists(atPath: directory.appendingPathComponent("\(candidate).wav").path) {
+            candidate = "\(stem)-\(suffix)"
+            suffix += 1
+        }
+        let destination = directory.appendingPathComponent("\(candidate).wav")
+
+        do {
+            try fileManager.moveItem(at: backupURL, to: destination)
+        } catch {
+            do {
+                try fileManager.copyItem(at: backupURL, to: destination)
+                try? fileManager.removeItem(at: backupURL)
+            } catch {
+                print("[VowKy][Backup] preserveBackup failed: \(error)")
+                return nil
+            }
+        }
+        print("[VowKy][Backup] Preserved backup at \(destination.path)")
+        return destination
+    }
+
     // MARK: - Private
 
     private func closeFile() {

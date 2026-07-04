@@ -5,6 +5,7 @@ import Foundation
 
 final class MockSpeechRecognizer: SpeechRecognizerProtocol {
     var isReady: Bool = true
+    var warmUpCallCount = 0
     var recognizeResult: String? = "测试结果"
     var queuedRecognizeResults: [String?] = []
     var recognizeDelay: UInt64 = 0 // nanoseconds
@@ -30,6 +31,8 @@ final class MockSpeechRecognizer: SpeechRecognizerProtocol {
         }
         return recognizeResult
     }
+
+    func warmUp() async { warmUpCallCount += 1 }
 
     /// 非空时 recognizeDetailed 依次出队（含 token 时间戳）。
     var queuedDetailedResults: [DetailedRecognition] = []
@@ -177,4 +180,16 @@ final class MockAudioBackupService: AudioBackupProtocol {
     func finalizeAndDelete() { finalizeAndDeleteCallCount += 1 }
     func recoverSamples() -> [Float]? { return recoverSamplesResult }
     func deleteBackup() { deleteBackupCallCount += 1 }
+
+    var preserveBackupCallCount = 0
+    var lastPreserveDirectory: URL?
+    var lastPreserveBaseName: String?
+    var preserveBackupResult: URL? = URL(fileURLWithPath: "/tmp/mock-preserved.wav")
+
+    func preserveBackup(to directory: URL, baseName: String) -> URL? {
+        preserveBackupCallCount += 1
+        lastPreserveDirectory = directory
+        lastPreserveBaseName = baseName
+        return preserveBackupResult
+    }
 }

@@ -381,13 +381,35 @@ final class AppState: ObservableObject {
         Task { @MainActor in
             CrashLogger.log("[Recognize] Starting speech recognition...")
             print("[VowKy][AppState] Starting recognition...")
-            let result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+            var result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+            // nil + isReady=false ⇒ 传输/helper 失败（transport 失败路径都会同步清 readyState），
+            // 重试一次让 transport 自动 respawn helper；nil + isReady=true ⇒ 真没识别到内容。
+            if result == nil && !speechRecognizer.isReady {
+                CrashLogger.log("[Recognize] Infra failure (helper down), retrying once...")
+                result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+            }
             CrashLogger.log("[Recognize] Result: \(result ?? "nil")")
             print("[VowKy][AppState] Recognition result: \(result ?? "nil")")
 
             // If result is nil or empty, go back to idle without outputting
             guard let text = result, !text.isEmpty else {
-                backupService?.deleteBackup()
+                if result == nil && !speechRecognizer.isReady {
+                    // 基础设施失败：绝不删用户音频，保全到 VowKy Recordings 供文件转写补救
+                    let savedURL = backupService?.preserveBackup(
+                        to: RecordingTranscriptionOutputStore.defaultOutputDirectory(),
+                        baseName: L("appState.backup.unrecognizedFilename")
+                    )
+                    if let savedURL {
+                        errorMessage = L("appState.error.recognitionFailedAudioSaved")
+                        CrashLogger.log("[Recognize] Infra failure, audio preserved at \(savedURL.path)")
+                    } else {
+                        // preserve 失败：备份留在原地，下次启动 checkForRecovery 兜底
+                        errorMessage = L("appState.error.recognitionFailed")
+                        CrashLogger.log("[Recognize] Infra failure, preserveBackup failed, backup kept in place")
+                    }
+                } else {
+                    backupService?.deleteBackup()
+                }
                 AnalyticsService.shared.trackVoiceFailure()
                 state = .idle
                 print("[VowKy][AppState] Empty result → state = .idle")
@@ -598,12 +620,25 @@ final class AppState: ObservableObject {
         // Recognize the recovered audio
         state = .recognizing
         Task { @MainActor in
-            let result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+            var result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+            if result == nil && !speechRecognizer.isReady {
+                CrashLogger.log("[Recovery] Infra failure (helper down), retrying once...")
+                result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+            }
             CrashLogger.log("[Recovery] Recognition result: \(result ?? "nil")")
             guard let text = result, !text.isEmpty else {
-                backup.deleteBackup()
+                if result == nil && !speechRecognizer.isReady {
+                    // 基础设施失败：保全音频而不是删除（与 stopRecordingAndRecognize 同判别）
+                    let savedURL = backup.preserveBackup(
+                        to: RecordingTranscriptionOutputStore.defaultOutputDirectory(),
+                        baseName: L("appState.backup.unrecognizedFilename")
+                    )
+                    CrashLogger.log("[Recovery] Infra failure, audio preserved: \(savedURL?.path ?? "failed, backup kept")")
+                } else {
+                    backup.deleteBackup()
+                    print("[VowKy][AppState] Recovery: empty result, deleted backup")
+                }
                 state = .idle
-                print("[VowKy][AppState] Recovery: empty result, deleted backup")
                 return
             }
 

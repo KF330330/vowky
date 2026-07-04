@@ -5,7 +5,13 @@ import Foundation
 final class RemoteSpeechRecognizer: SpeechRecognizerProtocol {
 
     private let transport: HelperTransport
-    private static let requestTimeout: TimeInterval = 60
+
+    /// 超时随音频时长伸缩：解码约 0.17x 实时，0.5x + 30s 留 ~3x 余量。
+    /// 短音频退化为 60s 下限（文件转写/录音引擎的分段请求行为不变）；上限 30 分钟防极端录音。
+    static func requestTimeout(sampleCount: Int, sampleRate: Int) -> TimeInterval {
+        let duration = Double(sampleCount) / Double(max(sampleRate, 1))
+        return min(max(60, duration * 0.5 + 30), 1800)
+    }
 
     init(transport: HelperTransport) {
         self.transport = transport
@@ -23,13 +29,15 @@ final class RemoteSpeechRecognizer: SpeechRecognizerProtocol {
     func recognize(samples: [Float], sampleRate: Int) async -> String? {
         // 不预先 gate readyState:request 内部会按需 (re)spawn,helper 崩溃后下一次调用自愈。
         let payload = SpeechIPCWire.encodeRecognizeRequest(detailed: false, samples: samples, sampleRate: sampleRate)
-        guard let response = await transport.request(payload, timeout: Self.requestTimeout) else { return nil }
+        let timeout = Self.requestTimeout(sampleCount: samples.count, sampleRate: sampleRate)
+        guard let response = await transport.request(payload, timeout: timeout) else { return nil }
         return SpeechIPCWire.decodeRecognizeResponse(response)
     }
 
     func recognizeDetailed(samples: [Float], sampleRate: Int) async -> DetailedRecognition? {
         let payload = SpeechIPCWire.encodeRecognizeRequest(detailed: true, samples: samples, sampleRate: sampleRate)
-        guard let response = await transport.request(payload, timeout: Self.requestTimeout) else { return nil }
+        let timeout = Self.requestTimeout(sampleCount: samples.count, sampleRate: sampleRate)
+        guard let response = await transport.request(payload, timeout: timeout) else { return nil }
         return SpeechIPCWire.decodeDetailedResponse(response)
     }
 }

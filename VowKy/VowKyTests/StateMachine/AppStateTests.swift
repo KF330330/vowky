@@ -365,4 +365,82 @@ final class AppStateTests: XCTestCase {
         _ = await t1.value
         _ = await t2.value
     }
+
+    // MARK: - 基础设施失败判别（nil + isReady=false）：重试 + 保全音频，绝不删备份
+
+    private func makeAppStateWithBackup() -> MockAudioBackupService {
+        let mockBackup = MockAudioBackupService()
+        appState = AppState(
+            speechRecognizer: mockRecognizer,
+            audioRecorder: mockRecorder,
+            permissionChecker: mockPermission,
+            backupService: mockBackup
+        )
+        return mockBackup
+    }
+
+    func test23_infraFailureRetriesOncePreservesBackup() async throws {
+        let mockBackup = makeAppStateWithBackup()
+        mockRecognizer.recognizeResult = nil
+        mockRecognizer.isReady = false // transport 失败路径会同步清 readyState
+
+        appState.handleHotkeyToggle() // idle → recording
+        appState.handleHotkeyToggle() // recording → recognizing
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(appState.state, .idle)
+        XCTAssertEqual(mockRecognizer.recognizeCallCount, 2, "infra 失败应自动重试一次")
+        XCTAssertEqual(mockBackup.preserveBackupCallCount, 1, "音频应被保全")
+        XCTAssertEqual(mockBackup.deleteBackupCallCount, 0, "infra 失败绝不删备份")
+        XCTAssertEqual(mockBackup.lastPreserveBaseName, L("appState.backup.unrecognizedFilename"))
+        XCTAssertEqual(appState.errorMessage, L("appState.error.recognitionFailedAudioSaved"))
+    }
+
+    func test24_nilResultWithReadyHelperKeepsLegacyBehavior() async throws {
+        let mockBackup = makeAppStateWithBackup()
+        mockRecognizer.recognizeResult = nil
+        // isReady 保持 true：真没识别到内容
+
+        appState.handleHotkeyToggle()
+        appState.handleHotkeyToggle()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(appState.state, .idle)
+        XCTAssertEqual(mockRecognizer.recognizeCallCount, 1, "非 infra 失败不重试")
+        XCTAssertEqual(mockBackup.deleteBackupCallCount, 1)
+        XCTAssertEqual(mockBackup.preserveBackupCallCount, 0)
+        XCTAssertNil(appState.errorMessage)
+    }
+
+    func test25_infraFailureRetrySucceedsInsertsText() async throws {
+        let mockBackup = makeAppStateWithBackup()
+        mockRecognizer.queuedRecognizeResults = [nil, "重试成功"]
+        mockRecognizer.isReady = false
+
+        appState.handleHotkeyToggle()
+        appState.handleHotkeyToggle()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(appState.state, .idle)
+        XCTAssertEqual(mockRecognizer.recognizeCallCount, 2)
+        XCTAssertEqual(appState.lastResult, "重试成功")
+        XCTAssertEqual(mockBackup.preserveBackupCallCount, 0)
+        XCTAssertEqual(mockBackup.finalizeAndDeleteCallCount, 1, "成功路径正常清理备份")
+    }
+
+    func test26_infraFailurePreserveFailsKeepsBackupInPlace() async throws {
+        let mockBackup = makeAppStateWithBackup()
+        mockBackup.preserveBackupResult = nil // 模拟目录不可写等
+        mockRecognizer.recognizeResult = nil
+        mockRecognizer.isReady = false
+
+        appState.handleHotkeyToggle()
+        appState.handleHotkeyToggle()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(appState.state, .idle)
+        XCTAssertEqual(mockBackup.preserveBackupCallCount, 1)
+        XCTAssertEqual(mockBackup.deleteBackupCallCount, 0, "preserve 失败也不删备份，留给下次启动恢复")
+        XCTAssertEqual(appState.errorMessage, L("appState.error.recognitionFailed"))
+    }
 }

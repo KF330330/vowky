@@ -473,6 +473,11 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
     private func startRecordingPipeline(operationID: UUID) async {
         guard isActive(operationID) else { return }
+        if !finalRecognizer.isReady {
+            // helper 可能刚崩溃/被回收：先预热（respawn + handshake，阻塞到模型加载完）再判定
+            await finalRecognizer.warmUp()
+            guard isActive(operationID) else { return }
+        }
         guard finalRecognizer.isReady else {
             fail(operationID: operationID, message: L("recording.error.modelNotReady"))
             return
