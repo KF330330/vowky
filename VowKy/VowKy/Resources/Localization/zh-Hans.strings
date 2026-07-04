@@ -69,6 +69,7 @@
 "settings.translation.engine.apple" = "系统离线翻译";
 "settings.translation.targetLang" = "目标语言";
 "settings.translation.apple.note" = "完全离线，由 macOS 系统翻译。首次使用某语言时系统会自动下载离线语言包。";
+"settings.translation.apple.requiresOS15" = "「系统离线翻译」需要 macOS 15 (Sequoia) 或更高版本。升级系统后即可免 API Key、完全离线翻译。";
 "settings.translation.quickFill" = "快速填入";
 "settings.translation.selectProvider" = "选择服务商";
 "settings.translation.llm.recommend" = "推荐阿里 Qwen-MT：专用翻译模型，速度快、质量高、便宜、国内直连。填入后在下方补上你的 API Key 即可。";

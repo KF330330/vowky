@@ -385,6 +385,13 @@ struct SettingsView: View {
                     }
                     .onChange(of: translationEngine) { _ in saveTranslationConfig() }
 
+                    if #unavailable(macOS 15.0) {
+                        Text(loc.string("settings.translation.apple.requiresOS15"))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     Picker(loc.string("settings.translation.targetLang"), selection: $translationTargetBCP47) {
                         ForEach(TranslationTarget.presets, id: \.target.bcp47) { preset in
                             Text(preset.name).tag(preset.target.bcp47)

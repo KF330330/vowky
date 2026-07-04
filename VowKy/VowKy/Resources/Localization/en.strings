@@ -69,6 +69,7 @@
 "settings.translation.engine.apple" = "System offline translation";
 "settings.translation.targetLang" = "Target language";
 "settings.translation.apple.note" = "Fully offline, translated by macOS. The system downloads an offline language pack the first time you use a language.";
+"settings.translation.apple.requiresOS15" = "System offline translation requires macOS 15 (Sequoia) or later. After upgrading, translation works fully offline with no API key.";
 "settings.translation.quickFill" = "Quick fill";
 "settings.translation.selectProvider" = "Choose provider";
 "settings.translation.llm.recommend" = "Recommended: Alibaba Qwen-MT — a dedicated translation model that is fast, high-quality, cheap, and reachable from mainland China. After filling it in, just add your API Key below.";
