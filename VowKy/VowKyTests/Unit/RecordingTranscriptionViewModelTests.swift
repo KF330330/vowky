@@ -155,6 +155,53 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         }
     }
 
+    func testCompleteWithoutSubtitleDisplays_writesNoSubtitleLogFile() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "最终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let contents = try FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertFalse(
+            contents.contains { $0.contains("(\(LL("subtitleLog.export.filenameSuffix")))") },
+            "整场没上过字幕不应产出实录文件：\(contents)"
+        )
+    }
+
+    func testCompleteWithSubtitleRecords_writesSubtitleLogNextToTranscript() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "最终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        // 直接注入实录（不走真实 pacer：预览解码要凑样本，脆且慢）。
+        // 注入必须在进入 recording 之后——start() 会 reset 记录器。
+        viewModel.subtitleDisplayRecorder.record(
+            TranscriptParagraph(id: "p-0", text: "第一句字幕。", isPartial: true,
+                                translation: .translated("First subtitle.")),
+            isNewSentence: true, at: 2.0
+        )
+        viewModel.subtitleDisplayRecorder.record(
+            TranscriptParagraph(id: "p-0", text: "第二句字幕", isPartial: true, translation: .pending),
+            isNewSentence: true, at: 5.0
+        )
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let output = try XCTUnwrap(viewModel.output)
+        let logURL = SubtitleDisplayRecorder.outputURL(for: output.textURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: logURL.path), "实录文件应写在原文旁")
+        let content = try String(contentsOf: logURL)
+        XCTAssertTrue(content.contains("[00:02] 第一句字幕。"), content)
+        XCTAssertTrue(content.contains("> First subtitle."), content)
+        XCTAssertTrue(content.contains("[00:05] 第二句字幕"), content)
+    }
+
     func testWaveformBandsReflectPCMPositiveAndNegativePeaks() {
         let samples: [Float] = [
             0.00, 0.03, -0.04, 0.01,

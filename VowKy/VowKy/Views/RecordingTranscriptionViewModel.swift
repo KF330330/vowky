@@ -52,12 +52,15 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     /// 字幕节奏调度：排队按序上屏，杜绝一次更新跨多句时跳句
     private lazy var subtitlePacer: SubtitlePacer = {
         let pacer = SubtitlePacer()
-        pacer.onDisplay = { [weak self] paragraph in
+        pacer.onDisplay = { [weak self] paragraph, isNewSentence in
             Self.debugSubtitleTrace("DISPLAY", paragraph.text)
+            self?.recordSubtitleDisplay(paragraph, isNewSentence: isNewSentence)
             self?.subtitleController.update(paragraph: paragraph)
         }
         return pacer
     }()
+    /// 字幕实录：累积真实上屏内容，complete() 写盘。internal 供单测直接注入记录。
+    let subtitleDisplayRecorder = SubtitleDisplayRecorder()
 
     /// E2E 自动化验证用追踪（仅 Debug 构建）：字幕上屏与段落流写入 /tmp 日志，
     /// 供脚本断言「零漏句、零重排」。Release 构建为空实现。
@@ -227,6 +230,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         state = .loadingModel
         lastStreamingUpdate = nil
         plainSplitter.reset()
+        subtitleDisplayRecorder.reset()
         bilingualSaveCancellable = nil
         refreshTranslationSetup(resetCoordinator: true)
 
@@ -284,6 +288,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         subtitleController.close()
         subtitleCancellable = nil
         subtitlePacer.reset()
+        subtitleDisplayRecorder.reset()
     }
 
     func copyResult() {
@@ -457,6 +462,28 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         paragraphs.filter { !TranslationCoordinator.isTrivialText($0.text) }
     }
 
+    /// 字幕实录挂钩：每次真实上屏渲染时记一笔（时间基准与 elapsedSeconds 一致）。
+    private func recordSubtitleDisplay(_ paragraph: TranscriptParagraph, isNewSentence: Bool) {
+        let offset = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? elapsedSeconds
+        subtitleDisplayRecorder.record(paragraph, isNewSentence: isNewSentence, at: offset)
+    }
+
+    /// 字幕实录落盘：整场没上过屏（未开字幕/零内容）不产文件；
+    /// 非关键产物，写失败只记日志，绝不影响 complete 主流程。
+    private func writeSubtitleLogIfNeeded(textURL: URL) {
+        guard !subtitleDisplayRecorder.isEmpty else { return }
+        let markdown = SubtitleDisplayRecorder.compose(
+            records: subtitleDisplayRecorder.records,
+            startedAt: recordingStartedAt,
+            translation: translationConfig
+        )
+        do {
+            try outputStore.writeTranscript(markdown, to: SubtitleDisplayRecorder.outputURL(for: textURL))
+        } catch {
+            NSLog("[VowKy][SubtitleLog] 字幕实录写入失败: \(error.localizedDescription)")
+        }
+    }
+
     /// 翻译关时的字幕数据源：锚定切分全文（已显示短句不因标点漂移合并回改），
     /// 标记为跳过翻译（字幕不渲染译文行）。
     private func plainParagraphs(of update: StreamingRecognitionUpdate) -> [TranscriptParagraph] {
@@ -604,6 +631,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
             state = .completed
             statusMessage = nil
+
+            writeSubtitleLogIfNeeded(textURL: preparedOutput.textURL)
 
             // 最终稿（加标点后文本变化）整稿重新送译，得到双语终态
             if !finalText.isEmpty {

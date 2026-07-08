@@ -486,6 +486,14 @@
 "transcribe.noTextRecognized" = "没有识别到文字";
 "bilingual.export.translationFailed" = "（翻译失败）";
 "bilingual.export.filenameSuffix" = "双语";
+
+/* Subtitle display log export */
+"subtitleLog.export.filenameSuffix" = "字幕实录";
+"subtitleLog.export.title" = "字幕实录";
+"subtitleLog.export.recordingStartedAt" = "录音开始：%@";
+"subtitleLog.export.translationOn" = "翻译：%@ → %@";
+"subtitleLog.export.translationOff" = "翻译：关闭";
+"subtitleLog.export.pendingTranslation" = "（译文未上屏）";
 "history.export.csvHeader" = "时间,内容,类型";
 
 /* Language switch restart confirmation */

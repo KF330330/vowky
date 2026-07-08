@@ -486,6 +486,14 @@
 "transcribe.noTextRecognized" = "No text recognized";
 "bilingual.export.translationFailed" = "(translation failed)";
 "bilingual.export.filenameSuffix" = "Bilingual";
+
+/* Subtitle display log export */
+"subtitleLog.export.filenameSuffix" = "Subtitle Log";
+"subtitleLog.export.title" = "Subtitle Log";
+"subtitleLog.export.recordingStartedAt" = "Recording started: %@";
+"subtitleLog.export.translationOn" = "Translation: %@ → %@";
+"subtitleLog.export.translationOff" = "Translation: off";
+"subtitleLog.export.pendingTranslation" = "(translation not shown)";
 "history.export.csvHeader" = "Time,Content,Type";
 
 /* Language switch restart confirmation */

@@ -10,7 +10,9 @@ final class SubtitlePacer {
     private let minDisplay: TimeInterval
     private let linger: TimeInterval
 
-    var onDisplay: ((TranscriptParagraph) -> Void)?
+    /// 每次真实上屏渲染时回调。第二参数：true = 新句上屏（show），false = 当前句原地刷新
+    /// （文本增长/译文到达）。消费方（字幕实录）靠它做"每条字幕一条记录"的归并。
+    var onDisplay: ((TranscriptParagraph, _ isNewSentence: Bool) -> Void)?
 
     private(set) var displayed: TranscriptParagraph?
     private var shownAt = Date.distantPast
@@ -43,7 +45,7 @@ final class SubtitlePacer {
                 if fresh.text != displayed.text && !isShrinkIntoNext { lastContentChangeAt = Date() }
                 self.displayed = fresh
                 if !isShrinkIntoNext {
-                    onDisplay?(fresh)
+                    onDisplay?(fresh, false)
                 }
             }
         } else {
@@ -73,7 +75,7 @@ final class SubtitlePacer {
         let now = Date()
         shownAt = now
         lastContentChangeAt = now
-        onDisplay?(paragraph)
+        onDisplay?(paragraph, true)
     }
 
     private func tryAdvance() {

@@ -26,7 +26,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test01_backlogAdvancesSequentially_noSkip() async {
         let pacer = SubtitlePacer(minDisplay: 0.15, linger: 0.05)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "句一。")])
         XCTAssertEqual(shown, ["句一。"])
@@ -42,7 +42,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test02_sameSentenceGrowth_updatesInPlace() async {
         let pacer = SubtitlePacer(minDisplay: 0.1, linger: 0.05)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "今天")])
         pacer.ingest([p("p-0", "今天天气很好")])
@@ -55,7 +55,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test03_timerDrivenAdvance_withoutFurtherIngest() async {
         let pacer = SubtitlePacer(minDisplay: 0.15, linger: 0.05)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "第一句。")])
         pacer.ingest([p("c-0", "第一句。"), p("p-0", "第二句")])
@@ -70,7 +70,7 @@ final class SubtitlePacerTests: XCTestCase {
         let pacer = SubtitlePacer(minDisplay: 0.1, linger: 0.05)
         var lastShown: TranscriptParagraph?
         var emitCount = 0
-        pacer.onDisplay = { lastShown = $0; emitCount += 1 }
+        pacer.onDisplay = { paragraph, _ in lastShown = paragraph; emitCount += 1 }
 
         pacer.ingest([p("c-0", "Hello.")])
         pacer.ingest([p("c-0", "Hello.", translation: .translated("你好。"))])
@@ -82,7 +82,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test05_burstBacklog_allShownInOrder_nothingDropped() async {
         let pacer = SubtitlePacer(minDisplay: 0.12, linger: 0.04)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "一。")])
         pacer.ingest([
@@ -97,7 +97,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test06_unmatchedRewrite_jumpsToLatestWithoutReplay() async {
         let pacer = SubtitlePacer(minDisplay: 0.1, linger: 0.05)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "ABC")])
         // 当前句在新列表中完全消失（大改写）→ 跳到最新，不回放中间句
@@ -108,7 +108,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test07_repeatedSentences_anchoredByPosition_noReplay() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "好的。")])
         pacer.ingest([p("c-0", "好的。"), p("p-0", "好的。")])
@@ -124,7 +124,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test09_punctuationDrift_matchedAsSameSentence_noJump() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         // 预览重解码把「ありがとう。」修订为「ありがとうございました」：
         // 标点漂移不应被当成新句/大改写
@@ -137,7 +137,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test08_emptyIngest_keepsState_andResetClears() async {
         let pacer = SubtitlePacer(minDisplay: 0.1, linger: 0.05)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "内容")])
         pacer.ingest([])
@@ -154,7 +154,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test10_rewrittenPartial_withEarlyPrefixTwin_doesNotReplayHistory() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         // 首句「嗯。」恰好是当前 partial「嗯这」的归一化前缀
         let committed = [
@@ -180,7 +180,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test11_listShrinks_hintClampedToTail_stillLocatesInPlace() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "第一句。")])
         pacer.ingest([p("p-0", "第一句。"), p("p-1", "第二句。"), p("p-2", "第三的开头")])
@@ -196,7 +196,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test13_backwardShiftAtToleranceBoundary_locatesInPlace_keepsBacklog() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         pacer.ingest([p("p-0", "甲句。")])
         pacer.ingest([
@@ -228,7 +228,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test14_punctuationDriftMerge_locatesMergedParagraph_keepsBacklog() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         // 快语速短句先分段上屏
         pacer.ingest([p("p-0", "第一点是进度。")])
@@ -253,7 +253,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test15_mergedParagraphResplit_resumesAtTail_noReplayFromHead() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         // 当前显示的是一个合并大段
         pacer.ingest([p("p-0", "第一点是进度，第二点是风险，第三点是预算，第四点是人员，")])
@@ -277,7 +277,7 @@ final class SubtitlePacerTests: XCTestCase {
     func test16_freezeShrink_suppressed_untilNextParagraphTakesOver() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         // 长句 partial 增长越过了未来冻结点
         pacer.ingest([p("p-0", "这个句子很长很长，而且还在")])
@@ -295,10 +295,35 @@ final class SubtitlePacerTests: XCTestCase {
         XCTAssertEqual(shown.last, "而且还在继续说下去", "advance 后由下一段接管")
     }
 
+    func test17_onDisplaySignal_distinguishesNewSentenceVsRefresh() async {
+        let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
+        var shown: [(text: String, isNew: Bool)] = []
+        pacer.onDisplay = { shown.append(($0.text, $1)) }
+
+        // 首条走 show → 新句
+        pacer.ingest([p("p-0", "今天")])
+        XCTAssertEqual(shown.last?.text, "今天")
+        XCTAssertEqual(shown.last?.isNew, true)
+
+        // 同句增长 → 原地刷新
+        pacer.ingest([p("p-0", "今天天气好")])
+        XCTAssertEqual(shown.last?.text, "今天天气好")
+        XCTAssertEqual(shown.last?.isNew, false)
+
+        // 译文到达（id 从 p-0 变 c-0 也不影响）→ 原地刷新
+        pacer.ingest([p("c-0", "今天天气好。", translation: .translated("Nice weather today."))])
+        XCTAssertEqual(shown.last?.isNew, false)
+
+        // backlog 推进到下一句 → 新句
+        pacer.ingest([p("c-0", "今天天气好。", translation: .translated("Nice weather today.")), p("p-0", "明天")])
+        await waitUntil { shown.last?.text == "明天" }
+        XCTAssertEqual(shown.last?.isNew, true)
+    }
+
     func test12_rewrittenPartial_matchingFarBackDuplicate_jumpsToLatestInstead() async {
         let pacer = SubtitlePacer(minDisplay: 0.05, linger: 0.02)
         var shown: [String] = []
-        pacer.onDisplay = { shown.append($0.text) }
+        pacer.onDisplay = { paragraph, _ in shown.append(paragraph.text) }
 
         // 口头禅「好的。」在远前方出现过，当前 partial 旧文本与之完全相同
         let committed = [
