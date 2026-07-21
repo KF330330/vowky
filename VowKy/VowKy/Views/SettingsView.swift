@@ -12,29 +12,56 @@ final class SettingsWindowController {
 
     private var window: NSWindow?
     private var titleObserver: AnyCancellable?
+    /// willClose 观察者 token：窗口关闭时移除，避免每次开→关累积一个僵尸注册
+    private var closeObserver: NSObjectProtocol?
     private weak var updater: SPUUpdater?
     private weak var updateCoordinator: UpdateReminderCoordinator?
+    private weak var appState: AppState?
 
-    /// 由 MenuBarView 调用时传入 updater + coordinator，让设置页的「自动检查更新」开关与「检查更新」按钮可用。
-    func showWindow(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil) {
+    /// 由 MenuBarView 调用时传入 updater + coordinator，让设置页的「自动检查更新」开关与「检查更新」按钮可用；
+    /// appState 供「重新打开新手引导」按钮使用。
+    func showWindow(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil, appState: AppState? = nil) {
         if let updater { self.updater = updater }
         if let updateCoordinator { self.updateCoordinator = updateCoordinator }
+        if let appState { self.appState = appState }
+        // 防御：若激活策略被降到 .prohibited，窗口将无法前置，先恢复为 .accessory。
+        if NSApp.activationPolicy() == .prohibited {
+            NSApp.setActivationPolicy(.accessory)
+        }
         if let window = window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let settingsView = SettingsView(updater: self.updater, updateCoordinator: self.updateCoordinator)
+        let settingsView = SettingsView(updater: self.updater, updateCoordinator: self.updateCoordinator, appState: self.appState)
             .environmentObject(LocalizationManager.shared)
         let hostingController = NSHostingController(rootView: settingsView)
 
         let window = NSWindow(contentViewController: hostingController)
         window.title = L("window.settings.title")
         window.styleMask = [.titled, .closable]
+        // 关窗时 AppKit 默认会 release 窗口，与本类的强引用不平衡 → 二次打开悬挂崩溃，必须关掉。
+        window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let token = self.closeObserver {
+                    NotificationCenter.default.removeObserver(token)
+                    self.closeObserver = nil
+                }
+                self.titleObserver = nil
+                self.window = nil
+            }
+        }
 
         // SwiftUI 内容随语言切换自动刷新；AppKit 标题栏不在 SwiftUI graph 内，需手动跟随。
         titleObserver = LocalizationManager.shared.$language
@@ -184,6 +211,7 @@ struct SettingsView: View {
 
     private weak var updater: SPUUpdater?
     private weak var updateCoordinator: UpdateReminderCoordinator?
+    private weak var appState: AppState?
     @ObservedObject private var updateViewModel: CheckForUpdatesViewModel
 
     // 翻译
@@ -196,9 +224,10 @@ struct SettingsView: View {
     @State private var translationTestResult: String?
     @State private var translationTestInProgress: Bool = false
 
-    init(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil) {
+    init(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil, appState: AppState? = nil) {
         self.updater = updater
         self.updateCoordinator = updateCoordinator
+        self.appState = appState
         self.updateViewModel = CheckForUpdatesViewModel(updater: updater)
 
         let translationConfig = TranslationConfigStore.load()
@@ -319,6 +348,17 @@ struct SettingsView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(updater == nil || !updateViewModel.canCheckForUpdates)
+                }
+                HStack {
+                    Text(loc.string("settings.general.onboardingLabel"))
+                    Spacer()
+                    Button(loc.string("settings.general.onboardingButton")) {
+                        guard let appState else { return }
+                        OnboardingWindowController.shared.showWindow(appState: appState)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState == nil)
                 }
             }
 

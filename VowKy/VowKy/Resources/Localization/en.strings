@@ -56,6 +56,8 @@
 "settings.update.autoCheck" = "Automatically check for updates";
 "settings.update.checkNowLabel" = "Check for updates";
 "settings.update.checkButton" = "Check";
+"settings.general.onboardingLabel" = "Onboarding guide";
+"settings.general.onboardingButton" = "Reopen";
 
 /* ===== Settings: Language ===== */
 "settings.section.language" = "Language";

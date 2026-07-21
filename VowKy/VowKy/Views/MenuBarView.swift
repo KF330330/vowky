@@ -131,7 +131,7 @@ struct MenuBarView: View {
 
             // Settings（更新控件已移入设置页：自动检查更新开关 + 检查更新按钮）
             Button {
-                SettingsWindowController.shared.showWindow(updater: updater, updateCoordinator: updateCoordinator)
+                SettingsWindowController.shared.showWindow(updater: updater, updateCoordinator: updateCoordinator, appState: appState)
             } label: {
                 HStack {
                     Image(systemName: "gear")

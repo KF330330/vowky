@@ -69,7 +69,10 @@ final class OnboardingWindowController {
     }
 
     private func handleWindowClosed() {
-        // User clicked X — cleanup but don't mark completed, show again next launch
+        // 点 X = 视为完成引导：写标记 + 启动热键，避免每次启动重弹（可从设置页重新打开引导）。
+        // 不注册开机自启、不打 onboarding_done 埋点——那两样保留给真正走完引导的 completeOnboarding()。
+        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        viewModel?.appState?.startHotkey()
         viewModel?.cleanup()
         removeCloseObserver()
         window = nil

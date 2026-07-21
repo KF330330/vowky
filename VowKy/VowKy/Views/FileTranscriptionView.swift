@@ -68,7 +68,7 @@ final class FileTranscriptionWindowController {
                 self.viewModel?.cancel()
                 self.viewModel = nil
                 self.window = nil
-                NSApp.setActivationPolicy(.prohibited)
+                NSApp.setActivationPolicy(.accessory)
             }
         }
 

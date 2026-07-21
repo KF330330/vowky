@@ -53,7 +53,7 @@ final class HistoryWindowController {
                     self.closeObserver = nil
                 }
                 self.window = nil
-                NSApp.setActivationPolicy(.prohibited)
+                NSApp.setActivationPolicy(.accessory)
             }
         }
 

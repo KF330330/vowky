@@ -91,7 +91,7 @@ final class TranscriptionHistoryWindowController {
                 self.setWindow(nil, for: filter)
                 // 两个历史窗口都关了才隐藏 Dock 图标，避免父窗口（转录/录音）仍开着时被连带隐藏。
                 if self.fileWindow == nil && self.recordingWindow == nil {
-                    NSApp.setActivationPolicy(.prohibited)
+                    NSApp.setActivationPolicy(.accessory)
                 }
             }
         }

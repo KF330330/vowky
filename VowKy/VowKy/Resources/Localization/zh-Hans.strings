@@ -56,6 +56,8 @@
 "settings.update.autoCheck" = "自动检查更新";
 "settings.update.checkNowLabel" = "检查更新";
 "settings.update.checkButton" = "检查";
+"settings.general.onboardingLabel" = "新手引导";
+"settings.general.onboardingButton" = "重新打开";
 
 /* ===== 设置：语言 ===== */
 "settings.section.language" = "语言";
