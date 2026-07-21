@@ -74,6 +74,16 @@ final class AnalyticsService {
         }
     }
 
+    /// Generic event: `event` must be snake_case, ≤32 chars (server truncates);
+    /// `data` must stay small (≤512 chars serialized) and must never contain
+    /// user content, URLs, or file names.
+    func track(_ event: String, data: [String: Any]? = nil) {
+        trackActiveUse()
+        var body: [String: Any] = ["event": event, "device_id": deviceId]
+        if let data { body["data"] = data }
+        send(body)
+    }
+
     /// Call after each successful recognition.
     func trackRecognition() {
         trackActiveUse()

@@ -116,6 +116,24 @@ actor ToolProvisioner {
         return ProvisionedTools(binDir: binDir, ytDlp: ytDlp, ffmpeg: ffmpeg, ffprobe: ffprobe)
     }
 
+    /// 仅确保 ffmpeg 可用。供本地媒体在 AVFoundation 无法解码个别坏包时本机降级，
+    /// 媒体不会离开设备，也避免为了这条恢复路径额外准备 yt-dlp / ffprobe。
+    func ensureFFmpeg(progress: (@Sendable (ToolProvisionProgress) -> Void)? = nil) async throws -> URL {
+        let binDir = try ensureBinDir()
+        let ffmpeg = binDir.appendingPathComponent("ffmpeg")
+        progress?(ToolProvisionProgress(phase: .checking, tool: "ffmpeg", fractionCompleted: -1))
+        if !isInstalled(ffmpeg) {
+            try await provisionStaticTool(
+                name: "ffmpeg",
+                zipURL: Self.ffmpegZipURL,
+                dest: ffmpeg,
+                progress: progress
+            )
+        }
+        progress?(ToolProvisionProgress(phase: .ready, tool: "ffmpeg", fractionCompleted: 1))
+        return ffmpeg
+    }
+
     /// 懒加载 lux（仅哔哩哔哩无 cookie 兜底时才用，故不进 `ensureTools` 的 eager 路径）。返回可执行绝对路径。
     func ensureLux(progress: (@Sendable (ToolProvisionProgress) -> Void)? = nil) async throws -> URL {
         let binDir = try ensureBinDir()

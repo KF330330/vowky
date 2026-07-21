@@ -76,10 +76,16 @@ enum MediaAudioDecoderError: LocalizedError, Equatable {
 final class MediaAudioDecoder: MediaAudioDecoding {
     static let outputSampleRate = 16_000
 
+    private let fallbackDecoder: FFmpegAudioFallbackDecoding?
+
     private static let supportedExtensions: Set<String> = [
         "wav", "mp3", "m4a", "aac", "aiff", "aif", "flac",
         "mp4", "mov", "m4v"
     ]
+
+    init(fallbackDecoder: FFmpegAudioFallbackDecoding? = nil) {
+        self.fallbackDecoder = fallbackDecoder
+    }
 
     func loadInfo(url: URL) async throws -> MediaAudioInfo {
         try Task.checkCancellation()
@@ -105,7 +111,7 @@ final class MediaAudioDecoder: MediaAudioDecoding {
     }
 
     func decode(url: URL) async throws -> DecodedAudio {
-        try await decodeAsset(url: url, timeRange: nil)
+        try await decodeWithFallback(url: url, timeRange: nil)
     }
 
     func decode(url: URL, maximumDuration: TimeInterval) async throws -> DecodedAudio {
@@ -116,7 +122,44 @@ final class MediaAudioDecoder: MediaAudioDecoding {
     }
 
     func decode(url: URL, timeRange: MediaAudioTimeRange) async throws -> DecodedAudio {
-        try await decodeAsset(url: url, timeRange: timeRange)
+        try await decodeWithFallback(url: url, timeRange: timeRange)
+    }
+
+    private func decodeWithFallback(
+        url: URL,
+        timeRange: MediaAudioTimeRange?
+    ) async throws -> DecodedAudio {
+        do {
+            return try await decodeAsset(url: url, timeRange: timeRange)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let primaryError {
+            guard Self.shouldUseFFmpegFallback(for: primaryError), let fallbackDecoder else {
+                throw primaryError
+            }
+            do {
+                return try await fallbackDecoder.decode(url: url, timeRange: timeRange)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // ffmpeg 不可用时保留 AVFoundation 的原始错误，界面仍能显示准确的失败位置。
+                throw primaryError
+            }
+        }
+    }
+
+    private static func shouldUseFFmpegFallback(for error: Error) -> Bool {
+        guard let error = error as? MediaAudioDecoderError else { return false }
+        switch error {
+        case .cannotStartReading,
+             .cannotCopySampleBufferData,
+             .cannotCreateAudioConverter,
+             .conversionFailed,
+             .readFailed:
+            return true
+        default:
+            return false
+        }
     }
 
     private func decodeAsset(url: URL, timeRange: MediaAudioTimeRange?) async throws -> DecodedAudio {
@@ -413,4 +456,8 @@ final class MediaAudioDecoder: MediaAudioDecoding {
         let seconds = totalSeconds % 60
         return String(format: "%02d:%02d", minutes, seconds)
     }
+}
+
+protocol FFmpegAudioFallbackDecoding {
+    func decode(url: URL, timeRange: MediaAudioTimeRange?) async throws -> DecodedAudio
 }

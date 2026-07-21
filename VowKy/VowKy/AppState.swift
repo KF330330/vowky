@@ -479,6 +479,7 @@ final class AppState: ObservableObject {
 
     func makeFileTranscriptionService() -> FileTranscriptionService {
         FileTranscriptionService(
+            decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
             speechRecognizer: speechRecognizer,
             yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
         )

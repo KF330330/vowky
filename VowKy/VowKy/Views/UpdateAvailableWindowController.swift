@@ -89,8 +89,20 @@ final class UpdateAvailableWindowController {
         guard !didReply else { return }
         didReply = true
         UpdateLogger.log("用户在更新弹窗选择: \(Self.choiceLabel(choice))")
+        AnalyticsService.shared.track("update_prompt_choice", data: [
+            "choice": Self.choiceEventValue(choice),
+        ])
         reply?(choice)
         reply = nil
+    }
+
+    private static func choiceEventValue(_ choice: SPUUserUpdateChoice) -> String {
+        switch choice {
+        case .install: return "install"
+        case .dismiss: return "dismiss"
+        case .skip: return "skip"
+        @unknown default: return "unknown"
+        }
     }
 
     private static func choiceLabel(_ choice: SPUUserUpdateChoice) -> String {

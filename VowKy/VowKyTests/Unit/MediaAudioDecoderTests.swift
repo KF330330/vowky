@@ -70,15 +70,21 @@ final class MediaAudioDecoderTests: XCTestCase {
             throw XCTSkip("Configured regression media file does not exist")
         }
 
-        let decoded = try await MediaAudioDecoder().decode(
+        let start = ProcessInfo.processInfo.environment["VOWKY_TEST_MEDIA_START"]
+            .flatMap(TimeInterval.init) ?? 0
+        let duration = ProcessInfo.processInfo.environment["VOWKY_TEST_MEDIA_DURATION"]
+            .flatMap(TimeInterval.init) ?? 30
+        let decoded = try await MediaAudioDecoder(
+            fallbackDecoder: FFmpegAudioFallbackDecoder()
+        ).decode(
             url: url,
-            timeRange: MediaAudioTimeRange(start: 0, duration: 30)
+            timeRange: MediaAudioTimeRange(start: start, duration: duration)
         )
 
         XCTAssertEqual(decoded.sampleRate, 16_000)
         XCTAssertGreaterThan(decoded.samples.count, 10_000)
         XCTAssertLessThanOrEqual(decoded.samples.map { abs($0) }.max() ?? 0, 1)
-        XCTAssertLessThanOrEqual(decoded.duration, 30)
+        XCTAssertLessThanOrEqual(decoded.duration, duration)
     }
 
     func testDecodeEmptyFileReturnsClearError() async throws {

@@ -631,6 +631,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
             state = .completed
             statusMessage = nil
+            AnalyticsService.shared.track("rec_transcribe_done", data: [
+                "duration_s": Int(duration),
+                "char_count": finalText.count,
+            ])
 
             writeSubtitleLogIfNeeded(textURL: preparedOutput.textURL)
 
@@ -688,6 +692,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         }
         state = .failed(message)
         statusMessage = nil
+        AnalyticsService.shared.track("rec_transcribe_fail")
         clearActiveOperation(operationID: operationID)
     }
 

@@ -558,6 +558,16 @@ final class FileTranscriptionViewModel: ObservableObject {
                                 item.state = .completed
                             }
                             resultRecorder(text)
+                            let via: String
+                            switch source {
+                            case .manualSubtitle: via = "subtitle_manual"
+                            case .autoSubtitle: via = "subtitle_auto"
+                            }
+                            AnalyticsService.shared.track("link_transcribe_done", data: [
+                                "site": Self.siteCategory(for: job.remoteURLString),
+                                "via": via,
+                                "char_count": text.count,
+                            ])
                             let mdURL = Self.resolveMarkdownOutputURL(forRemoteTitle: displayTitle)
                             do {
                                 try text.write(to: mdURL, atomically: true, encoding: .utf8)
@@ -578,6 +588,9 @@ final class FileTranscriptionViewModel: ObservableObject {
                         let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                         updateJob(id: jobID) { $0.state = .failed(message) }
                         cleanupWorkDir(for: jobID)
+                        AnalyticsService.shared.track("file_transcribe_fail", data: [
+                            "kind": "link", "stage": "download",
+                        ])
                         continue
                     }
                 }
@@ -610,6 +623,17 @@ final class FileTranscriptionViewModel: ObservableObject {
                         job.state = .completed
                     }
                     resultRecorder(finalText)
+                    if isRemote {
+                        AnalyticsService.shared.track("link_transcribe_done", data: [
+                            "site": Self.siteCategory(for: job.remoteURLString),
+                            "via": "asr",
+                            "char_count": finalText.count,
+                        ])
+                    } else {
+                        AnalyticsService.shared.track("file_transcribe_done", data: [
+                            "char_count": finalText.count,
+                        ])
+                    }
 
                     // 转写一完成就自动落盘 raw text .md（与录音流程一致）。
                     // 链接任务的「源」是即将删除的临时文件，必须落到固定的 Recordings 目录、用视频标题命名。
@@ -638,6 +662,9 @@ final class FileTranscriptionViewModel: ObservableObject {
                     updateJob(id: jobID) { job in
                         job.state = .failed(message)
                     }
+                    AnalyticsService.shared.track("file_transcribe_fail", data: [
+                        "kind": isRemote ? "link" : "file", "stage": "transcribe",
+                    ])
                 }
             }
         }
@@ -824,6 +851,14 @@ final class FileTranscriptionViewModel: ObservableObject {
     }
 
     /// 为链接任务建唯一临时下载目录（NSTemporaryDirectory 下，OS 会自动回收，适合大且短命的媒体）。
+    /// 埋点用站点分类：只报白名单类别，绝不上报原始 URL（隐私红线）。
+    private static func siteCategory(for urlString: String?) -> String {
+        guard let urlString, let host = URL(string: urlString)?.host?.lowercased() else { return "other" }
+        if host.contains("youtube.com") || host.contains("youtu.be") { return "youtube" }
+        if host.contains("bilibili.com") || host.contains("b23.tv") { return "bilibili" }
+        return "other"
+    }
+
     private static func makeWorkDir() -> URL {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("VowKy-URLDownloads", isDirectory: true)

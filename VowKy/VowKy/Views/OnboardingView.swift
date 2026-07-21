@@ -138,6 +138,7 @@ final class OnboardingViewModel: ObservableObject {
     func completeOnboarding() {
         cleanup()
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        AnalyticsService.shared.track("onboarding_done")
         // startHotkey() 已在进入 Try It 步骤时调用，内部有 guard 防重复
         appState?.startHotkey()
         // 默认开启开机自启

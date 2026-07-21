@@ -293,6 +293,7 @@ struct SettingsView: View {
                             } else {
                                 try SMAppService.mainApp.unregister()
                             }
+                            AnalyticsService.shared.track("launch_login_toggle", data: ["on": newValue])
                         } catch {
                             // Revert on failure
                             launchAtLogin = !newValue
@@ -312,6 +313,7 @@ struct SettingsView: View {
                     Spacer()
                     Button(loc.string("settings.update.checkButton")) {
                         guard let updater else { return }
+                        AnalyticsService.shared.track("update_check_manual")
                         updateCoordinator?.userInitiatedCheck(updater: updater)
                     }
                     .buttonStyle(.bordered)
@@ -484,6 +486,8 @@ struct SettingsView: View {
         ) {
             Button(loc.string("settings.language.restartConfirm")) {
                 if let lang = pendingLanguage {
+                    // fire-and-forget：relaunch 前发出，偶发丢失可接受
+                    AnalyticsService.shared.track("app_lang_switch", data: ["to": lang.rawValue])
                     LocalizationManager.shared.applyLanguageAndRestart(lang)
                 }
             }
