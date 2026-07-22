@@ -388,8 +388,9 @@ final class AppState: ObservableObject {
                 CrashLogger.log("[Recognize] Infra failure (helper down), retrying once...")
                 result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
             }
-            CrashLogger.log("[Recognize] Result: \(result ?? "nil")")
-            print("[VowKy][AppState] Recognition result: \(result ?? "nil")")
+            let resultDesc = result.map { "\($0.count) chars" } ?? "nil"
+            CrashLogger.log("[Recognize] Result: \(resultDesc)")
+            print("[VowKy][AppState] Recognition result: \(resultDesc)")
 
             // If result is nil or empty, go back to idle without outputting
             guard let text = result, !text.isEmpty else {
@@ -626,7 +627,7 @@ final class AppState: ObservableObject {
                 CrashLogger.log("[Recovery] Infra failure (helper down), retrying once...")
                 result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
             }
-            CrashLogger.log("[Recovery] Recognition result: \(result ?? "nil")")
+            CrashLogger.log("[Recovery] Recognition result: \(result.map { "\($0.count) chars" } ?? "nil")")
             guard let text = result, !text.isEmpty else {
                 if result == nil && !speechRecognizer.isReady {
                     // 基础设施失败：保全音频而不是删除（与 stopRecordingAndRecognize 同判别）
@@ -650,8 +651,8 @@ final class AppState: ObservableObject {
             backup.deleteBackup()
             AnalyticsService.shared.trackRecovery()
             state = .idle
-            CrashLogger.log("[Recovery] Complete: \(finalText)")
-            print("[VowKy][AppState] Recovery complete: \(finalText)")
+            CrashLogger.log("[Recovery] Complete: \(finalText.count) chars")
+            print("[VowKy][AppState] Recovery complete: \(finalText.count) chars")
         }
     }
 }
