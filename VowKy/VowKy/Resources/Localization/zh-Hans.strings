@@ -146,6 +146,7 @@
 "file.action.retry" = "重试";
 "file.action.cancel" = "取消";
 "file.action.clear" = "清空";
+"file.action.copy" = "复制";
 "file.action.saveAs" = "另存为";
 "file.action.revealInFinder" = "在 Finder 中显示";
 
@@ -153,6 +154,7 @@
 "file.help.transcribeThis" = "只转录这个文件";
 "file.help.removeFromQueue" = "从队列移除";
 "file.help.transcribingNow" = "当前文件转录中";
+"file.help.copy" = "复制当前转录文本（转录中也可复制已识别部分）";
 "file.help.revealMarkdown" = "打开自动落盘的 .md 文件位置";
 "file.help.noMarkdownYet" = "尚未生成 .md 文件";
 

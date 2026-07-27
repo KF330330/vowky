@@ -164,6 +164,11 @@ final class FileTranscriptionViewModel: ObservableObject {
         !resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isRunning
     }
 
+    /// 转录中也允许复制已识别的部分文本（不要求 !isRunning）
+    var canCopyResult: Bool {
+        !resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var canEditSelectedResult: Bool {
         guard let selectedJob,
               !isRunning else {
@@ -722,7 +727,7 @@ final class FileTranscriptionViewModel: ObservableObject {
     }
 
     func copyResult() {
-        guard canUseResult else { return }
+        guard canCopyResult else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(resultText, forType: .string)
         AnalyticsService.shared.trackHistoryCopy()

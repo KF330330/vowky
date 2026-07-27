@@ -711,6 +711,15 @@ struct FileTranscriptionView: View {
             Spacer()
 
             Button {
+                viewModel.copyResult()
+            } label: {
+                Label(loc.string("file.action.copy"), systemImage: "doc.on.doc")
+            }
+            .buttonStyle(TranscriptionSecondaryButtonStyle())
+            .disabled(!viewModel.canCopyResult)
+            .help(loc.string("file.help.copy"))
+
+            Button {
                 viewModel.saveResult()
             } label: {
                 Label(loc.string("file.action.saveAs"), systemImage: "square.and.arrow.down")

@@ -146,6 +146,7 @@
 "file.action.retry" = "Retry";
 "file.action.cancel" = "Cancel";
 "file.action.clear" = "Clear";
+"file.action.copy" = "Copy";
 "file.action.saveAs" = "Save As";
 "file.action.revealInFinder" = "Show in Finder";
 
@@ -153,6 +154,7 @@
 "file.help.transcribeThis" = "Transcribe only this file";
 "file.help.removeFromQueue" = "Remove from queue";
 "file.help.transcribingNow" = "This file is being transcribed";
+"file.help.copy" = "Copy the transcript text (works during transcription too)";
 "file.help.revealMarkdown" = "Open the location of the auto-saved .md file";
 "file.help.noMarkdownYet" = "No .md file generated yet";
 
