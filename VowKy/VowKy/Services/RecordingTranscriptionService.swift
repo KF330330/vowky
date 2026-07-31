@@ -4,6 +4,7 @@ enum RecordingTranscriptionState: Equatable {
     case idle
     case loadingModel
     case recording
+    case paused
     case finishing
     case completed
     case cancelled

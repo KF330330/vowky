@@ -53,6 +53,10 @@ struct RecordingPulseIcon: View {
             Image(systemName: "exclamationmark")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(TranscriptionTheme.accentDarkest)
+        case .paused:
+            Image(systemName: "pause.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(TranscriptionTheme.accentDarkest)
         default:
             Image(nsImage: Self.butterflyLargeImage)
                 .resizable()

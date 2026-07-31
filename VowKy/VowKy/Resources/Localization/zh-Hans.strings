@@ -288,6 +288,7 @@
 "recording.status.idle" = "准备录音";
 "recording.status.loadingModel" = "正在加载录音模型...";
 "recording.status.recording" = "正在录音并实时预览";
+"recording.status.paused" = "已暂停，点「继续」接着录";
 "recording.status.finishing" = "录音已完成，正在生成高质量转录稿...";
 "recording.status.completed" = "已保存文字和音频";
 "recording.status.cancelled" = "已取消";
@@ -332,6 +333,8 @@
 "recording.button.cancel" = "取消";
 "recording.button.reRecord" = "重新录音";
 "recording.button.finish" = "完成并生成最终稿";
+"recording.button.pause" = "暂停";
+"recording.button.resume" = "继续";
 "recording.button.copy" = "复制";
 "recording.button.openFolder" = "打开文件夹";
 
@@ -339,6 +342,7 @@
 "recording.badge.ready" = "READY";
 "recording.badge.loading" = "LOADING";
 "recording.badge.live" = "LIVE";
+"recording.badge.paused" = "PAUSED";
 "recording.badge.finalizing" = "FINALIZING";
 "recording.badge.saved" = "SAVED";
 "recording.badge.cancelled" = "CANCELLED";
@@ -348,6 +352,7 @@
 "recording.cardTitle.idle" = "准备开始";
 "recording.cardTitle.loadingModel" = "正在准备模型";
 "recording.cardTitle.recording" = "正在聆听";
+"recording.cardTitle.paused" = "已暂停";
 "recording.cardTitle.finishing" = "生成最终稿";
 "recording.cardTitle.completed" = "录音已保存";
 "recording.cardTitle.cancelled" = "录音已取消";
@@ -357,17 +362,20 @@
 "recording.durationCaption.total" = "总时长";
 "recording.durationCaption.processing" = "处理已用时";
 "recording.durationCaption.current" = "当前时长";
+"recording.durationCaption.paused" = "已录时长";
 
 /* Transcript badge */
 "recording.transcriptBadge.completed" = "SenseVoice 最终稿";
 "recording.transcriptBadge.finishing" = "高质量转录中";
 "recording.transcriptBadge.recording" = "SenseVoice 实时预览";
+"recording.transcriptBadge.paused" = "已暂停";
 "recording.transcriptBadge.failed" = "未保存";
 "recording.transcriptBadge.waiting" = "等待内容";
 
 /* Empty transcript hints */
 "recording.empty.loadingModel" = "正在准备离线模型，准备好后会自动开始录音。";
 "recording.empty.recording" = "开始说话后，这里会显示实时预览。完成后会替换为高质量最终稿。";
+"recording.empty.paused" = "已暂停。点「继续」接着录，或点「完成并生成最终稿」直接结束。";
 "recording.empty.finishing" = "正在等待 SenseVoice 完成最终转录。";
 "recording.empty.completed" = "最终稿为空。";
 "recording.empty.failedNoAudio" = "没有生成可保存的转写内容。";

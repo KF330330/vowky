@@ -22,6 +22,28 @@ final class AudioRecorder: AudioRecorderProtocol {
     }
     var onSamplesCaptured: (([Float]) -> Void)?
 
+    private var _isPaused = false
+    /// 跨线程读安全（主线程写 / tap 实时线程读）
+    var isPaused: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _isPaused
+    }
+
+    func pauseRecording() {
+        lock.lock()
+        _isPaused = true
+        _audioLevel = 0
+        lock.unlock()
+        NSLog("[VowKy][Audio] pauseRecording() — dropping samples, engine stays alive")
+    }
+
+    func resumeRecording() {
+        lock.lock()
+        _isPaused = false
+        lock.unlock()
+        NSLog("[VowKy][Audio] resumeRecording()")
+    }
+
     private let targetSampleRate: Double = 16000
 
     private lazy var targetFormat: AVAudioFormat? = {
@@ -77,6 +99,7 @@ final class AudioRecorder: AudioRecorderProtocol {
         lock.lock()
         recordedSamples = []
         _audioLevel = 0
+        _isPaused = false
         lock.unlock()
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
@@ -111,6 +134,7 @@ final class AudioRecorder: AudioRecorderProtocol {
         let samples = recordedSamples
         recordedSamples = []
         _audioLevel = 0
+        _isPaused = false
         lock.unlock()
 
         // 统计音频采样信息，帮助诊断是否录到有效音频（单次遍历，不建中间数组）
@@ -136,6 +160,9 @@ final class AudioRecorder: AudioRecorderProtocol {
         monoInputFormat: AVAudioFormat,
         targetFormat: AVAudioFormat
     ) {
+        // 暂停期间在 downmix/重采样之前直接丢弃，tap 回调近零开销
+        if isPaused { return }
+
         // Step 1: 手动 downmix 多声道到 mono（求所有声道平均值）
         guard let inputData = buffer.floatChannelData else { return }
         let channelCount = Int(buffer.format.channelCount)

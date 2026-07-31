@@ -64,11 +64,15 @@ final class MockAudioRecorder: AudioRecorderProtocol {
     var startError: Error = NSError(domain: "MockAudioRecorder", code: 1, userInfo: [NSLocalizedDescriptionKey: "录音启动失败"])
     var startCallCount = 0
     var stopCallCount = 0
+    var pauseCallCount = 0
+    var resumeCallCount = 0
+    var isPaused = false
     var samplesResult: [Float] = Array(repeating: 0.1, count: 16000)
     var samplesToEmitOnStart: [[Float]] = []
 
     func startRecording() throws {
         startCallCount += 1
+        isPaused = false
         if shouldThrowOnStart {
             throw startError
         }
@@ -79,7 +83,19 @@ final class MockAudioRecorder: AudioRecorderProtocol {
 
     func stopRecording() -> [Float] {
         stopCallCount += 1
+        isPaused = false
         return samplesResult
+    }
+
+    func pauseRecording() {
+        pauseCallCount += 1
+        isPaused = true
+        audioLevel = 0
+    }
+
+    func resumeRecording() {
+        resumeCallCount += 1
+        isPaused = false
     }
 }
 

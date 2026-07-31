@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     MainActor.assumeIsolated {
                         self?.replyTerminateAfterFinalize(success: true)
                     }
-                case .idle, .loadingModel, .recording, .finishing:
+                case .idle, .loadingModel, .recording, .paused, .finishing:
                     break
                 }
             }

@@ -288,6 +288,7 @@
 "recording.status.idle" = "Ready to record";
 "recording.status.loadingModel" = "Loading recording model...";
 "recording.status.recording" = "Recording with live preview";
+"recording.status.paused" = "Paused — click Resume to continue";
 "recording.status.finishing" = "Recording finished, generating high-quality transcript...";
 "recording.status.completed" = "Text and audio saved";
 "recording.status.cancelled" = "Cancelled";
@@ -332,6 +333,8 @@
 "recording.button.cancel" = "Cancel";
 "recording.button.reRecord" = "Record Again";
 "recording.button.finish" = "Finish & Generate Final Transcript";
+"recording.button.pause" = "Pause";
+"recording.button.resume" = "Resume";
 "recording.button.copy" = "Copy";
 "recording.button.openFolder" = "Open Folder";
 
@@ -339,6 +342,7 @@
 "recording.badge.ready" = "READY";
 "recording.badge.loading" = "LOADING";
 "recording.badge.live" = "LIVE";
+"recording.badge.paused" = "PAUSED";
 "recording.badge.finalizing" = "FINALIZING";
 "recording.badge.saved" = "SAVED";
 "recording.badge.cancelled" = "CANCELLED";
@@ -348,6 +352,7 @@
 "recording.cardTitle.idle" = "Ready to Start";
 "recording.cardTitle.loadingModel" = "Preparing Model";
 "recording.cardTitle.recording" = "Listening";
+"recording.cardTitle.paused" = "Paused";
 "recording.cardTitle.finishing" = "Generating Final Transcript";
 "recording.cardTitle.completed" = "Recording Saved";
 "recording.cardTitle.cancelled" = "Recording Cancelled";
@@ -357,17 +362,20 @@
 "recording.durationCaption.total" = "Total";
 "recording.durationCaption.processing" = "Processing time";
 "recording.durationCaption.current" = "Elapsed";
+"recording.durationCaption.paused" = "Recorded";
 
 /* Transcript badge */
 "recording.transcriptBadge.completed" = "SenseVoice final transcript";
 "recording.transcriptBadge.finishing" = "High-quality transcribing";
 "recording.transcriptBadge.recording" = "SenseVoice live preview";
+"recording.transcriptBadge.paused" = "Paused";
 "recording.transcriptBadge.failed" = "Not saved";
 "recording.transcriptBadge.waiting" = "Waiting for content";
 
 /* Empty transcript hints */
 "recording.empty.loadingModel" = "Preparing the offline model; recording will start automatically when ready.";
 "recording.empty.recording" = "Once you start speaking, a live preview appears here. It will be replaced by the high-quality final transcript when done.";
+"recording.empty.paused" = "Paused. Click Resume to keep recording, or Finish to generate the final transcript now.";
 "recording.empty.finishing" = "Waiting for SenseVoice to finish the final transcription.";
 "recording.empty.completed" = "The final transcript is empty.";
 "recording.empty.failedNoAudio" = "No transcript content was generated to save.";

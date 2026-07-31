@@ -103,6 +103,18 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private var finalizationStartedAt: Date?
     private var activeOperationID: UUID?
     private var recordingStartedAt: Date?
+    /// 已完成录音段的累计有效时长（不含暂停）；pause()/stop() 时折账
+    private var accumulatedRecordingSeconds: TimeInterval = 0
+    /// 当前录音段起点；暂停期间为 nil
+    private var currentSegmentStartedAt: Date?
+    /// 恢复录音时注入的接缝静音（0.4s @16kHz）：让最终段低能量边界搜索与
+    /// 停顿切句在暂停接缝自然断句，避免暂停前后两个词被拼成一个
+    private static let resumeSilenceSamples = [Float](repeating: 0, count: 6_400)
+
+    /// 有效录音时长 = 已折账累计 + 当前段墙钟差（暂停/结束后当前段为 nil，取 0）
+    private var effectiveRecordingSeconds: TimeInterval {
+        accumulatedRecordingSeconds + (currentSegmentStartedAt.map { Date().timeIntervalSince($0) } ?? 0)
+    }
 
     init(
         appState: AppState,
@@ -144,18 +156,26 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         switch state {
         case .idle, .completed, .cancelled, .failed:
             return startupTask == nil && workerTask == nil
-        case .loadingModel, .recording, .finishing:
+        case .loadingModel, .recording, .paused, .finishing:
             return false
         }
     }
 
     var canStop: Bool {
+        state == .recording || state == .paused
+    }
+
+    var canPause: Bool {
         state == .recording
+    }
+
+    var canResume: Bool {
+        state == .paused
     }
 
     var canCancel: Bool {
         switch state {
-        case .loadingModel, .recording, .finishing:
+        case .loadingModel, .recording, .paused, .finishing:
             return true
         case .idle, .completed, .cancelled, .failed:
             return false
@@ -170,10 +190,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         output != nil || recoveredAudioURL != nil
     }
 
-    /// 是否处于「正在录音 / 加载模型 / 生成最终稿」的状态，退出拦截时据此判断。
+    /// 是否处于「正在录音 / 已暂停 / 加载模型 / 生成最终稿」的状态，退出拦截时据此判断。
     var isActivelyRecording: Bool {
         switch state {
-        case .loadingModel, .recording, .finishing:
+        case .loadingModel, .recording, .paused, .finishing:
             return true
         case .idle, .completed, .cancelled, .failed:
             return false
@@ -199,6 +219,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             return L("recording.status.loadingModel")
         case .recording:
             return L("recording.status.recording")
+        case .paused:
+            return L("recording.status.paused")
         case .finishing:
             return L("recording.status.finishing")
         case .completed:
@@ -225,6 +247,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         output = nil
         recoveredAudioURL = nil
         elapsedSeconds = 0
+        accumulatedRecordingSeconds = 0
+        currentSegmentStartedAt = nil
         audioLevel = 0
         waveformBands = Self.silentWaveformBands
         state = .loadingModel
@@ -241,7 +265,11 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     }
 
     func stop() {
-        guard state == .recording else { return }
+        guard state == .recording || state == .paused else { return }
+        if state == .recording {
+            accumulatedRecordingSeconds = effectiveRecordingSeconds
+            currentSegmentStartedAt = nil
+        }
         state = .finishing
         subtitleController.hide()
         subtitleCancellable = nil
@@ -265,7 +293,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         startupTask = nil
         workerTask = nil
 
-        if state == .recording || state == .finishing {
+        if state == .recording || state == .paused || state == .finishing {
             _ = audioRecorder.stopRecording()
         }
         audioRecorder.onSamplesCaptured = nil
@@ -289,6 +317,30 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         subtitleCancellable = nil
         subtitlePacer.reset()
         subtitleDisplayRecorder.reset()
+    }
+
+    func pause() {
+        guard canPause else { return }
+        accumulatedRecordingSeconds = effectiveRecordingSeconds
+        currentSegmentStartedAt = nil
+        stopTimer()
+        elapsedSeconds = accumulatedRecordingSeconds
+        audioRecorder.pauseRecording()
+        audioLevel = 0
+        waveformBands = Self.silentWaveformBands
+        state = .paused
+        syncSubtitle()
+    }
+
+    func resume() {
+        guard canResume else { return }
+        // 先注接缝静音再放行采集：真实样本经串行队列异步到达，必然排在静音之后
+        sampleContinuation?.yield(Self.resumeSilenceSamples)
+        audioRecorder.resumeRecording()
+        currentSegmentStartedAt = Date()
+        state = .recording
+        startTimer()
+        syncSubtitle()
     }
 
     func copyResult() {
@@ -462,10 +514,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         paragraphs.filter { !TranslationCoordinator.isTrivialText($0.text) }
     }
 
-    /// 字幕实录挂钩：每次真实上屏渲染时记一笔（时间基准与 elapsedSeconds 一致）。
+    /// 字幕实录挂钩：每次真实上屏渲染时记一笔（时间基准与 elapsedSeconds 一致，不含暂停时长）。
     private func recordSubtitleDisplay(_ paragraph: TranscriptParagraph, isNewSentence: Bool) {
-        let offset = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? elapsedSeconds
-        subtitleDisplayRecorder.record(paragraph, isNewSentence: isNewSentence, at: offset)
+        subtitleDisplayRecorder.record(paragraph, isNewSentence: isNewSentence, at: effectiveRecordingSeconds)
     }
 
     /// 字幕实录落盘：整场没上过屏（未开字幕/零内容）不产文件；
@@ -542,6 +593,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             }
 
             recordingStartedAt = preparedOutput.startedAt
+            currentSegmentStartedAt = recordingStartedAt
             state = .recording
             startTimer()
             syncSubtitle()
@@ -609,7 +661,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             try outputStore.writeTranscript(finalText, to: preparedOutput.textURL)
             transcriptText = finalText
 
-            let duration = Date().timeIntervalSince(recordingStartedAt ?? preparedOutput.startedAt)
+            // 有效录音时长（不含暂停、不含最终稿生成耗时）
+            let duration = effectiveRecordingSeconds
             output = RecordingTranscriptionOutput(
                 textURL: preparedOutput.textURL,
                 audioURL: preparedOutput.audioURL,
@@ -672,7 +725,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         guard isActive(operationID) else { return }
         stopTimer()
         resetFinalizationState()
-        if state == .recording || state == .finishing {
+        if state == .recording || state == .paused || state == .finishing {
             _ = audioRecorder.stopRecording()
         }
         audioRecorder.onSamplesCaptured = nil
@@ -718,9 +771,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if let recordingStartedAt = self.recordingStartedAt {
-                    self.elapsedSeconds = Date().timeIntervalSince(recordingStartedAt)
-                }
+                self.elapsedSeconds = self.effectiveRecordingSeconds
                 self.audioLevel = self.audioRecorder.audioLevel
             }
         }

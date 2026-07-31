@@ -202,6 +202,133 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(content.contains("[00:05] 第二句字幕"), content)
     }
 
+    // MARK: - 暂停/继续
+
+    func testPauseFromRecordingEntersPausedAndPausesRecorder() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2]]
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        viewModel.pause()
+
+        XCTAssertEqual(viewModel.state, .paused)
+        XCTAssertEqual(mockRecorder.pauseCallCount, 1)
+        XCTAssertTrue(mockRecorder.isPaused)
+        XCTAssertEqual(viewModel.audioLevel, 0)
+        XCTAssertTrue(viewModel.canStop, "暂停态应可直接完成")
+        XCTAssertTrue(viewModel.canCancel)
+        XCTAssertTrue(viewModel.canResume)
+        XCTAssertFalse(viewModel.canStart)
+        XCTAssertFalse(viewModel.canPause)
+        XCTAssertTrue(viewModel.isActivelyRecording, "退出拦截必须覆盖暂停态")
+    }
+
+    func testResumeInjectsSeamSilenceAndPipelineContinues() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2]]
+        mockFinalRecognizer.recognizeResult = "跨暂停最终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        viewModel.pause()
+        viewModel.resume()
+        XCTAssertEqual(viewModel.state, .recording)
+        XCTAssertEqual(mockRecorder.resumeCallCount, 1)
+        mockRecorder.onSamplesCaptured?([0.3, 0.4])
+
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        XCTAssertEqual(viewModel.transcriptText, "跨暂停最终稿")
+        let output = try XCTUnwrap(viewModel.output)
+        let samples = try XCTUnwrap(WAVSampleFileWriter.readFloat32Samples(from: output.audioURL))
+        // 接缝静音 0.4s@16kHz = 6400 个零样本，且必须落在暂停前后样本之间
+        let expected = [Float(0.1), Float(0.2)]
+            + Array(repeating: Float(0), count: 6_400)
+            + [Float(0.3), Float(0.4)]
+        XCTAssertEqual(samples, expected)
+    }
+
+    func testStopWhilePausedGeneratesFinalTranscript() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2]]
+        mockFinalRecognizer.recognizeResult = "暂停中直接完成"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        viewModel.pause()
+        viewModel.stop()
+        XCTAssertEqual(viewModel.state, .finishing)
+
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let output = try XCTUnwrap(viewModel.output)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.textURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.audioURL.path))
+        XCTAssertEqual(viewModel.transcriptText, "暂停中直接完成")
+        // 暂停中完成不注接缝静音
+        let samples = try XCTUnwrap(WAVSampleFileWriter.readFloat32Samples(from: output.audioURL))
+        XCTAssertEqual(samples, [Float(0.1), Float(0.2)])
+    }
+
+    func testCancelWhilePausedStopsEngineAndDeletesOutputs() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1]]
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        viewModel.pause()
+        viewModel.cancel()
+
+        XCTAssertEqual(viewModel.state, .cancelled)
+        XCTAssertEqual(mockRecorder.stopCallCount, 1, "暂停中取消必须关闭引擎，否则麦克风泄漏")
+        XCTAssertFalse(appState.isRecordingTranscriptionInProgress)
+        XCTAssertNil(viewModel.output)
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: tempDir.path)) ?? []
+        XCTAssertTrue(contents.isEmpty)
+    }
+
+    func testElapsedSecondsFreezesWhilePausedAndDurationExcludesPause() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2]]
+        mockFinalRecognizer.recognizeResult = "时长口径"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        viewModel.pause()
+        let frozenElapsed = viewModel.elapsedSeconds
+        XCTAssertGreaterThan(frozenElapsed, 0)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(viewModel.elapsedSeconds, frozenElapsed, "暂停期间计时必须冻结")
+
+        viewModel.resume()
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let output = try XCTUnwrap(viewModel.output)
+        // 总墙钟 ≥ 0.7s，其中暂停 0.5s；有效时长应只计录音段
+        XCTAssertLessThan(output.duration, 0.5, "duration 不应包含暂停时长")
+        XCTAssertGreaterThanOrEqual(output.duration, frozenElapsed)
+    }
+
+    func testPauseResumeAreNoOpsWhenNotInMatchingState() async throws {
+        let viewModel = makeViewModel()
+
+        viewModel.pause()
+        viewModel.resume()
+
+        XCTAssertEqual(viewModel.state, .idle)
+        XCTAssertEqual(mockRecorder.pauseCallCount, 0)
+        XCTAssertEqual(mockRecorder.resumeCallCount, 0)
+    }
+
     func testWaveformBandsReflectPCMPositiveAndNegativePeaks() {
         let samples: [Float] = [
             0.00, 0.03, -0.04, 0.01,

@@ -29,6 +29,10 @@ extension SpeechRecognizerProtocol {
 protocol AudioRecorderProtocol {
     func startRecording() throws
     func stopRecording() -> [Float]
+    /// 暂停采集：引擎与 tap 保持运行，仅丢弃样本（避免重建输入链路的风险）
+    func pauseRecording()
+    func resumeRecording()
+    var isPaused: Bool { get }
     var audioLevel: Float { get }
     var onSamplesCaptured: (([Float]) -> Void)? { get set }
 }

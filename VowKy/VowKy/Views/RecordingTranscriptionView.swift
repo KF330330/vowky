@@ -480,13 +480,41 @@ struct RecordingTranscriptionView: View {
                 .keyboardShortcut(.return, modifiers: [])
             }
 
-            if viewModel.canStop {
+            if viewModel.canPause {
                 Button {
-                    viewModel.stop()
+                    viewModel.pause()
                 } label: {
-                    Label(loc.string("recording.button.finish"), systemImage: "checkmark.circle.fill")
+                    Label(loc.string("recording.button.pause"), systemImage: "pause.circle")
+                }
+                .buttonStyle(TranscriptionSecondaryButtonStyle())
+                .keyboardShortcut("p", modifiers: .command)
+            } else if viewModel.canResume {
+                Button {
+                    viewModel.resume()
+                } label: {
+                    Label(loc.string("recording.button.resume"), systemImage: "play.circle.fill")
                 }
                 .buttonStyle(TranscriptionPrimaryButtonStyle())
+                .keyboardShortcut("p", modifiers: .command)
+            }
+
+            if viewModel.canStop {
+                // 暂停态「继续」升为主按钮，「完成」降为次按钮；录音态维持原主次
+                if viewModel.state == .paused {
+                    Button {
+                        viewModel.stop()
+                    } label: {
+                        Label(loc.string("recording.button.finish"), systemImage: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(TranscriptionSecondaryButtonStyle())
+                } else {
+                    Button {
+                        viewModel.stop()
+                    } label: {
+                        Label(loc.string("recording.button.finish"), systemImage: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(TranscriptionPrimaryButtonStyle())
+                }
             }
 
             Spacer()
@@ -523,6 +551,8 @@ struct RecordingTranscriptionView: View {
             return loc.string("recording.badge.loading")
         case .recording:
             return loc.string("recording.badge.live")
+        case .paused:
+            return loc.string("recording.badge.paused")
         case .finishing:
             return loc.string("recording.badge.finalizing")
         case .completed:
@@ -542,6 +572,8 @@ struct RecordingTranscriptionView: View {
             return loc.string("recording.cardTitle.loadingModel")
         case .recording:
             return loc.string("recording.cardTitle.recording")
+        case .paused:
+            return loc.string("recording.cardTitle.paused")
         case .finishing:
             return loc.string("recording.cardTitle.finishing")
         case .completed:
@@ -559,6 +591,8 @@ struct RecordingTranscriptionView: View {
             return loc.string("recording.durationCaption.total")
         case .finishing:
             return loc.string("recording.durationCaption.processing")
+        case .paused:
+            return loc.string("recording.durationCaption.paused")
         default:
             return loc.string("recording.durationCaption.current")
         }
@@ -572,6 +606,8 @@ struct RecordingTranscriptionView: View {
             return loc.string("recording.transcriptBadge.finishing")
         case .recording:
             return loc.string("recording.transcriptBadge.recording")
+        case .paused:
+            return loc.string("recording.transcriptBadge.paused")
         case .failed:
             return loc.string("recording.transcriptBadge.failed")
         default:
@@ -596,6 +632,8 @@ struct RecordingTranscriptionView: View {
             return loc.string("recording.empty.loadingModel")
         case .recording:
             return loc.string("recording.empty.recording")
+        case .paused:
+            return loc.string("recording.empty.paused")
         case .finishing:
             return loc.string("recording.empty.finishing")
         case .completed:
@@ -629,6 +667,8 @@ struct RecordingTranscriptionView: View {
             return TranscriptionTheme.accentMain
         case .recording:
             return TranscriptionTheme.recordingRed
+        case .paused:
+            return TranscriptionTheme.warning
         case .cancelled:
             return TranscriptionTheme.warning
         case .failed:
