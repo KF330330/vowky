@@ -513,6 +513,29 @@
 "settings.language.restartMessage" = "切换语言需要重启 VowKy，让新语言在所有界面生效。";
 "settings.language.restartConfirm" = "重启";
 
+/* ===== Speech engine (SpeechAnalyzer) ===== */
+"settings.model.label.speechAnalyzer" = "Apple SpeechAnalyzer（系统）";
+"settings.model.engine.speechAnalyzer" = "系统极速转录（SpeechAnalyzer）";
+"settings.model.engine.requiresOS26" = "系统极速转录需要 macOS 26 或更高版本。";
+"settings.model.engine.speedNote" = "极速引擎：大文件秒级转完，但准确率可能略低（数字与专有名词较弱、偶有多余空格），且需手动选定转录语言。仅用于文件/链接转录；热键听写与录音不受影响。";
+"settings.model.engine.switchAlert.title" = "切换到系统极速转录？";
+"settings.model.engine.switchAlert.message" = "速度极快（数分钟音频约几秒转完），但效果可能相对差一点：数字与专有名词较弱、偶有多余空格；且需手动选定转录语言（不支持自动检测）。可随时切回。";
+"settings.model.engine.switchAlert.confirm" = "切换";
+"settings.model.analyzerLocale" = "转录语言";
+"settings.model.analyzerLocale.zhCN" = "中文（普通话）";
+"settings.model.analyzerLocale.enUS" = "英语（美国）";
+"settings.model.analyzerLocale.jaJP" = "日语";
+"settings.model.analyzerLocale.koKR" = "韩语";
+"settings.model.assets.checking" = "正在检查系统语音资产…";
+"settings.model.assets.ready" = "系统语音资产已就绪";
+"settings.model.assets.downloading" = "正在下载系统语音资产（需联网）…";
+"settings.model.assets.failed" = "系统语音资产下载失败，请检查网络后重试";
+"settings.model.assets.retry" = "重试";
+"settings.model.assets.unsupported" = "该语言不受系统极速转录支持";
+"speechAnalyzer.error.unsupportedLocale" = "系统极速转录不支持语言 %@，请在设置中更换转录语言或切回默认引擎";
+"speechAnalyzer.error.assetsUnavailable" = "系统语音资产不可用：请联网后在设置中下载，或切回默认引擎";
+"speechAnalyzer.error.analysisFailed" = "系统转写失败：%@";
+
 /* ===== Speaker diarization ===== */
 "diarization.toggle" = "区分说话人";
 "diarization.help.toggle" = "转写完成后自动区分不同说话人（多人对话时标注「说话人 N」）";

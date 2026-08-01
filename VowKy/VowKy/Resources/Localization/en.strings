@@ -513,6 +513,29 @@
 "settings.language.restartMessage" = "Switching the language will restart VowKy so the change applies everywhere.";
 "settings.language.restartConfirm" = "Restart";
 
+/* ===== Speech engine (SpeechAnalyzer) ===== */
+"settings.model.label.speechAnalyzer" = "Apple SpeechAnalyzer (system)";
+"settings.model.engine.speechAnalyzer" = "System fast transcription (SpeechAnalyzer)";
+"settings.model.engine.requiresOS26" = "System fast transcription requires macOS 26 or later.";
+"settings.model.engine.speedNote" = "Fast engine: large files finish in seconds, but accuracy may be slightly lower (weaker numbers and proper nouns, occasional stray spaces), and the transcription language must be set manually. File/link transcription only; hotkey dictation and recording are unaffected.";
+"settings.model.engine.switchAlert.title" = "Switch to system fast transcription?";
+"settings.model.engine.switchAlert.message" = "Extremely fast (minutes of audio transcribed in seconds), but results may be slightly worse: weaker numbers and proper nouns, occasional stray spaces; the transcription language must be set manually (no auto-detection). You can switch back anytime.";
+"settings.model.engine.switchAlert.confirm" = "Switch";
+"settings.model.analyzerLocale" = "Transcription language";
+"settings.model.analyzerLocale.zhCN" = "Chinese (Mandarin)";
+"settings.model.analyzerLocale.enUS" = "English (US)";
+"settings.model.analyzerLocale.jaJP" = "Japanese";
+"settings.model.analyzerLocale.koKR" = "Korean";
+"settings.model.assets.checking" = "Checking system speech assets…";
+"settings.model.assets.ready" = "System speech assets ready";
+"settings.model.assets.downloading" = "Downloading system speech assets (network required)…";
+"settings.model.assets.failed" = "Failed to download system speech assets; check your network and retry";
+"settings.model.assets.retry" = "Retry";
+"settings.model.assets.unsupported" = "This language is not supported by system fast transcription";
+"speechAnalyzer.error.unsupportedLocale" = "System fast transcription does not support %@; change the transcription language in Settings or switch back to the default engine";
+"speechAnalyzer.error.assetsUnavailable" = "System speech assets unavailable: download them in Settings with network access, or switch back to the default engine";
+"speechAnalyzer.error.analysisFailed" = "System transcription failed: %@";
+
 /* ===== Speaker diarization ===== */
 "diarization.toggle" = "Speakers";
 "diarization.help.toggle" = "Label different speakers after transcription (adds \"Speaker N\" in multi-speaker audio)";

@@ -179,6 +179,17 @@ final class AppState: ObservableObject {
             }
         }
 
+        // 设置窗：直接打开，供脚本化截图验证设置 UI（引擎选择器等）。
+        center.addObserver(
+            forName: Notification.Name("com.vowky.debug.settings.show"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                SettingsWindowController.shared.showWindow(appState: self)
+            }
+        }
+
         // 转录/录音历史窗：直接打开，供脚本化截图验证「历史」窗口 UI。
         center.addObserver(
             forName: Notification.Name("com.vowky.debug.transcriptionHistory.showFile"),
@@ -490,9 +501,22 @@ final class AppState: ObservableObject {
         isFileTranscriptionInProgress = false
     }
 
-    func makeFileTranscriptionService() -> FileTranscriptionService {
+    func makeFileTranscriptionService() -> FileTranscribing {
         // 分离开关按任务启动瞬间快照(本工厂每个任务调一次);模型缺失时静默视为关闭(UI 侧开关也会禁用)。
         let diarizationOn = DiarizationConfigStore.isFileEnabled() && DiarizationModelCatalog.availableInBundle()
+
+        // 引擎裁决:分离开启时恒 SenseVoice;SpeechAnalyzer 仅 macOS 26+ 且用户显式选择。
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *),
+           SpeechEngineConfigStore.resolvedEngine(diarizationOn: diarizationOn) == .speechAnalyzer {
+            return SpeechAnalyzerFileTranscriber(
+                decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
+                localeIdentifier: SpeechEngineConfigStore.load().analyzerLocale,
+                yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
+            )
+        }
+        #endif
+
         return FileTranscriptionService(
             decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
             speechRecognizer: speechRecognizer,

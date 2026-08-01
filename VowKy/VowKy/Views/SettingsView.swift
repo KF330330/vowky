@@ -224,6 +224,18 @@ struct SettingsView: View {
     @State private var translationTestResult: String?
     @State private var translationTestInProgress: Bool = false
 
+    // 识别引擎（需求 C：SpeechAnalyzer 极速引擎，仅文件/链接转录）
+    @State private var speechEngine: SpeechEngineKind
+    @State private var analyzerLocale: String
+    /// 切到极速引擎前的取舍确认弹窗（用户硬性要求：切换时必须提示「极快但效果可能略差」）
+    @State private var pendingEngineSwitch = false
+    @State private var analyzerAssetStatus: AnalyzerAssetUIStatus = .idle
+
+    private enum AnalyzerAssetUIStatus: Equatable {
+        case idle, checking, ready, downloading, unsupported
+        case failed(String)
+    }
+
     init(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil, appState: AppState? = nil) {
         self.updater = updater
         self.updateCoordinator = updateCoordinator
@@ -237,6 +249,10 @@ struct SettingsView: View {
         _translationLLMBaseURL  = State(initialValue: translationConfig.llmBaseURL)
         _translationLLMModel    = State(initialValue: translationConfig.llmModel)
         _translationLLMAPIKey   = State(initialValue: translationConfig.llmAPIKey)
+
+        let speechEngineConfig = SpeechEngineConfigStore.load()
+        _speechEngine  = State(initialValue: speechEngineConfig.engine)
+        _analyzerLocale = State(initialValue: speechEngineConfig.analyzerLocale)
     }
 
     var body: some View {
@@ -276,10 +292,54 @@ struct SettingsView: View {
             // Model
             Section(loc.string("settings.section.model")) {
                 LabeledContent(loc.string("settings.model.label")) {
-                    Text("SenseVoice (int8)")
+                    Text(speechEngine == .speechAnalyzer
+                        ? loc.string("settings.model.label.speechAnalyzer")
+                        : "SenseVoice (int8)")
                 }
-                LabeledContent(loc.string("settings.model.engine")) {
-                    Text(loc.string("settings.model.engine.value"))
+
+                Picker(loc.string("settings.model.engine"), selection: Binding(
+                    get: { speechEngine },
+                    set: { newValue in
+                        if newValue == .speechAnalyzer, speechEngine != .speechAnalyzer {
+                            // 不立即保存：先弹取舍确认，确认才生效（取消时 Picker 自动弹回）
+                            pendingEngineSwitch = true
+                        } else if newValue != speechEngine {
+                            speechEngine = newValue
+                            saveSpeechEngineConfig()
+                        }
+                    }
+                )) {
+                    Text(loc.string("settings.model.engine.value")).tag(SpeechEngineKind.senseVoice)
+                    if speechAnalyzerSelectable {
+                        Text(loc.string("settings.model.engine.speechAnalyzer")).tag(SpeechEngineKind.speechAnalyzer)
+                    }
+                }
+
+                if !speechAnalyzerSelectable {
+                    Text(loc.string("settings.model.engine.requiresOS26"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if speechEngine == .speechAnalyzer {
+                    // 常驻取舍说明（alert 只见一次，caption 才是长期知情）
+                    Text(loc.string("settings.model.engine.speedNote"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Picker(loc.string("settings.model.analyzerLocale"), selection: $analyzerLocale) {
+                        ForEach(SpeechEngineConfigStore.analyzerLocaleChoices, id: \.bcp47) { choice in
+                            Text(loc.string(choice.displayKey)).tag(choice.bcp47)
+                        }
+                    }
+                    .onChange(of: analyzerLocale) { _ in
+                        saveSpeechEngineConfig()
+                        refreshAnalyzerAssets()
+                    }
+
+                    analyzerAssetStatusRow
                 }
             }
 
@@ -512,6 +572,7 @@ struct SettingsView: View {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             hotkeyRecorder.refreshDisplay()
             isHoldMode = HotkeyConfig.current.isHoldMode
+            refreshAnalyzerAssets()
         }
         .onDisappear {
             hotkeyRecorder.stop()
@@ -537,6 +598,103 @@ struct SettingsView: View {
         } message: {
             Text(loc.string("settings.language.restartMessage"))
         }
+        .alert(
+            loc.string("settings.model.engine.switchAlert.title"),
+            isPresented: $pendingEngineSwitch
+        ) {
+            Button(loc.string("settings.model.engine.switchAlert.confirm")) {
+                speechEngine = .speechAnalyzer
+                saveSpeechEngineConfig()
+                AnalyticsService.shared.track("speech_engine_switch", data: ["to": "speechanalyzer"])
+                refreshAnalyzerAssets()
+            }
+            Button(loc.string("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(loc.string("settings.model.engine.switchAlert.message"))
+        }
+    }
+
+    // MARK: - 识别引擎（需求 C）
+
+    private var speechAnalyzerSelectable: Bool {
+        SpeechEngineConfigStore.speechAnalyzerRuntimeAvailable
+    }
+
+    @ViewBuilder
+    private var analyzerAssetStatusRow: some View {
+        switch analyzerAssetStatus {
+        case .idle:
+            EmptyView()
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(loc.string("settings.model.assets.checking"))
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        case .ready:
+            Text(loc.string("settings.model.assets.ready"))
+                .font(.caption).foregroundColor(.green)
+        case .downloading:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(loc.string("settings.model.assets.downloading"))
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        case .unsupported:
+            Text(loc.string("settings.model.assets.unsupported"))
+                .font(.caption).foregroundColor(.orange)
+        case .failed(let message):
+            HStack(spacing: 8) {
+                Text(message)
+                    .font(.caption).foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(loc.string("settings.model.assets.retry")) {
+                    refreshAnalyzerAssets()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func saveSpeechEngineConfig() {
+        var config = SpeechEngineConfigStore.load()
+        config.engine = speechEngine
+        config.analyzerLocale = analyzerLocale
+        SpeechEngineConfigStore.save(config)
+    }
+
+    /// 检查/下载当前 locale 的系统语音资产（仅极速引擎选中时）。
+    private func refreshAnalyzerAssets() {
+        #if compiler(>=6.2)
+        guard #available(macOS 26.0, *), speechEngine == .speechAnalyzer else {
+            analyzerAssetStatus = .idle
+            return
+        }
+        let locale = analyzerLocale
+        analyzerAssetStatus = .checking
+        Task { @MainActor in
+            guard await SpeechAnalyzerAssetStatus.isSupported(locale) else {
+                analyzerAssetStatus = .unsupported
+                return
+            }
+            if await SpeechAnalyzerAssetStatus.isInstalled(locale) {
+                analyzerAssetStatus = .ready
+                return
+            }
+            analyzerAssetStatus = .downloading
+            do {
+                try await SpeechAnalyzerAssetStatus.ensureInstalled(locale)
+                analyzerAssetStatus = await SpeechAnalyzerAssetStatus.isInstalled(locale)
+                    ? .ready
+                    : .failed(loc.string("settings.model.assets.failed"))
+            } catch {
+                analyzerAssetStatus = .failed(loc.string("settings.model.assets.failed"))
+            }
+        }
+        #else
+        analyzerAssetStatus = .idle
+        #endif
     }
 
     // MARK: - Permission Refresh

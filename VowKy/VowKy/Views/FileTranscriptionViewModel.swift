@@ -655,10 +655,12 @@ final class FileTranscriptionViewModel: ObservableObject {
                     resultRecorder(finalText)
                     let finishedJob = jobs.first(where: { $0.id == jobID })
                     let diarizationWasOn = diarizationEnabled && diarizationModelsAvailable
+                    let resolvedEngine = SpeechEngineConfigStore.resolvedEngine(diarizationOn: diarizationWasOn)
                     var doneData: [String: Any] = [
                         "char_count": finalText.count,
                         "diar": diarizationWasOn ? 1 : 0,
                         "speakers": finishedJob?.speakerCount ?? 0,
+                        "engine": resolvedEngine == .speechAnalyzer ? "speechanalyzer" : "sensevoice",
                     ]
                     if finishedJob?.diarizationNote != nil {
                         doneData["diar_fallback"] = 1

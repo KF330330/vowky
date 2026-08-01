@@ -68,6 +68,39 @@ final class FileTranscriptionViewModelTests: XCTestCase {
         super.tearDown()
     }
 
+    func testFastSingleStreamServiceCompletesJobCleanly() async throws {
+        // SpeechAnalyzer 式引擎:单流快速完成(reading→transcribing→finishing 一口气),VM 状态机不被打乱
+        final class FastSingleStreamService: FileTranscribing {
+            func transcribe(
+                url: URL,
+                progress: @escaping @MainActor (FileTranscriptionProgress) -> Void
+            ) async throws -> String {
+                await progress(FileTranscriptionProgress(
+                    phase: .reading, progress: 0, currentSegment: 0, totalSegments: 0, partialText: ""))
+                await progress(FileTranscriptionProgress(
+                    phase: .transcribing, progress: 0.5, currentSegment: 1, totalSegments: 2, partialText: "前半"))
+                await progress(FileTranscriptionProgress(
+                    phase: .finishing, progress: 1, currentSegment: 2, totalSegments: 2, partialText: "前半后半"))
+                return "前半后半"
+            }
+        }
+
+        let viewModel = FileTranscriptionViewModel(
+            appState: appState,
+            fileTranscriptionServiceFactory: { FastSingleStreamService() }
+        )
+        viewModel.appendJobs(urls: [URL(fileURLWithPath: "/tmp/fast.mp4")])
+        viewModel.startTranscription()
+        try await waitUntil("fast job completes") {
+            viewModel.jobs.first?.state == .completed
+        }
+
+        XCTAssertEqual(viewModel.jobs.count, 1)
+        XCTAssertEqual(viewModel.jobs[0].state, .completed)
+        XCTAssertEqual(viewModel.jobs[0].resultText, "前半后半")
+        XCTAssertEqual(viewModel.jobs[0].progress, 1)
+    }
+
     func testBatchTranscribesInOrderAndContinuesAfterFailure() async throws {
         let services = [
             MockFileTranscribing(.success("第一个结果")),
