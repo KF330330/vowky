@@ -32,7 +32,9 @@ verify: ## 验证部署结果
 
 # 开发构建工具链：Xcode-26.app 存在则钉住（SpeechAnalyzer 需 macOS 26 SDK），
 # 缺失则警告后回落系统默认（其他机器仍可构建，但不含需求 C 功能）。
-# 回退验证：VOWKY_DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer make dev
+# 本机布局（2026-08）：App Store 升级 /Applications/Xcode.app 到 26.x，
+# Xcode-26.app 是指向它的软链；16.2 回退备份在 /Applications/Xcode-16.2.app。
+# 回退验证：VOWKY_DEVELOPER_DIR=/Applications/Xcode-16.2.app/Contents/Developer make dev
 VOWKY_XCODE26 := /Applications/Xcode-26.app/Contents/Developer
 ifdef VOWKY_DEVELOPER_DIR
   DEV_TOOLCHAIN := DEVELOPER_DIR=$(VOWKY_DEVELOPER_DIR)
