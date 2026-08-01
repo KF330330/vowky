@@ -512,3 +512,13 @@
 "settings.language.restartTitle" = "需要重启";
 "settings.language.restartMessage" = "切换语言需要重启 VowKy，让新语言在所有界面生效。";
 "settings.language.restartConfirm" = "重启";
+
+/* ===== Speaker diarization ===== */
+"diarization.toggle" = "区分说话人";
+"diarization.help.toggle" = "转写完成后自动区分不同说话人（多人对话时标注「说话人 N」）";
+"diarization.help.modelsMissing" = "说话人分离模型缺失";
+"diarization.speakerLabel" = "说话人 %d：";
+"diarization.status.separating" = "正在分离说话人…";
+"diarization.status.relabeling" = "正在按说话人整理 %d/%d";
+"diarization.note.fallback" = "说话人分离失败，已输出无标签文稿";
+"diarization.note.subtitleSource" = "已用平台字幕，未做说话人分离";

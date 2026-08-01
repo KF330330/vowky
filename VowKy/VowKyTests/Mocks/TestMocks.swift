@@ -8,6 +8,9 @@ final class MockSpeechRecognizer: SpeechRecognizerProtocol {
     var warmUpCallCount = 0
     var recognizeResult: String? = "测试结果"
     var queuedRecognizeResults: [String?] = []
+    /// 按输入样本编程返回（优先级最高）：识别调用次数不确定（如录音预览解码）时,
+    /// 用样本特征（如 count）区分各路调用,比队列出队稳定。
+    var recognizeResultProvider: (([Float]) -> String?)?
     var recognizeDelay: UInt64 = 0 // nanoseconds
     var recognizeCallCount = 0
     var lastReceivedSamples: [Float] = []
@@ -25,6 +28,9 @@ final class MockSpeechRecognizer: SpeechRecognizerProtocol {
         recognizeCalledOnThread = Thread.current
         if recognizeDelay > 0 {
             try? await Task.sleep(nanoseconds: recognizeDelay)
+        }
+        if let recognizeResultProvider {
+            return recognizeResultProvider(samples)
         }
         if !queuedRecognizeResults.isEmpty {
             return queuedRecognizeResults.removeFirst()
@@ -54,6 +60,34 @@ final class MockSpeechRecognizer: SpeechRecognizerProtocol {
         }
         guard let text = await recognize(samples: samples, sampleRate: sampleRate) else { return nil }
         return DetailedRecognition(text: text, tokens: [], timestamps: [])
+    }
+}
+
+final class MockDiarizer: SpeakerDiarizing {
+    /// 编程返回的分离段;error 非 nil 时抛出它。
+    var segmentsToReturn: [SpeakerSegment] = []
+    var errorToThrow: Error?
+    /// 模拟的进度序列(diarize 时依次回调)。
+    var progressToEmit: [Double] = []
+    var diarizeCallCount = 0
+    var lastWavURL: URL?
+    var lastAudioDuration: TimeInterval = 0
+
+    func diarize(
+        wavURL: URL,
+        audioDuration: TimeInterval,
+        onProgress: @escaping @Sendable (Double) -> Void
+    ) async throws -> [SpeakerSegment] {
+        diarizeCallCount += 1
+        lastWavURL = wavURL
+        lastAudioDuration = audioDuration
+        for value in progressToEmit {
+            onProgress(value)
+        }
+        if let errorToThrow {
+            throw errorToThrow
+        }
+        return segmentsToReturn
     }
 }
 

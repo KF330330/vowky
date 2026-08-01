@@ -1,4 +1,9 @@
 import Foundation
+// 多 target 复用:测试 bundle 里 DiarizationModelCatalog 在 host 模块,需 @testable import;
+// 在 tool target(helper/transcribe)里该类型同模块,不可 import。
+#if VOWKY_TEST_HOST
+@testable import VowKy
+#endif
 
 enum VowKyModelLocatorError: LocalizedError, Equatable {
     case modelFilesNotFound(String)
@@ -82,5 +87,32 @@ struct VowKyModelLocator {
     private func hasRequiredModelFiles(in directory: URL) -> Bool {
         fileManager.fileExists(atPath: directory.appendingPathComponent("model.int8.onnx").path)
             && fileManager.fileExists(atPath: directory.appendingPathComponent("tokens.txt").path)
+    }
+}
+
+struct DiarizationModelPaths: Equatable {
+    let segmentation: String
+    let embedding: String
+}
+
+extension VowKyModelLocator {
+    /// 定位说话人分离模型。与语音模型不同,分离模型不是必需——找不到返回 nil,不抛错,
+    /// 绝不影响语音模型定位。
+    func diarizationModelPaths(executablePath: String?) -> DiarizationModelPaths? {
+        var directories: [URL] = []
+        for base in modelSearchBases(executablePath: executablePath) {
+            directories.append(contentsOf: appModelDirectories(for: base))
+        }
+        directories.append(contentsOf: bundleModelDirectories())
+
+        for directory in directories {
+            let segmentation = directory.appendingPathComponent(DiarizationModelCatalog.segmentationModelFileName)
+            let embedding = directory.appendingPathComponent(DiarizationModelCatalog.embeddingModelFileName)
+            if fileManager.fileExists(atPath: segmentation.path),
+               fileManager.fileExists(atPath: embedding.path) {
+                return DiarizationModelPaths(segmentation: segmentation.path, embedding: embedding.path)
+            }
+        }
+        return nil
     }
 }

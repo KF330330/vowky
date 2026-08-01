@@ -51,6 +51,15 @@ else
     check_fail "xcodegen 未安装 (brew install xcodegen)"
 fi
 
+# 4b. Xcode 版本（config.sh 已 export DEVELOPER_DIR；SpeechAnalyzer 功能要求 Xcode ≥26）
+XCODE_VERSION_LINE="$(xcodebuild -version 2>/dev/null | head -1 || true)"
+XCODE_MAJOR="$(echo "$XCODE_VERSION_LINE" | sed -n 's/^Xcode \([0-9]*\).*/\1/p')"
+if [[ -n "$XCODE_MAJOR" && "$XCODE_MAJOR" -ge 26 ]]; then
+    check_pass "Xcode 版本满足 (${XCODE_VERSION_LINE}, DEVELOPER_DIR=${DEVELOPER_DIR:-系统默认})"
+else
+    check_fail "Xcode 版本不足 (${XCODE_VERSION_LINE:-未检出})：发版必须 Xcode ≥26，否则 DMG 缺失 SpeechAnalyzer 功能"
+fi
+
 # 5. 服务器 Nginx
 echo ""
 echo "[5/8] 检查服务器 Nginx..."

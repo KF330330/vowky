@@ -617,6 +617,13 @@ struct FileTranscriptionView: View {
                             .fill(TranscriptionTheme.accentBright.opacity(0.30))
                     )
 
+                if let note = viewModel.selectedJob?.diarizationNote {
+                    Text(note)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(TranscriptionTheme.warning)
+                        .lineLimit(1)
+                }
+
                 Spacer()
 
                 if !viewModel.resultText.isEmpty {
@@ -690,6 +697,19 @@ struct FileTranscriptionView: View {
 
     private var footer: some View {
         HStack(spacing: 9) {
+            Toggle(isOn: $viewModel.diarizationEnabled) {
+                Text(loc.string("diarization.toggle"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(TranscriptionTheme.textSecondary)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .fixedSize()
+            .disabled(!viewModel.diarizationModelsAvailable || viewModel.isRunning)
+            .help(viewModel.diarizationModelsAvailable
+                ? loc.string("diarization.help.toggle")
+                : loc.string("diarization.help.modelsMissing"))
+
             if viewModel.isRunning {
                 Button {
                     viewModel.cancel()

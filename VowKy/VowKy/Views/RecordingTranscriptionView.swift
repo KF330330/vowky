@@ -30,7 +30,8 @@ final class RecordingTranscriptionWindowController {
             appState: appState,
             metadataRecorder: { text, meta in
                 HistoryStore.shared.insertWithMetadata(content: text, sourceType: meta.sourceType, metadata: meta)
-            }
+            },
+            diarizer: SubprocessSpeakerDiarizer()
         )
         let view = RecordingTranscriptionView(viewModel: viewModel)
             .environmentObject(LocalizationManager.shared)
@@ -186,6 +187,22 @@ struct RecordingTranscriptionView: View {
             .controlSize(.mini)
             .fixedSize()
             .help(loc.string("recording.subtitle.help"))
+
+            Toggle(isOn: Binding(
+                get: { viewModel.diarizationEnabled },
+                set: { viewModel.setDiarizationEnabled($0) }
+            )) {
+                Text(loc.string("diarization.toggle"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(TranscriptionTheme.textSecondary)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .fixedSize()
+            .disabled(!viewModel.diarizationModelsAvailable)
+            .help(viewModel.diarizationModelsAvailable
+                ? loc.string("diarization.help.toggle")
+                : loc.string("diarization.help.modelsMissing"))
         }
     }
 
@@ -391,6 +408,13 @@ struct RecordingTranscriptionView: View {
                     ProgressView()
                         .controlSize(.small)
                         .tint(TranscriptionTheme.accentDeep)
+                }
+
+                if let note = viewModel.diarizationNote {
+                    Text(note)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(TranscriptionTheme.warning)
+                        .lineLimit(1)
                 }
 
                 Spacer()

@@ -351,15 +351,122 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(bands.allSatisfy { $0.positive == 0 && $0.negative == 0 })
     }
 
+    // MARK: - 说话人分离后处理
+
+    /// 录 2 秒(32000 样本@16k)→停止→等完成。返回 (viewModel, 收到的 metadata 文本)。
+    /// 识别 mock 按样本数编程:引擎的预览/最终识别都是整段 32000 样本,
+    /// 后处理的逐段识别是 padding 后的段大小——识别调用次数不确定也能稳定区分。
+    private func runRecordingToCompletion(
+        diarizer: SpeakerDiarizing?,
+        diarizationEnabled: Bool,
+        recognizer: @escaping ([Float]) -> String?
+    ) async throws -> (RecordingTranscriptionViewModel, [String]) {
+        mockRecorder.samplesToEmitOnStart = [Array(repeating: Float(0.1), count: 32_000)]
+        mockFinalRecognizer.recognizeResultProvider = recognizer
+        var metadataTexts: [String] = []
+        let viewModel = makeViewModel(
+            metadataRecorder: { text, _ in metadataTexts.append(text) },
+            diarizer: diarizer,
+            diarizationEnabled: diarizationEnabled
+        )
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.stop()
+        try await waitUntil("recording completes") { viewModel.state == .completed }
+        return (viewModel, metadataTexts)
+    }
+
+    func testDiarizationPostPassLabelsTranscriptAndMetadata() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.segmentsToReturn = [
+            SpeakerSegment(start: 0, end: 0.8, speaker: 0),
+            SpeakerSegment(start: 1.0, end: 1.8, speaker: 4),
+        ]
+        // padding 后:段1 (0,1.0)=16000 样本、段2 (0.8,2.0)=19200 样本;引擎整段调用为 32000
+        let (viewModel, metadataTexts) = try await runRecordingToCompletion(
+            diarizer: diarizer, diarizationEnabled: true,
+            recognizer: { samples in
+                switch samples.count {
+                case 16_000: return "甲的话"
+                case 19_200: return "乙的话"
+                default: return "原文全部"
+                }
+            }
+        )
+
+        // 期望文本用同一组装函数生成,与生产标签文案解耦
+        let expected = SpeakerSegmentComposer.compose([
+            .init(speaker: 1, text: "甲的话"),
+            .init(speaker: 2, text: "乙的话"),
+        ]) { LL("diarization.speakerLabel", $0) }
+        XCTAssertEqual(viewModel.transcriptText, expected)
+        XCTAssertEqual(metadataTexts, [expected])
+        XCTAssertEqual(diarizer.diarizeCallCount, 1)
+        XCTAssertEqual(diarizer.lastAudioDuration, 2.0, accuracy: 0.01)
+        XCTAssertNil(viewModel.diarizationNote)
+        let output = try XCTUnwrap(viewModel.output)
+        XCTAssertEqual(try String(contentsOf: output.textURL), expected)
+    }
+
+    func testDiarizationPostPassFailureFallsBackToPlainTranscript() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.errorToThrow = SpeakerDiarizationError.processFailed("mock failure")
+        let (viewModel, metadataTexts) = try await runRecordingToCompletion(
+            diarizer: diarizer, diarizationEnabled: true,
+            recognizer: { _ in "原文全部" }
+        )
+
+        XCTAssertEqual(viewModel.transcriptText, "原文全部")
+        XCTAssertEqual(metadataTexts, ["原文全部"])
+        XCTAssertNotNil(viewModel.diarizationNote)
+    }
+
+    func testDiarizationPostPassSingleSpeakerSkipsRelabeling() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.segmentsToReturn = [
+            SpeakerSegment(start: 0, end: 0.8, speaker: 2),
+            SpeakerSegment(start: 1.0, end: 1.8, speaker: 2),
+        ]
+        let (viewModel, _) = try await runRecordingToCompletion(
+            diarizer: diarizer, diarizationEnabled: true,
+            recognizer: { _ in "原文全部" }
+        )
+
+        XCTAssertEqual(viewModel.transcriptText, "原文全部")
+        XCTAssertEqual(diarizer.diarizeCallCount, 1)
+        // 单说话人跳过逐段重识别:识别只见过整段音频,从未收到 padding 段大小的输入
+        XCTAssertTrue(mockFinalRecognizer.receivedSamples.allSatisfy { $0.count == 32_000 })
+        XCTAssertNil(viewModel.diarizationNote)
+    }
+
+    func testDiarizationDisabledNeverInvokesDiarizer() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.segmentsToReturn = [SpeakerSegment(start: 0, end: 1, speaker: 0)]
+        let (viewModel, _) = try await runRecordingToCompletion(
+            diarizer: diarizer, diarizationEnabled: false,
+            recognizer: { _ in "原文全部" }
+        )
+
+        XCTAssertEqual(viewModel.transcriptText, "原文全部")
+        XCTAssertEqual(diarizer.diarizeCallCount, 0)
+    }
+
     private func makeViewModel(
-        resultRecorder: ((String) -> Void)? = nil
+        resultRecorder: ((String) -> Void)? = nil,
+        metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
+        diarizer: SpeakerDiarizing? = nil,
+        diarizationEnabled: Bool = false
     ) -> RecordingTranscriptionViewModel {
         RecordingTranscriptionViewModel(
             appState: appState,
             audioRecorder: mockRecorder,
             finalRecognizer: mockFinalRecognizer,
             outputStore: RecordingTranscriptionOutputStore(outputDirectory: tempDir),
-            resultRecorder: resultRecorder
+            resultRecorder: resultRecorder,
+            metadataRecorder: metadataRecorder,
+            diarizer: diarizer,
+            // 注入固定值绕过真实 UserDefaults，测试绝不读写用户偏好
+            diarizationEnabledProvider: { diarizationEnabled }
         )
     }
 

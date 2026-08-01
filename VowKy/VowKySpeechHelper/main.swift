@@ -9,8 +9,14 @@ import Foundation
 
 // 保存真实 stdout(fd)专供二进制帧;把进程 stdout 重定向到 stderr,
 // 这样任何库里残留的 print()/stdout 输出都不会污染帧通道。
+// --diarize 一次性模式沿用同一守卫:行协议同样走 frameOutFD,不受库输出污染。
 let frameOutFD = dup(STDOUT_FILENO)
 _ = dup2(STDERR_FILENO, STDOUT_FILENO)
+
+let arguments = Array(CommandLine.arguments.dropFirst())
+if arguments.first == "--diarize" {
+    exit(DiarizeCLI.run(arguments: Array(arguments.dropFirst()), outputFD: frameOutFD))
+}
 
 let server = SpeechIPCServer(inputFD: STDIN_FILENO, outputFD: frameOutFD)
 server.run()

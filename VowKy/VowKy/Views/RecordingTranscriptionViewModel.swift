@@ -37,6 +37,18 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     /// 翻译终态落盘订阅：全部段落到达终态后把双语对照写到原文旁的「(双语).md」
     private var bilingualSaveCancellable: AnyCancellable?
 
+    // MARK: 说话人分离
+
+    @Published private(set) var diarizationEnabled: Bool = DiarizationConfigStore.isRecordingEnabled()
+    /// 分离模型是否在 bundle 里（缺失时开关禁用）。
+    let diarizationModelsAvailable = DiarizationModelCatalog.availableInBundle()
+    /// finishing 期间的分离子阶段文案（statusText 在 .finishing 时优先显示）。
+    @Published private(set) var diarizationPhaseText: String?
+    /// 分离失败已降级的注记（完成后显示；下次 start 清空）。
+    @Published private(set) var diarizationNote: String?
+    /// 本次完成的分离说话人数（埋点用；单人/未分离为 0）。
+    private var lastDiarizationSpeakerCount = 0
+
     // MARK: 字幕浮窗
 
     @Published private(set) var subtitleEnabled: Bool =
@@ -93,6 +105,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private let resultRecorder: (String) -> Void
     /// 带元数据写历史库的闭包。仅生产环境（窗口控制器）注入；测试不注入即为 nil，绝不触碰真实 DB。
     private let metadataRecorder: ((String, TranscriptionMetadata) -> Void)?
+    /// 说话人分离服务。仅生产环境（窗口控制器）注入；测试显式注入；nil = 不做分离后处理。
+    private let diarizer: SpeakerDiarizing?
+    /// 分离开关读取（进入 finishing 后处理前读取，允许录音中途改开关）。测试可注入绕过真实 UserDefaults。
+    private let diarizationEnabledProvider: () -> Bool
 
     private var activePreparedOutput: PreparedRecordingTranscriptionOutput?
     private var sampleContinuation: AsyncStream<[Float]>.Continuation?
@@ -122,7 +138,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         finalRecognizer: SpeechRecognizerProtocol? = nil,
         outputStore: RecordingTranscriptionOutputStore = RecordingTranscriptionOutputStore(),
         resultRecorder: ((String) -> Void)? = nil,
-        metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil
+        metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
+        diarizer: SpeakerDiarizing? = nil,
+        diarizationEnabledProvider: (() -> Bool)? = nil
     ) {
         self.appState = appState
         self.audioRecorder = audioRecorder ?? appState.audioRecorder
@@ -133,6 +151,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             appState.recordRecognitionResult(text: text, sourceType: "recording", persistToHistory: false)
         }
         self.metadataRecorder = metadataRecorder
+        self.diarizer = diarizer
+        self.diarizationEnabledProvider = diarizationEnabledProvider ?? {
+            DiarizationConfigStore.isRecordingEnabled()
+        }
     }
 
     /// 为录音转录结果构造历史元数据（标题=录音文件名，路径=落盘的 .md 与 .wav）。
@@ -222,7 +244,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         case .paused:
             return L("recording.status.paused")
         case .finishing:
-            return L("recording.status.finishing")
+            return diarizationPhaseText ?? L("recording.status.finishing")
         case .completed:
             return L("recording.status.completed")
         case .cancelled:
@@ -256,6 +278,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         plainSplitter.reset()
         subtitleDisplayRecorder.reset()
         bilingualSaveCancellable = nil
+        diarizationPhaseText = nil
+        diarizationNote = nil
+        lastDiarizationSpeakerCount = 0
         refreshTranslationSetup(resetCoordinator: true)
 
         startupTask = Task { [weak self] in
@@ -465,6 +490,84 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         return OpenAICompatibleTranslationProvider(config: config)
     }
 
+    // MARK: - 说话人分离
+
+    func setDiarizationEnabled(_ enabled: Bool) {
+        diarizationEnabled = enabled
+        DiarizationConfigStore.setRecordingEnabled(enabled)
+    }
+
+    /// 录完后的说话人分离后处理。开关关/单说话人/任何失败都返回 nil（= 用无标签原文稿）。
+    private func runDiarizationPostPass(
+        audioURL: URL,
+        sampleCount: Int,
+        operationID: UUID
+    ) async -> String? {
+        guard let diarizer, diarizationEnabledProvider(), isActive(operationID) else { return nil }
+        let sampleRate = 16_000
+        let audioDuration = Double(sampleCount) / Double(sampleRate)
+        guard audioDuration > 0 else { return nil }
+
+        diarizationPhaseText = L("diarization.status.separating")
+        do {
+            let raw = try await diarizer.diarize(
+                wavURL: audioURL, audioDuration: audioDuration
+            ) { _ in }
+            guard isActive(operationID), !raw.isEmpty else { return nil }
+
+            let segments = SpeakerSegmentComposer.renumberByFirstAppearance(
+                SpeakerSegmentComposer.padAndClip(raw, totalDuration: audioDuration)
+            )
+            let speakerCount = SpeakerSegmentComposer.distinctSpeakerCount(segments)
+            // 单说话人：无需标签，直接沿用原文稿（跳过逐段重识别，保住已验证的质量与耗时）
+            guard speakerCount > 1 else { return nil }
+
+            var labeled: [SpeakerSegmentComposer.LabeledSegment] = []
+            for (index, segment) in segments.enumerated() {
+                guard isActive(operationID) else { return nil }
+                diarizationPhaseText = L("diarization.status.relabeling", index + 1, segments.count)
+                let startSample = max(0, Int(segment.start * Double(sampleRate)))
+                let endSample = Int(segment.end * Double(sampleRate))
+                guard endSample > startSample,
+                      let samples = WAVSampleFileWriter.readFloat32Samples(
+                        from: audioURL, sampleRange: startSample..<endSample
+                      ),
+                      !samples.isEmpty else { continue }
+
+                let text: String
+                if segment.end - segment.start > 32 {
+                    // 超长 speaker 段：复用文件转写的低能量边界二次切块
+                    var parts: [String] = []
+                    for chunk in FileTranscriptionService.makeChunks(samples: samples, sampleRate: sampleRate) {
+                        guard isActive(operationID) else { return nil }
+                        if let part = await finalRecognizer.recognize(samples: chunk.samples, sampleRate: sampleRate)?
+                            .trimmingCharacters(in: .whitespacesAndNewlines), !part.isEmpty {
+                            parts.append(part)
+                        }
+                    }
+                    text = parts.joined(separator: "\n")
+                } else {
+                    text = (await finalRecognizer.recognize(samples: samples, sampleRate: sampleRate) ?? "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                if !text.isEmpty {
+                    labeled.append(.init(speaker: segment.speaker, text: text))
+                }
+            }
+            guard isActive(operationID) else { return nil }
+            let composed = SpeakerSegmentComposer.compose(labeled) { LL("diarization.speakerLabel", $0) }
+            guard !composed.isEmpty else { return nil }
+            lastDiarizationSpeakerCount = speakerCount
+            return composed
+        } catch {
+            NSLog("[VowKy][Recording] 分离后处理失败，使用无标签文稿: \(error.localizedDescription)")
+            if isActive(operationID) {
+                diarizationNote = L("diarization.note.fallback")
+            }
+            return nil
+        }
+    }
+
     // MARK: - 字幕浮窗
 
     func setSubtitleEnabled(_ enabled: Bool) {
@@ -611,7 +714,14 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                     } finalizationProgress: { progress in
                         self?.applyFinalization(progress: progress, operationID: operationID)
                     }
-                    await self?.complete(result: result, operationID: operationID)
+                    // 说话人分离后处理（用户拍板：录完后一次性处理，不动录制中字幕冻结架构）。
+                    // 任何失败返回 nil → complete 使用无标签原文稿，绝不丢文稿。
+                    let labeledText = await self?.runDiarizationPostPass(
+                        audioURL: preparedOutput.audioURL,
+                        sampleCount: writer.sampleCount,
+                        operationID: operationID
+                    )
+                    await self?.complete(result: result, labeledText: labeledText, operationID: operationID)
                 } catch is CancellationError {
                     await self?.completeCancellation(operationID: operationID)
                 } catch {
@@ -644,7 +754,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         finalizationProgress = progress
     }
 
-    private func complete(result: RecordingTranscriptionResult, operationID: UUID) {
+    private func complete(result: RecordingTranscriptionResult, labeledText: String? = nil, operationID: UUID) {
         guard isActive(operationID), let preparedOutput = activePreparedOutput else { return }
 
         stopTimer()
@@ -655,7 +765,11 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         subtitleCancellable = nil
         subtitlePacer.reset()
 
-        let finalText = result.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 主文稿用带标签版本（分离成功时）；翻译管线只吃无标签原文
+        // （AnchoredParagraphSplitter/字幕/双语对照均不容说话人前缀——这里是唯一分流闸门）。
+        let plainText = result.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let labeled = labeledText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalText = (labeled?.isEmpty == false) ? labeled! : plainText
 
         do {
             try outputStore.writeTranscript(finalText, to: preparedOutput.textURL)
@@ -684,16 +798,22 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
             state = .completed
             statusMessage = nil
-            AnalyticsService.shared.track("rec_transcribe_done", data: [
+            var doneData: [String: Any] = [
                 "duration_s": Int(duration),
                 "char_count": finalText.count,
-            ])
+                "diar": (diarizer != nil && diarizationEnabledProvider()) ? 1 : 0,
+                "speakers": lastDiarizationSpeakerCount,
+            ]
+            if diarizationNote != nil {
+                doneData["diar_fallback"] = 1
+            }
+            AnalyticsService.shared.track("rec_transcribe_done", data: doneData)
 
             writeSubtitleLogIfNeeded(textURL: preparedOutput.textURL)
 
             // 最终稿（加标点后文本变化）整稿重新送译，得到双语终态
-            if !finalText.isEmpty {
-                translationCoordinator?.ingestFinal(text: finalText)
+            if !plainText.isEmpty {
+                translationCoordinator?.ingestFinal(text: plainText)
                 scheduleBilingualTranscriptSave()
             }
         } catch {
@@ -804,6 +924,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         finalizationStartedAt = nil
         finalizationElapsedSeconds = 0
         finalizationProgress = nil
+        diarizationPhaseText = nil
     }
 
     var finalizationFraction: Double? {

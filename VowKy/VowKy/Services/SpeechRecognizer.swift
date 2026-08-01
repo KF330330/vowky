@@ -8,6 +8,9 @@ import AVFoundation
 
 final class LocalSpeechRecognizer: SpeechRecognizerProtocol {
 
+    /// 识别线程数。2026-07-31 实测基准：4 线程较 1 线程提速 3.4×（60s 音频 9.3s→2.6s）。
+    private static let recognizerNumThreads = 4
+
     private var recognizer: SherpaOnnxOfflineRecognizer?
 
     // Keep path strings alive to avoid C dangling pointers
@@ -45,6 +48,7 @@ final class LocalSpeechRecognizer: SpeechRecognizerProtocol {
 
         let modelConfig = sherpaOnnxOfflineModelConfig(
             tokens: self.tokensPathString,
+            numThreads: Self.recognizerNumThreads,
             debug: 0,
             modelType: "sense_voice",
             senseVoice: senseVoiceConfig

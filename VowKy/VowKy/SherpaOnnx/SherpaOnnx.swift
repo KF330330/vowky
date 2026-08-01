@@ -1685,6 +1685,59 @@ class SherpaOnnxOfflineSpeakerDiarizationWrapper {
 
     return ans
   }
+
+  /// Same as process(samples:), but reports progress via the C callback
+  /// (numProcessedChunks, numTotalChunks). The callback's return value is
+  /// always 0 (no early-abort semantics; cancellation is handled by
+  /// terminating the process that runs this call).
+  func process(
+    samples: [Float],
+    onProgress: @escaping (Int, Int) -> Void
+  ) -> [SherpaOnnxOfflineSpeakerDiarizationSegmentWrapper] {
+    final class ProgressBox {
+      let handler: (Int, Int) -> Void
+      init(_ handler: @escaping (Int, Int) -> Void) { self.handler = handler }
+    }
+    let box = ProgressBox(onProgress)
+
+    let result = withExtendedLifetime(box) {
+      SherpaOnnxOfflineSpeakerDiarizationProcessWithCallback(
+        impl, samples, Int32(samples.count),
+        { numProcessedChunks, numTotalChunks, arg in
+          guard let arg else { return 0 }
+          let box = Unmanaged<ProgressBox>.fromOpaque(arg).takeUnretainedValue()
+          box.handler(Int(numProcessedChunks), Int(numTotalChunks))
+          return 0
+        },
+        Unmanaged.passUnretained(box).toOpaque())
+    }
+
+    if result == nil {
+      return []
+    }
+
+    let numSegments = Int(SherpaOnnxOfflineSpeakerDiarizationResultGetNumSegments(result))
+
+    let p: UnsafePointer<SherpaOnnxOfflineSpeakerDiarizationSegment>? =
+      SherpaOnnxOfflineSpeakerDiarizationResultSortByStartTime(result)
+
+    if p == nil {
+      SherpaOnnxOfflineSpeakerDiarizationDestroyResult(result)
+      return []
+    }
+
+    var ans: [SherpaOnnxOfflineSpeakerDiarizationSegmentWrapper] = []
+    for i in 0..<numSegments {
+      ans.append(
+        SherpaOnnxOfflineSpeakerDiarizationSegmentWrapper(
+          start: p![i].start, end: p![i].end, speaker: Int(p![i].speaker)))
+    }
+
+    SherpaOnnxOfflineSpeakerDiarizationDestroySegment(p)
+    SherpaOnnxOfflineSpeakerDiarizationDestroyResult(result)
+
+    return ans
+  }
 }
 
 class SherpaOnnxOnlineStreamWrapper {

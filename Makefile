@@ -30,9 +30,22 @@ preflight: ## 部署前环境预检
 verify: ## 验证部署结果
 	./deploy/verify.sh
 
+# 开发构建工具链：Xcode-26.app 存在则钉住（SpeechAnalyzer 需 macOS 26 SDK），
+# 缺失则警告后回落系统默认（其他机器仍可构建，但不含需求 C 功能）。
+# 回退验证：VOWKY_DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer make dev
+VOWKY_XCODE26 := /Applications/Xcode-26.app/Contents/Developer
+ifdef VOWKY_DEVELOPER_DIR
+  DEV_TOOLCHAIN := DEVELOPER_DIR=$(VOWKY_DEVELOPER_DIR)
+else ifneq ($(wildcard $(VOWKY_XCODE26)),)
+  DEV_TOOLCHAIN := DEVELOPER_DIR=$(VOWKY_XCODE26)
+else
+  DEV_TOOLCHAIN :=
+  $(warning ⚠ 未找到 /Applications/Xcode-26.app，使用系统默认 Xcode（构建将不含 SpeechAnalyzer 功能）)
+endif
+
 dev: ## 开发构建（Debug，带签名）
 	cd VowKy && xcodegen generate && \
-	xcodebuild build \
+	$(DEV_TOOLCHAIN) xcodebuild build \
 		-project VowKy.xcodeproj \
 		-scheme VowKy \
 		-configuration Debug \
@@ -41,5 +54,5 @@ dev: ## 开发构建（Debug，带签名）
 run: dev ## 构建并启动 App
 	@pkill -x VowKy 2>/dev/null || true
 	@sleep 0.5
-	@APP_PATH=$$(xcodebuild -project VowKy/VowKy.xcodeproj -scheme VowKy -configuration Debug -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | awk '{print $$3}'); \
+	@APP_PATH=$$($(DEV_TOOLCHAIN) xcodebuild -project VowKy/VowKy.xcodeproj -scheme VowKy -configuration Debug -showBuildSettings 2>/dev/null | grep ' BUILT_PRODUCTS_DIR' | awk '{print $$3}'); \
 	open "$$APP_PATH/VowKy.app"

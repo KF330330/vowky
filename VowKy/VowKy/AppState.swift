@@ -158,6 +158,18 @@ final class AppState: ObservableObject {
             }
         }
         center.addObserver(
+            forName: Notification.Name("com.vowky.debug.fileTranscription.addFile"),
+            object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                FileTranscriptionWindowController.shared.showWindow(appState: self)
+                guard let path = note.userInfo?["path"] as? String else { return }
+                FileTranscriptionWindowController.shared.activeViewModel?
+                    .appendJobs(urls: [URL(fileURLWithPath: path)])
+            }
+        }
+        center.addObserver(
             forName: Notification.Name("com.vowky.debug.fileTranscription.start"),
             object: nil, queue: .main
         ) { [weak self] _ in
@@ -479,10 +491,14 @@ final class AppState: ObservableObject {
     }
 
     func makeFileTranscriptionService() -> FileTranscriptionService {
-        FileTranscriptionService(
+        // 分离开关按任务启动瞬间快照(本工厂每个任务调一次);模型缺失时静默视为关闭(UI 侧开关也会禁用)。
+        let diarizationOn = DiarizationConfigStore.isFileEnabled() && DiarizationModelCatalog.availableInBundle()
+        return FileTranscriptionService(
             decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
             speechRecognizer: speechRecognizer,
-            yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
+            yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() },
+            diarizer: diarizationOn ? SubprocessSpeakerDiarizer() : nil,
+            speakerLabel: { LL("diarization.speakerLabel", $0) }
         )
     }
 

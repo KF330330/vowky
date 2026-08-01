@@ -512,3 +512,13 @@
 "settings.language.restartTitle" = "Restart Required";
 "settings.language.restartMessage" = "Switching the language will restart VowKy so the change applies everywhere.";
 "settings.language.restartConfirm" = "Restart";
+
+/* ===== Speaker diarization ===== */
+"diarization.toggle" = "Speakers";
+"diarization.help.toggle" = "Label different speakers after transcription (adds \"Speaker N\" in multi-speaker audio)";
+"diarization.help.modelsMissing" = "Speaker separation models missing";
+"diarization.speakerLabel" = "Speaker %d: ";
+"diarization.status.separating" = "Separating speakers…";
+"diarization.status.relabeling" = "Labeling speakers %d/%d";
+"diarization.note.fallback" = "Speaker separation failed; plain transcript saved";
+"diarization.note.subtitleSource" = "Platform subtitles used; no speaker separation";

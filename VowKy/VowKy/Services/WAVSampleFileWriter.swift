@@ -79,6 +79,97 @@ final class WAVSampleFileWriter {
         fileHandle = nil
     }
 
+    /// 读 canonical WAV(本类写出的 44 字节头格式)头部声明的采样率。
+    static func readHeaderSampleRate(from url: URL) -> Int? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 44), data.count == 44 else { return nil }
+        let bytes = [UInt8](data[24..<28])
+        let rate = UInt32(bytes[0]) | (UInt32(bytes[1]) << 8) | (UInt32(bytes[2]) << 16) | (UInt32(bytes[3]) << 24)
+        return Int(rate)
+    }
+
+    /// 读简单布局(44 字节头,fmt 后紧跟 data)的单声道 WAV 为 Float32 样本。
+    /// 支持两种编码:Float32(format 3/32bit,本类 canonical 输出)与 Int16 PCM(format 1/16bit,常见外部素材)。
+    /// 非单声道或其他编码返回 nil。
+    static func readMonoSamplesAsFloat32(from url: URL) -> (samples: [Float], sampleRate: Int)? {
+        guard let data = try? Data(contentsOf: url), data.count > 44 else { return nil }
+
+        func u16(_ offset: Int) -> Int {
+            Int(data[offset]) | (Int(data[offset + 1]) << 8)
+        }
+        func u32(_ offset: Int) -> Int {
+            u16(offset) | (u16(offset + 2) << 16)
+        }
+        guard data.prefix(4).elementsEqual("RIFF".utf8),
+              data[8..<12].elementsEqual("WAVE".utf8),
+              data[36..<40].elementsEqual("data".utf8) else { return nil }
+
+        let audioFormat = u16(20)
+        let channels = u16(22)
+        let sampleRate = u32(24)
+        let bitsPerSample = u16(34)
+        guard channels == 1, sampleRate > 0 else { return nil }
+
+        let pcmData = data.dropFirst(44)
+        switch (audioFormat, bitsPerSample) {
+        case (3, 32):
+            let count = pcmData.count / MemoryLayout<Float>.size
+            guard count > 0 else { return nil }
+            var samples = [Float](repeating: 0, count: count)
+            pcmData.withUnsafeBytes { rawBuffer in
+                let floatBuffer = rawBuffer.bindMemory(to: Float.self)
+                for index in 0..<count {
+                    samples[index] = floatBuffer[index]
+                }
+            }
+            return (samples, sampleRate)
+        case (1, 16):
+            let count = pcmData.count / MemoryLayout<Int16>.size
+            guard count > 0 else { return nil }
+            var samples = [Float](repeating: 0, count: count)
+            pcmData.withUnsafeBytes { rawBuffer in
+                let intBuffer = rawBuffer.bindMemory(to: Int16.self)
+                for index in 0..<count {
+                    samples[index] = Float(Int16(littleEndian: intBuffer[index])) / 32768.0
+                }
+            }
+            return (samples, sampleRate)
+        default:
+            return nil
+        }
+    }
+
+    /// 按样本区间读取(半开区间,自动 clamp 到文件实际样本数)。区间无效或 IO 失败返回 nil。
+    static func readFloat32Samples(from url: URL, sampleRange: Range<Int>) -> [Float]? {
+        guard sampleRange.lowerBound >= 0 else { return nil }
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let totalSize = attributes[.size] as? Int,
+              totalSize > 44 else { return nil }
+        let totalSamples = (totalSize - 44) / MemoryLayout<Float>.size
+        let start = min(sampleRange.lowerBound, totalSamples)
+        let end = min(sampleRange.upperBound, totalSamples)
+        guard end > start else { return [] }
+
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        do {
+            try handle.seek(toOffset: UInt64(44 + start * MemoryLayout<Float>.size))
+            let byteCount = (end - start) * MemoryLayout<Float>.size
+            guard let data = try handle.read(upToCount: byteCount), data.count == byteCount else { return nil }
+            var samples = [Float](repeating: 0, count: end - start)
+            data.withUnsafeBytes { rawBuffer in
+                let floatBuffer = rawBuffer.bindMemory(to: Float.self)
+                for index in 0..<samples.count {
+                    samples[index] = floatBuffer[index]
+                }
+            }
+            return samples
+        } catch {
+            return nil
+        }
+    }
+
     static func readFloat32Samples(from url: URL) -> [Float]? {
         guard let data = try? Data(contentsOf: url), data.count > 44 else { return nil }
         let pcmData = data.dropFirst(44)

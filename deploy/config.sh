@@ -25,6 +25,20 @@ INFOPLIST="${VOWKY_DIR}/VowKy/Info.plist"
 BUILD_DIR="${REPO_ROOT}/deploy/build"
 
 # ============================================================
+# 工具链（2026-08：需求「SpeechAnalyzer 极速引擎」要求 macOS 26 SDK）
+# ============================================================
+# 发版链路钉死 Xcode 26：目录缺失直接 fail，防止静默回落 16.2
+# 打出不含 SpeechAnalyzer 功能的 DMG。回退构建用 VOWKY_DEVELOPER_DIR 覆盖。
+VOWKY_XCODE26_DIR="/Applications/Xcode-26.app/Contents/Developer"
+export DEVELOPER_DIR="${VOWKY_DEVELOPER_DIR:-${VOWKY_XCODE26_DIR}}"
+if [[ ! -d "$DEVELOPER_DIR" ]]; then
+    echo "✗ 工具链缺失: $DEVELOPER_DIR" >&2
+    echo "  发版必须用 Xcode 26（SpeechAnalyzer 功能依赖 macOS 26 SDK）。" >&2
+    echo "  安装到 /Applications/Xcode-26.app，或显式指定 VOWKY_DEVELOPER_DIR 覆盖。" >&2
+    exit 1
+fi
+
+# ============================================================
 # 签名 & 公证
 # ============================================================
 # Archive 默认用 Apple Development；本机没有该证书时可用环境变量覆盖

@@ -114,6 +114,11 @@ targets:
       - path: VowKy/Services/TranscriptionOutputNamer.swift
       - path: VowKy/Services/VowKyTranscribeCLI.swift
       - path: VowKy/Services/VowKyModelLocator.swift
+      - path: VowKy/Services/Diarization/DiarizationModelCatalog.swift  # VowKyModelLocator 引用其文件名常量
+      # FileTranscriptionService 的分离分支引用下列类型(CLI 不注入 diarizer,分支不激活,仅需编译通过)
+      - path: VowKy/Services/Diarization/SpeakerDiarizer.swift
+      - path: VowKy/Services/Diarization/SpeakerSegmentComposer.swift
+      - path: VowKy/Services/WAVSampleFileWriter.swift
     settings:
       base:
         PRODUCT_NAME: vowky-transcribe
@@ -146,13 +151,16 @@ targets:
     type: tool
     platform: macOS
     sources:
-      - path: VowKySpeechHelper                         # main.swift + SpeechIPCServer.swift
+      - path: VowKySpeechHelper                         # main.swift + SpeechIPCServer.swift + DiarizeCLI.swift
       - path: VowKy/Services/IPC/SpeechIPCWire.swift    # 共享线协议(主 app 也用)
+      - path: VowKy/Services/IPC/DiarizeSubprocessProtocol.swift  # --diarize 行协议(主 app 也用)
       - path: VowKy/SherpaOnnx/SherpaOnnx.swift
       - path: VowKy/Services/CrashLogger.swift
       - path: VowKy/Services/Protocols.swift
       - path: VowKy/Services/SpeechRecognizer.swift
       - path: VowKy/Services/VowKyModelLocator.swift
+      - path: VowKy/Services/Diarization/DiarizationModelCatalog.swift  # 分离模型文件名(主 app 也用)
+      - path: VowKy/Services/WAVSampleFileWriter.swift  # --diarize 读 canonical WAV(主 app 也用)
     settings:
       base:
         PRODUCT_NAME: vowky-speechd

@@ -275,4 +275,139 @@ final class FileTranscriptionServiceTests: XCTestCase {
             XCTAssertEqual(recognizer.recognizeCallCount, 1)
         }
     }
+
+    // MARK: - 说话人分离分支
+
+    /// 便捷构造:65s@100Hz 恒定能量音频 + 注入 MockDiarizer 的服务。
+    private func makeDiarizationFixture(
+        recognizerResults: [String?],
+        diarizer: MockDiarizer
+    ) -> (FileTranscriptionService, MockMediaAudioDecoder, MockSpeechRecognizer) {
+        let decoder = MockMediaAudioDecoder(decodedAudio: DecodedAudio(
+            samples: Array(repeating: Float(0.02), count: 6_500),
+            sampleRate: 100,
+            duration: 65
+        ))
+        let recognizer = MockSpeechRecognizer()
+        recognizer.queuedRecognizeResults = recognizerResults
+        let service = FileTranscriptionService(
+            decoder: decoder,
+            speechRecognizer: recognizer,
+            diarizer: diarizer,
+            speakerLabel: { "S\($0)：" }
+        )
+        return (service, decoder, recognizer)
+    }
+
+    private func diarizationTempFileCount() -> Int {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VowKy-Diarization", isDirectory: true)
+        return (try? FileManager.default.contentsOfDirectory(atPath: dir.path).count) ?? 0
+    }
+
+    func testDiarizationBranchLabelsSegmentsBySpeaker() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.segmentsToReturn = [
+            SpeakerSegment(start: 1, end: 10, speaker: 0),
+            SpeakerSegment(start: 20, end: 30, speaker: 5),   // 非连续簇 id → 重编号为 2
+            SpeakerSegment(start: 35, end: 45, speaker: 0),
+        ]
+        let (service, _, recognizer) = makeDiarizationFixture(
+            recognizerResults: ["甲一", "乙一", "甲二"], diarizer: diarizer
+        )
+        let tempCountBefore = diarizationTempFileCount()
+
+        var updates: [FileTranscriptionProgress] = []
+        let result = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { update in
+            updates.append(update)
+        }
+
+        XCTAssertEqual(result, "S1：甲一\n\nS2：乙一\n\nS1：甲二")
+        XCTAssertEqual(diarizer.diarizeCallCount, 1)
+        XCTAssertEqual(diarizer.lastAudioDuration, 65, accuracy: 0.1)
+        // ±0.25s padding @100Hz:段 (1,10) → (0.75,10.25) → 950 样本
+        XCTAssertEqual(recognizer.receivedSamples.map(\.count), [950, 1050, 1050])
+        // 进度相位:reading → separating → transcribing → finishing
+        XCTAssertTrue(updates.contains { $0.phase == .separating })
+        XCTAssertEqual(updates.last?.phase, .finishing)
+        XCTAssertEqual(updates.last?.speakerCount, 2)
+        XCTAssertFalse(updates.contains { $0.diarizationFellBack })
+        // 临时 WAV 用完即删
+        XCTAssertEqual(diarizationTempFileCount(), tempCountBefore)
+    }
+
+    func testDiarizationSingleSpeakerProducesUnlabeledText() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.segmentsToReturn = [
+            SpeakerSegment(start: 1, end: 10, speaker: 3),
+            SpeakerSegment(start: 20, end: 30, speaker: 3),
+        ]
+        let (service, _, _) = makeDiarizationFixture(
+            recognizerResults: ["第一段", "第二段"], diarizer: diarizer
+        )
+
+        let result = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { _ in }
+
+        XCTAssertEqual(result, "第一段\n第二段")
+    }
+
+    func testDiarizationLongSegmentIsSubChunkedWithinSameLabel() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.segmentsToReturn = [
+            SpeakerSegment(start: 0, end: 40, speaker: 0),    // >32s → 二次切块成 2 个子块
+            SpeakerSegment(start: 50, end: 60, speaker: 1),
+        ]
+        let (service, _, recognizer) = makeDiarizationFixture(
+            recognizerResults: ["前半", "后半", "乙"], diarizer: diarizer
+        )
+
+        let result = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { _ in }
+
+        XCTAssertEqual(result, "S1：前半\n后半\n\nS2：乙")
+        XCTAssertEqual(recognizer.recognizeCallCount, 3)
+    }
+
+    func testDiarizationFailureFallsBackToPlainPath() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.errorToThrow = SpeakerDiarizationError.processFailed("mock diarize failure")
+        let (service, _, recognizer) = makeDiarizationFixture(
+            recognizerResults: ["第一段", "第二段", "第三段"], diarizer: diarizer
+        )
+
+        var updates: [FileTranscriptionProgress] = []
+        let result = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { update in
+            updates.append(update)
+        }
+
+        XCTAssertEqual(result, "第一段\n第二段\n第三段")
+        XCTAssertEqual(recognizer.recognizeCallCount, 3)
+        XCTAssertTrue(updates.last?.diarizationFellBack == true)
+    }
+
+    func testDiarizationEmptySegmentsFallsBackToPlainPath() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.segmentsToReturn = []
+        let (service, _, _) = makeDiarizationFixture(
+            recognizerResults: ["第一段", "第二段", "第三段"], diarizer: diarizer
+        )
+
+        let result = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { _ in }
+
+        XCTAssertEqual(result, "第一段\n第二段\n第三段")
+    }
+
+    func testDiarizationCancelledErrorPropagatesAsCancellation() async throws {
+        let diarizer = MockDiarizer()
+        diarizer.errorToThrow = SpeakerDiarizationError.cancelled
+        let (service, _, recognizer) = makeDiarizationFixture(
+            recognizerResults: ["第一段"], diarizer: diarizer
+        )
+
+        do {
+            _ = try await service.transcribe(url: URL(fileURLWithPath: "/tmp/fake.wav")) { _ in }
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            XCTAssertEqual(recognizer.recognizeCallCount, 0, "取消后不应降级重转")
+        }
+    }
 }

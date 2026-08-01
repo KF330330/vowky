@@ -43,6 +43,14 @@ struct FileTranscriptionJob: Identifiable, Equatable {
     /// 文字来源：直接拉到平台字幕时记录人工/自动，nil 表示走本地 ASR 转写。
     var transcriptSource: TranscriptSource?
 
+    // MARK: 说话人分离
+    /// 转写子阶段（分离路径会经过 .separating），用于状态文案。
+    var transcriptionPhase: FileTranscriptionProgress.Phase?
+    /// 分离相关注记（分离失败已降级 / 用了平台字幕未分离），显示在结果区。
+    var diarizationNote: String?
+    /// 分离检出的说话人数（完成后 >0 才有意义）。
+    var speakerCount: Int = 0
+
     /// 实际喂给转写管线的本地文件 URL：链接任务用下载产物，本地任务用自身 url。
     var transcriptionInputURL: URL { mediaURL ?? url }
 
@@ -71,6 +79,12 @@ final class FileTranscriptionViewModel: ObservableObject {
     @Published private(set) var statusMessage: String?
     /// URL 输入框绑定。
     @Published var urlInputText: String = ""
+    /// 「区分说话人」开关（记住上次选择；转写运行中改动只影响下一次开始的任务）。
+    @Published var diarizationEnabled: Bool = DiarizationConfigStore.isFileEnabled() {
+        didSet { DiarizationConfigStore.setFileEnabled(diarizationEnabled) }
+    }
+    /// 分离模型是否在 bundle 里（缺失时开关禁用）。
+    let diarizationModelsAvailable = DiarizationModelCatalog.availableInBundle()
 
     private let appState: AppState
     private let fileTranscriptionServiceFactory: () -> FileTranscribing
@@ -526,6 +540,9 @@ final class FileTranscriptionViewModel: ObservableObject {
                         item.currentSegment = 0
                         item.totalSegments = 0
                         item.workDir = workDir
+                        item.transcriptionPhase = nil
+                        item.diarizationNote = nil
+                        item.speakerCount = 0
                     }
                     let downloader = urlDownloadServiceFactory()
                     do {
@@ -554,6 +571,7 @@ final class FileTranscriptionViewModel: ObservableObject {
                         case .transcript(let text, let source, let title):
                             // 直接拿到平台字幕：跳过下载媒体 + ASR，直接出文字并落盘。
                             let displayTitle = Self.sanitizedFileNameStatic(title)
+                            let diarizationWasOn = diarizationEnabled && diarizationModelsAvailable
                             updateJob(id: jobID) { item in
                                 item.fileName = displayTitle
                                 item.resultText = text
@@ -561,6 +579,10 @@ final class FileTranscriptionViewModel: ObservableObject {
                                 item.downloadPhase = nil
                                 item.progress = 1
                                 item.state = .completed
+                                // 字幕直返分支无音频,物理上不可分离——保持字幕快速路径优先,只做一次性注记
+                                if diarizationWasOn {
+                                    item.diarizationNote = L("diarization.note.subtitleSource")
+                                }
                             }
                             resultRecorder(text)
                             let via: String
@@ -610,6 +632,9 @@ final class FileTranscriptionViewModel: ObservableObject {
                     item.resultText = ""
                     item.currentSegment = 0
                     item.totalSegments = 0
+                    item.transcriptionPhase = nil
+                    item.diarizationNote = nil
+                    item.speakerCount = 0
                 }
 
                 let service = fileTranscriptionServiceFactory()
@@ -628,16 +653,22 @@ final class FileTranscriptionViewModel: ObservableObject {
                         job.state = .completed
                     }
                     resultRecorder(finalText)
+                    let finishedJob = jobs.first(where: { $0.id == jobID })
+                    let diarizationWasOn = diarizationEnabled && diarizationModelsAvailable
+                    var doneData: [String: Any] = [
+                        "char_count": finalText.count,
+                        "diar": diarizationWasOn ? 1 : 0,
+                        "speakers": finishedJob?.speakerCount ?? 0,
+                    ]
+                    if finishedJob?.diarizationNote != nil {
+                        doneData["diar_fallback"] = 1
+                    }
                     if isRemote {
-                        AnalyticsService.shared.track("link_transcribe_done", data: [
-                            "site": Self.siteCategory(for: job.remoteURLString),
-                            "via": "asr",
-                            "char_count": finalText.count,
-                        ])
+                        doneData["site"] = Self.siteCategory(for: job.remoteURLString)
+                        doneData["via"] = "asr"
+                        AnalyticsService.shared.track("link_transcribe_done", data: doneData)
                     } else {
-                        AnalyticsService.shared.track("file_transcribe_done", data: [
-                            "char_count": finalText.count,
-                        ])
+                        AnalyticsService.shared.track("file_transcribe_done", data: doneData)
                     }
 
                     // 转写一完成就自动落盘 raw text .md（与录音流程一致）。
@@ -889,11 +920,18 @@ final class FileTranscriptionViewModel: ObservableObject {
             job.currentSegment = progressUpdate.currentSegment
             job.totalSegments = progressUpdate.totalSegments
             job.resultText = progressUpdate.partialText
+            job.transcriptionPhase = progressUpdate.phase
+            if progressUpdate.diarizationFellBack, job.diarizationNote == nil {
+                job.diarizationNote = L("diarization.note.fallback")
+            }
+            if progressUpdate.speakerCount > 0 {
+                job.speakerCount = progressUpdate.speakerCount
+            }
 
             switch progressUpdate.phase {
             case .reading:
                 job.state = .reading
-            case .transcribing:
+            case .separating, .transcribing:
                 job.state = .transcribing
             case .finishing:
                 job.state = .completed
@@ -950,6 +988,9 @@ final class FileTranscriptionViewModel: ObservableObject {
         case .reading:
             return L("file.status.readingAudio")
         case .transcribing:
+            if job.transcriptionPhase == .separating {
+                return L("diarization.status.separating")
+            }
             guard job.totalSegments > 0 else { return L("file.status.transcribing") }
             return L("file.status.transcribingSegment", job.currentSegment, job.totalSegments)
         case .completed:
