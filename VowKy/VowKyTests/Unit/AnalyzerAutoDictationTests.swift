@@ -25,6 +25,7 @@ final class AnalyzerAutoDictationTests: XCTestCase {
         var installed: Set<String> = ["zh-CN", "en-US", "ja-JP", "ko-KR"]
         var svResults: [String?] = []
         private(set) var svCallCount = 0
+        private(set) var installRequests: [String] = []
         private var pendingDetections: [() async -> Void] = []
         var detectionScheduledCount: Int { scheduledCount }
         private var scheduledCount = 0
@@ -46,7 +47,8 @@ final class AnalyzerAutoDictationTests: XCTestCase {
                 scheduleDetection: {
                     self.scheduledCount += 1
                     self.pendingDetections.append($0)
-                }
+                },
+                requestAssetInstall: { self.installRequests.append($0) }
             )
         }
 
@@ -159,7 +161,7 @@ final class AnalyzerAutoDictationTests: XCTestCase {
 
     // MARK: - 未安装 / 无信号
 
-    func test08_detectionTargetNotInstalled_stickyFallsToSenseVoice() async {
+    func test08_detectionTargetNotInstalled_stickyFallsToSenseVoice_andRequestsInstall() async {
         let harness = Harness(sticky: "zh-CN")
         harness.analyzers["zh-CN"] = StubAnalyzer("本句极速结果")
         harness.installed = ["zh-CN", "en-US"] // ja-JP 未安装
@@ -168,6 +170,7 @@ final class AnalyzerAutoDictationTests: XCTestCase {
         _ = await recognize(harness)
         await harness.drainDetections()
         XCTAssertEqual(harness.sticky, SpeechEngineConfigStore.autoStickySenseVoiceValue)
+        XCTAssertEqual(harness.installRequests, ["ja-JP"], "缺失语言按需触发后台下载")
     }
 
     func test09_detectionNoSignal_stickyUnchanged() async {

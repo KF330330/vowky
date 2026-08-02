@@ -16,6 +16,8 @@ final class AutoRoutingFileTranscriber: FileTranscribing {
     private let senseVoiceService: FileTranscribing
     private let analyzerFactory: (String) -> FileTranscribing?
     private let installedLocales: () async -> Set<String>
+    /// 目标语言资产未安装时的按需后台下载（本次走本地，装好后下次自动极速）。
+    private let requestAssetInstall: ((String) -> Void)?
     /// 礼让闸：每个探测窗前调用，语音输入活动时挂起（探测与听写共用 helper）。
     private let yieldToVoiceInput: (() async -> Void)?
 
@@ -25,6 +27,7 @@ final class AutoRoutingFileTranscriber: FileTranscribing {
         senseVoiceService: FileTranscribing,
         analyzerFactory: @escaping (String) -> FileTranscribing?,
         installedLocales: @escaping () async -> Set<String>,
+        requestAssetInstall: ((String) -> Void)? = nil,
         yieldToVoiceInput: (() async -> Void)? = nil
     ) {
         self.decoder = decoder
@@ -32,6 +35,7 @@ final class AutoRoutingFileTranscriber: FileTranscribing {
         self.senseVoiceService = senseVoiceService
         self.analyzerFactory = analyzerFactory
         self.installedLocales = installedLocales
+        self.requestAssetInstall = requestAssetInstall
         self.yieldToVoiceInput = yieldToVoiceInput
     }
 
@@ -40,6 +44,9 @@ final class AutoRoutingFileTranscriber: FileTranscribing {
         progress: @escaping @MainActor (FileTranscriptionProgress) -> Void
     ) async throws -> String {
         let decision = try await probeRouteDecision(url: url, progress: progress)
+        if case .keepSenseVoice(.notInstalled(let locale)) = decision {
+            requestAssetInstall?(locale)
+        }
         if case .analyzer(let locale) = decision, let analyzer = analyzerFactory(locale) {
             do {
                 return try await analyzer.transcribe(url: url, progress: progress)

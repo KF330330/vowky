@@ -98,10 +98,10 @@ final class AnalyzerLocaleRouterTests: XCTestCase {
 
     // MARK: - 未安装 / 粤语
 
-    func test17_japaneseNotInstalled_keepsNotInstalled() {
+    func test17_japaneseNotInstalled_keepsNotInstalledWithTargetLocale() {
         XCTAssertEqual(route("今日は会議がありますのでよろしくお願いします",
                              installed: ["zh-CN", "en-US"]),
-                       .keepSenseVoice(.notInstalled))
+                       .keepSenseVoice(.notInstalled("ja-JP")))
     }
 
     func test18_cantoneseMarkers_keepLikelyCantonese() {

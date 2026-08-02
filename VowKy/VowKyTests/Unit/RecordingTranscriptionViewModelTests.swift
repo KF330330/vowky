@@ -588,7 +588,8 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         transcriber: MockAnalyzerFinalPassTranscribing?,
         installed: Set<String> = ["zh-CN", "en-US", "ja-JP", "ko-KR"],
         recognizer: @escaping ([Float]) -> String? = { _ in "本地终稿" },
-        onLocaleRequested: ((String) -> Void)? = nil
+        onLocaleRequested: ((String) -> Void)? = nil,
+        onInstallRequested: ((String) -> Void)? = nil
     ) async throws -> RecordingTranscriptionViewModel {
         mockRecorder.samplesToEmitOnStart = [Array(repeating: Float(0.1), count: 32_000)]
         mockFinalRecognizer.recognizeResultProvider = recognizer
@@ -599,7 +600,8 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
                         onLocaleRequested?(locale)
                         return transcriber
                     },
-                    installedLocales: { installed }
+                    installedLocales: { installed },
+                    requestAssetInstall: onInstallRequested
                 )
             }
         )
@@ -646,16 +648,19 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertNotNil(viewModel.engineNote)
     }
 
-    func testAutoFinalPass_targetNotInstalled_keepsLocalSilently() async throws {
+    func testAutoFinalPass_targetNotInstalled_keepsLocalSilently_andRequestsInstall() async throws {
         let analyzerPass = MockAnalyzerFinalPassTranscribing(.success("不应出现"))
+        var installRequests: [String] = []
         let viewModel = try await runAutoRecordingToCompletion(
             transcriber: analyzerPass,
-            installed: ["en-US"] // zh-CN 未安装
+            installed: ["en-US"], // zh-CN 未安装
+            onInstallRequested: { installRequests.append($0) }
         )
 
         XCTAssertEqual(analyzerPass.transcribeCallCount, 0)
         XCTAssertEqual(viewModel.transcriptText, "本地终稿")
         XCTAssertNil(viewModel.engineNote, "未安装静默保留本地，不打扰")
+        XCTAssertEqual(installRequests, ["zh-CN"], "缺失语言按需触发后台下载")
     }
 
     func testDiarizationDisabledNeverInvokesDiarizer() async throws {

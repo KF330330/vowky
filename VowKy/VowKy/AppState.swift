@@ -100,7 +100,10 @@ final class AppState: ObservableObject {
                             of: SpeechEngineConfigStore.autoRoutableLocales
                         )
                     },
-                    scheduleDetection: { work in Task { await work() } }
+                    scheduleDetection: { work in Task { await work() } },
+                    requestAssetInstall: { locale in
+                        Task { @MainActor in SpeechAnalyzerAssetAutoInstaller.requestInstall(locale) }
+                    }
                 )
             }
         }
@@ -603,6 +606,9 @@ final class AppState: ObservableObject {
                     await SpeechAnalyzerAssetStatus.installedSubset(
                         of: SpeechEngineConfigStore.autoRoutableLocales
                     )
+                },
+                requestAssetInstall: { locale in
+                    Task { @MainActor in SpeechAnalyzerAssetAutoInstaller.requestInstall(locale) }
                 },
                 yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
             )

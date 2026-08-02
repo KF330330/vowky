@@ -206,6 +206,9 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                         await SpeechAnalyzerAssetStatus.installedSubset(
                             of: SpeechEngineConfigStore.autoRoutableLocales
                         )
+                    },
+                    requestAssetInstall: { locale in
+                        Task { @MainActor in SpeechAnalyzerAssetAutoInstaller.requestInstall(locale) }
                     }
                 )
             }
@@ -680,6 +683,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                 if isActive(operationID) {
                     engineNote = L("recording.note.autoMixedKeptLocal")
                 }
+                return nil
+            case .keepSenseVoice(.notInstalled(let locale)):
+                // 本次保留本地终稿；后台按需下载，装好后下次录音自动用极速
+                auto.requestAssetInstall?(locale)
                 return nil
             case .keepSenseVoice:
                 return nil

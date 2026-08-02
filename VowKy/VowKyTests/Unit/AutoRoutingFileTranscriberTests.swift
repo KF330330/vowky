@@ -57,6 +57,7 @@ final class AutoRoutingFileTranscriberTests: XCTestCase {
         analyzer: MockFileTranscriber?,
         installed: Set<String>? = nil,
         onLocaleRequested: ((String) -> Void)? = nil,
+        onInstallRequested: ((String) -> Void)? = nil,
         onYield: (() -> Void)? = nil
     ) -> AutoRoutingFileTranscriber {
         AutoRoutingFileTranscriber(
@@ -68,6 +69,7 @@ final class AutoRoutingFileTranscriberTests: XCTestCase {
                 return analyzer
             },
             installedLocales: { installed ?? self.allInstalled },
+            requestAssetInstall: onInstallRequested,
             yieldToVoiceInput: onYield.map { yield in { yield() } }
         )
     }
@@ -153,19 +155,22 @@ final class AutoRoutingFileTranscriberTests: XCTestCase {
         XCTAssertEqual(yieldCount, 3, "每个探测窗前过礼让闸")
     }
 
-    func test06_probeTargetNotInstalled_delegatesToLocal() async throws {
+    func test06_probeTargetNotInstalled_delegatesToLocal_andRequestsInstall() async throws {
         let decoder = MockProbeDecoder()
         let probe = MockProbeRecognizer()
         probe.results = ["今日は会議があります", "よろしくお願いします", "それでは始めましょう"]
         let local = MockFileTranscriber(.success("本地稿"))
         let analyzer = MockFileTranscriber(.success("不应出现"))
+        var installRequests: [String] = []
         let sut = makeSUT(decoder: decoder, probe: probe, local: local, analyzer: analyzer,
-                          installed: ["zh-CN", "en-US"]) // ja-JP 未安装
+                          installed: ["zh-CN", "en-US"], // ja-JP 未安装
+                          onInstallRequested: { installRequests.append($0) })
 
         let text = try await sut.transcribe(url: url) { _ in }
 
         XCTAssertEqual(text, "本地稿")
         XCTAssertEqual(analyzer.callCount, 0)
+        XCTAssertEqual(installRequests, ["ja-JP"], "缺失语言按需触发后台下载")
     }
 
     func test07_probeWindows_layout() {

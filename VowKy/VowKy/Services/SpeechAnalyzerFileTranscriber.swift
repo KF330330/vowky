@@ -271,7 +271,7 @@ enum SpeechAnalyzerAssetStatus {
         })
     }
 
-    /// 主动下载 locale 资产(设置侧入口)。无需下载时直接返回。
+    /// 主动下载 locale 资产。无需下载时直接返回。
     static func ensureInstalled(_ identifier: String) async throws {
         let transcriber = SpeechTranscriber(
             locale: Locale(identifier: identifier),
@@ -281,6 +281,30 @@ enum SpeechAnalyzerAssetStatus {
         )
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await request.downloadAndInstall()
+        }
+    }
+}
+
+/// auto 模式的按需资产自装器：检测到用户说了「极速支持但未安装」的语言时后台静默下载，
+/// 下载期间/失败时该语言由本地引擎兜底；装好后路由自动开始用极速——全程无 UI、零打扰。
+/// 同一 locale 去重防重复触发；失败静默，下次再说该语言时会再次触发。
+@available(macOS 26.0, *)
+@MainActor
+enum SpeechAnalyzerAssetAutoInstaller {
+    private static var inFlight = Set<String>()
+
+    static func requestInstall(_ identifier: String) {
+        guard !inFlight.contains(identifier) else { return }
+        inFlight.insert(identifier)
+        NSLog("[VowKy][AutoInstall] 按需下载语音资产: %@", identifier)
+        Task {
+            do {
+                try await SpeechAnalyzerAssetStatus.ensureInstalled(identifier)
+                NSLog("[VowKy][AutoInstall] 语音资产已就绪: %@", identifier)
+            } catch {
+                NSLog("[VowKy][AutoInstall] 语音资产下载失败(%@): %@", identifier, error.localizedDescription)
+            }
+            inFlight.remove(identifier)
         }
     }
 }

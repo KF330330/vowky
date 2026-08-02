@@ -14,8 +14,8 @@ enum AnalyzerRouteDecision: Equatable {
         case mixed
         /// 粤语高频字命中（书面粤语与 zh 不可分是 v1 已知局限）
         case likelyCantonese
-        /// 目标 locale 资产未安装（v1 不自动触发下载）
-        case notInstalled
+        /// 目标 locale 资产未安装（携带目标 locale，供按需后台自动下载）
+        case notInstalled(String)
     }
 }
 
@@ -101,7 +101,7 @@ enum AnalyzerLocaleRouter {
         default:                   target = nil
         }
         guard let locale = target else { return .keepSenseVoice(.mixed) }
-        guard isInstalled(locale, in: installedLocales) else { return .keepSenseVoice(.notInstalled) }
+        guard isInstalled(locale, in: installedLocales) else { return .keepSenseVoice(.notInstalled(locale)) }
         return .analyzer(locale)
     }
 

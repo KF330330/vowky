@@ -12,6 +12,8 @@ struct AnalyzerAutoDictationContext {
     let installedLocales: () async -> Set<String>
     /// 后台检测的调度方式：生产 = Task {}；测试 = 内联 await
     let scheduleDetection: (@escaping () async -> Void) -> Void
+    /// 目标语言资产未安装时的按需后台下载（全自动理念：缺什么补什么，下载期间本地引擎兜底）
+    var requestAssetInstall: ((String) -> Void)? = nil
 }
 
 /// auto 模式录音终稿的依赖束（路由决策在 RecordingTranscriptionViewModel.runAnalyzerFinalPass）。
@@ -19,6 +21,8 @@ struct AnalyzerAutoFinalPassContext {
     /// 按 locale 建终稿转写器；不可用返回 nil
     let transcriberForLocale: (String) -> FileTranscribing?
     let installedLocales: () async -> Set<String>
+    /// 目标语言资产未安装时的按需后台下载
+    var requestAssetInstall: ((String) -> Void)? = nil
 }
 
 /// 听写 auto 编排（lazy sticky，用户拍板「极速优先」2026-08-02）：
@@ -64,7 +68,11 @@ enum AnalyzerAutoDictation {
         switch AnalyzerLocaleRouter.route(text: text, installedLocales: installed) {
         case .analyzer(let locale):
             context.updateStickyLocale(locale)
-        case .keepSenseVoice(.mixed), .keepSenseVoice(.likelyCantonese), .keepSenseVoice(.notInstalled):
+        case .keepSenseVoice(.notInstalled(let locale)):
+            // 下载期间/失败由本地兜底；装好后下一次单语言句路由即自动逃逸回极速
+            context.requestAssetInstall?(locale)
+            context.updateStickyLocale(SpeechEngineConfigStore.autoStickySenseVoiceValue)
+        case .keepSenseVoice(.mixed), .keepSenseVoice(.likelyCantonese):
             context.updateStickyLocale(SpeechEngineConfigStore.autoStickySenseVoiceValue)
         case .keepSenseVoice(.noSignal):
             break // 无信号不动 sticky
