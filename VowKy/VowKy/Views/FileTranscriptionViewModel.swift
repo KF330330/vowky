@@ -83,6 +83,10 @@ final class FileTranscriptionViewModel: ObservableObject {
     @Published var diarizationEnabled: Bool = DiarizationConfigStore.isFileEnabled() {
         didSet { DiarizationConfigStore.setFileEnabled(diarizationEnabled) }
     }
+    /// 说话人数：0 = 自动估计，≥2 = 强制指定（已知人数时更准）。
+    @Published var diarizationSpeakerCount: Int = DiarizationConfigStore.fileSpeakerCount() {
+        didSet { DiarizationConfigStore.setFileSpeakerCount(diarizationSpeakerCount) }
+    }
     /// 分离模型是否在 bundle 里（缺失时开关禁用）。
     let diarizationModelsAvailable = DiarizationModelCatalog.availableInBundle()
 

@@ -28,7 +28,7 @@ final class SpeakerDiarizationE2ETests: XCTestCase {
         var config = sherpaOnnxOfflineSpeakerDiarizationConfig(
             segmentation: segmentationConfig,
             embedding: embeddingConfig,
-            clustering: sherpaOnnxFastClusteringConfig()
+            clustering: sherpaOnnxFastClusteringConfig(threshold: DiarizationTuning.clusteringThreshold)
         )
         let diarizer = SherpaOnnxOfflineSpeakerDiarizationWrapper(config: &config)
         try XCTSkipIf(diarizer.impl == nil, "分离器创建失败")

@@ -31,7 +31,7 @@ final class RecordingTranscriptionWindowController {
             metadataRecorder: { text, meta in
                 HistoryStore.shared.insertWithMetadata(content: text, sourceType: meta.sourceType, metadata: meta)
             },
-            diarizer: SubprocessSpeakerDiarizer()
+            diarizer: SubprocessSpeakerDiarizer(numSpeakers: { DiarizationConfigStore.recordingSpeakerCount() })
         )
         let view = RecordingTranscriptionView(viewModel: viewModel)
             .environmentObject(LocalizationManager.shared)
@@ -203,6 +203,40 @@ struct RecordingTranscriptionView: View {
             .help(viewModel.diarizationModelsAvailable
                 ? loc.string("diarization.help.toggle")
                 : loc.string("diarization.help.modelsMissing"))
+
+            if viewModel.diarizationEnabled {
+                Menu {
+                    Button {
+                        viewModel.setDiarizationSpeakerCount(0)
+                    } label: {
+                        if viewModel.diarizationSpeakerCount == 0 {
+                            Label(loc.string("diarization.speakerCount.auto"), systemImage: "checkmark")
+                        } else {
+                            Text(loc.string("diarization.speakerCount.auto"))
+                        }
+                    }
+                    ForEach(2...6, id: \.self) { count in
+                        Button {
+                            viewModel.setDiarizationSpeakerCount(count)
+                        } label: {
+                            if viewModel.diarizationSpeakerCount == count {
+                                Label(loc.string("diarization.speakerCount.value", count), systemImage: "checkmark")
+                            } else {
+                                Text(loc.string("diarization.speakerCount.value", count))
+                            }
+                        }
+                    }
+                } label: {
+                    Text(viewModel.diarizationSpeakerCount == 0
+                        ? loc.string("diarization.speakerCount.auto")
+                        : loc.string("diarization.speakerCount.value", viewModel.diarizationSpeakerCount))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(TranscriptionTheme.accentDark)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(loc.string("diarization.speakerCount.help"))
+            }
         }
     }
 

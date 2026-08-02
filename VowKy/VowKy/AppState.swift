@@ -521,7 +521,9 @@ final class AppState: ObservableObject {
             decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
             speechRecognizer: speechRecognizer,
             yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() },
-            diarizer: diarizationOn ? SubprocessSpeakerDiarizer() : nil,
+            diarizer: diarizationOn
+                ? SubprocessSpeakerDiarizer(numSpeakers: { DiarizationConfigStore.fileSpeakerCount() })
+                : nil,
             speakerLabel: { LL("diarization.speakerLabel", $0) }
         )
     }

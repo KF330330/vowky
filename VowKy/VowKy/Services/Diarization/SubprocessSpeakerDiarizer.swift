@@ -9,10 +9,13 @@ final class SubprocessSpeakerDiarizer: SpeakerDiarizing {
     private static let stallTimeout: TimeInterval = 120
 
     private let helperURL: URL
+    /// 说话人数（diarize 时求值，允许用户中途改选项）：0 = 自动估计，≥2 = 强制聚成 N 类。
+    private let numSpeakersProvider: () -> Int
 
-    init(helperURL: URL? = nil) {
+    init(helperURL: URL? = nil, numSpeakers: (() -> Int)? = nil) {
         self.helperURL = helperURL
             ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/vowky-speechd")
+        self.numSpeakersProvider = numSpeakers ?? { 0 }
     }
 
     /// 整体超时:分离实测约为音频时长 5%(RTF≈0.05),0.3 倍即 6 倍余量;含模型冷加载底数。
@@ -31,7 +34,12 @@ final class SubprocessSpeakerDiarizer: SpeakerDiarizing {
 
         let process = Process()
         process.executableURL = helperURL
-        process.arguments = ["--diarize", wavURL.path]
+        var processArguments = ["--diarize", wavURL.path]
+        let numSpeakers = numSpeakersProvider()
+        if numSpeakers >= 2 {
+            processArguments += ["--num-speakers", "\(numSpeakers)"]
+        }
+        process.arguments = processArguments
         process.qualityOfService = .utility
         let stdoutPipe = Pipe()
         process.standardOutput = stdoutPipe

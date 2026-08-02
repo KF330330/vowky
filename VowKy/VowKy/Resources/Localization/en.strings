@@ -539,6 +539,9 @@
 /* ===== Speaker diarization ===== */
 "diarization.toggle" = "Speakers";
 "diarization.help.toggle" = "Label different speakers after transcription (adds \"Speaker N\" in multi-speaker audio)";
+"diarization.speakerCount.auto" = "Count: auto";
+"diarization.speakerCount.value" = "Count: %d";
+"diarization.speakerCount.help" = "Set the exact number when you know it — more accurate than auto-estimation (short utterances tend to over-split)";
 "diarization.help.modelsMissing" = "Speaker separation models missing";
 "diarization.speakerLabel" = "Speaker %d: ";
 "diarization.status.separating" = "Separating speakers…";

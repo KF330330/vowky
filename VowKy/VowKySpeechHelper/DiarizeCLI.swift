@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-// vowky-speechd --diarize <wav路径> [--num-speakers N]
+// vowky-speechd --diarize <wav路径> [--num-speakers N] [--threshold T]
 //
 // 一次性说话人分离子进程:只加载 pyannote(分段)+CAM++(声纹),绝不加载 SenseVoice。
 // 输入必须是 canonical 16k mono Float32 WAV(WAVSampleFileWriter 写出的格式)。
@@ -32,6 +32,7 @@ enum DiarizeCLI {
         // 参数解析:第一个非选项参数 = wav 路径
         var wavPath: String?
         var numSpeakers = -1  // -1 = 自动估计(阈值聚类)
+        var threshold = DiarizationTuning.clusteringThreshold
         var index = 0
         while index < arguments.count {
             let arg = arguments[index]
@@ -40,6 +41,12 @@ enum DiarizeCLI {
                     return fail("invalid --num-speakers")
                 }
                 numSpeakers = n
+                index += 2
+            } else if arg == "--threshold" {
+                guard index + 1 < arguments.count, let t = Float(arguments[index + 1]), t > 0 else {
+                    return fail("invalid --threshold")
+                }
+                threshold = t
                 index += 2
             } else if wavPath == nil {
                 wavPath = arg
@@ -68,7 +75,7 @@ enum DiarizeCLI {
             model: modelPaths.embedding,
             numThreads: numThreads
         )
-        let clusteringConfig = sherpaOnnxFastClusteringConfig(numClusters: numSpeakers)
+        let clusteringConfig = sherpaOnnxFastClusteringConfig(numClusters: numSpeakers, threshold: threshold)
         var config = sherpaOnnxOfflineSpeakerDiarizationConfig(
             segmentation: segmentationConfig,
             embedding: embeddingConfig,

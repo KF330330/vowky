@@ -4,8 +4,27 @@ import Foundation
 enum DiarizationConfigStore {
 
     enum Keys {
-        static let fileEnabled      = "diarization.file.enabled"
-        static let recordingEnabled = "diarization.recording.enabled"
+        static let fileEnabled           = "diarization.file.enabled"
+        static let recordingEnabled      = "diarization.recording.enabled"
+        static let fileSpeakerCount      = "diarization.file.speakerCount"
+        static let recordingSpeakerCount = "diarization.recording.speakerCount"
+    }
+
+    /// 说话人数：0 = 自动估计；≥2 = 强制聚成 N 类（已知人数时比自动估计准得多）。
+    static func fileSpeakerCount(defaults: UserDefaults = .standard) -> Int {
+        defaults.integer(forKey: Keys.fileSpeakerCount)
+    }
+
+    static func setFileSpeakerCount(_ count: Int, defaults: UserDefaults = .standard) {
+        defaults.set(count, forKey: Keys.fileSpeakerCount)
+    }
+
+    static func recordingSpeakerCount(defaults: UserDefaults = .standard) -> Int {
+        defaults.integer(forKey: Keys.recordingSpeakerCount)
+    }
+
+    static func setRecordingSpeakerCount(_ count: Int, defaults: UserDefaults = .standard) {
+        defaults.set(count, forKey: Keys.recordingSpeakerCount)
     }
 
     static func isFileEnabled(defaults: UserDefaults = .standard) -> Bool {

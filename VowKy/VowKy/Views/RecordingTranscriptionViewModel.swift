@@ -40,6 +40,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     // MARK: 说话人分离
 
     @Published private(set) var diarizationEnabled: Bool = DiarizationConfigStore.isRecordingEnabled()
+    /// 说话人数：0 = 自动估计，≥2 = 强制指定（短句多的对话自动估计易过分裂，已知人数时指定更准）。
+    @Published private(set) var diarizationSpeakerCount: Int = DiarizationConfigStore.recordingSpeakerCount()
     /// 分离模型是否在 bundle 里（缺失时开关禁用）。
     let diarizationModelsAvailable = DiarizationModelCatalog.availableInBundle()
     /// finishing 期间的分离子阶段文案（statusText 在 .finishing 时优先显示）。
@@ -495,6 +497,11 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     func setDiarizationEnabled(_ enabled: Bool) {
         diarizationEnabled = enabled
         DiarizationConfigStore.setRecordingEnabled(enabled)
+    }
+
+    func setDiarizationSpeakerCount(_ count: Int) {
+        diarizationSpeakerCount = count
+        DiarizationConfigStore.setRecordingSpeakerCount(count)
     }
 
     /// 录完后的说话人分离后处理。开关关/单说话人/任何失败都返回 nil（= 用无标签原文稿）。
