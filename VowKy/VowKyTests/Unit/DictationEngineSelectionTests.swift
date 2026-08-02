@@ -121,4 +121,106 @@ final class DictationEngineSelectionTests: XCTestCase {
         XCTAssertEqual(mockAnalyzer.recognizeCallCount, 0)
         XCTAssertEqual(mockSenseVoice.recognizeCallCount, 1)
     }
+
+    // MARK: - auto 模式（lazy sticky，语言=「自动」）
+
+    /// 后台检测由测试捕获后显式 drain，消除竞态。
+    private final class AutoHarness {
+        var sticky: String
+        private(set) var stickyUpdates: [String] = []
+        private var pendingDetections: [() async -> Void] = []
+        init(sticky: String) { self.sticky = sticky }
+
+        func context(analyzer: MockSpeechRecognizer?) -> AnalyzerAutoDictationContext {
+            AnalyzerAutoDictationContext(
+                recognizerForLocale: { _ in analyzer },
+                stickyLocale: { self.sticky },
+                updateStickyLocale: {
+                    self.stickyUpdates.append($0)
+                    self.sticky = $0
+                },
+                installedLocales: { ["zh-CN", "en-US", "ja-JP", "ko-KR"] },
+                scheduleDetection: { self.pendingDetections.append($0) }
+            )
+        }
+
+        func drainDetections() async {
+            while !pendingDetections.isEmpty {
+                await pendingDetections.removeFirst()()
+            }
+        }
+    }
+
+    private func makeAppState(autoContext: AnalyzerAutoDictationContext) {
+        appState = AppState(
+            speechRecognizer: mockSenseVoice,
+            audioRecorder: mockRecorder,
+            permissionChecker: mockPermission,
+            backupService: mockBackup,
+            analyzerAutoDictationProvider: { autoContext }
+        )
+    }
+
+    func test06_autoMode_stickyHit_insertsAnalyzerText_detectionOnlyAffectsNext() async throws {
+        let harness = AutoHarness(sticky: "zh-CN")
+        makeAppState(autoContext: harness.context(analyzer: mockAnalyzer))
+        mockAnalyzer.recognizeResult = "极速稿"
+        mockSenseVoice.recognizeResult = "今日は会議がありますのでよろしくお願いします"
+
+        try await dictateOnce()
+
+        XCTAssertEqual(appState.lastResult, "极速稿", "极速出字不等本地引擎")
+        XCTAssertEqual(mockSenseVoice.recognizeCallCount, 0)
+        XCTAssertEqual(mockBackup.finalizeAndDeleteCallCount, 1)
+        XCTAssertEqual(mockBackup.preserveBackupCallCount, 0)
+
+        // drain 后台检测：本地识别出日语 → sticky 切到 ja-JP（只影响下一句）
+        await harness.drainDetections()
+        XCTAssertEqual(mockSenseVoice.recognizeCallCount, 1)
+        XCTAssertEqual(harness.sticky, "ja-JP")
+        XCTAssertEqual(appState.lastResult, "极速稿", "本句结果不重识别不重插")
+    }
+
+    func test07_autoMode_analyzerNil_fallsBackToSenseVoice_noPreserve() async throws {
+        let harness = AutoHarness(sticky: "zh-CN")
+        makeAppState(autoContext: harness.context(analyzer: mockAnalyzer))
+        mockAnalyzer.recognizeResult = nil // SA infra 失败
+        mockSenseVoice.recognizeResult = "回落成功这里是一段中文结果"
+
+        try await dictateOnce()
+
+        XCTAssertEqual(appState.lastResult, "回落成功这里是一段中文结果")
+        XCTAssertEqual(mockSenseVoice.recognizeCallCount, 1)
+        XCTAssertEqual(mockBackup.preserveBackupCallCount, 0, "SA 单独失败绝不触发音频保全")
+        XCTAssertEqual(mockBackup.finalizeAndDeleteCallCount, 1)
+        XCTAssertEqual(harness.stickyUpdates, ["zh-CN"], "回落文本在手，前台顺手路由")
+    }
+
+    func test08_autoMode_bothInfraDown_preservesBackup() async throws {
+        let harness = AutoHarness(sticky: "zh-CN")
+        makeAppState(autoContext: harness.context(analyzer: mockAnalyzer))
+        mockAnalyzer.recognizeResult = nil
+        mockSenseVoice.recognizeResult = nil
+        mockSenseVoice.isReady = false // transport 失败路径会同步清 readyState
+
+        try await dictateOnce()
+
+        XCTAssertEqual(appState.state, .idle)
+        XCTAssertEqual(mockSenseVoice.recognizeCallCount, 2, "SenseVoice infra 失败仍重试一次")
+        XCTAssertEqual(mockBackup.preserveBackupCallCount, 1, "双引擎皆挂必须保全音频（红线回归）")
+        XCTAssertEqual(mockBackup.deleteBackupCallCount, 0)
+        XCTAssertTrue(harness.stickyUpdates.isEmpty)
+    }
+
+    func test09_autoMode_stickySenseVoice_usesSenseVoice_escapesOnSingleLanguage() async throws {
+        let harness = AutoHarness(sticky: SpeechEngineConfigStore.autoStickySenseVoiceValue)
+        makeAppState(autoContext: harness.context(analyzer: mockAnalyzer))
+        mockSenseVoice.recognizeResult = "今日は会議がありますのでよろしくお願いします"
+
+        try await dictateOnce()
+
+        XCTAssertEqual(appState.lastResult, "今日は会議がありますのでよろしくお願いします")
+        XCTAssertEqual(mockAnalyzer.recognizeCallCount, 0, "sticky=senseVoice 不建 SA 会话")
+        XCTAssertEqual(harness.sticky, "ja-JP", "单语言句检测后逃逸回极速（下一句生效）")
+    }
 }

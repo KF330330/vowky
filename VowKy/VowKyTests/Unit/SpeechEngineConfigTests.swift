@@ -82,4 +82,50 @@ final class SpeechEngineConfigTests: XCTestCase {
         XCTAssertEqual(SpeechEngineConfigStore.defaultAnalyzerLocale(appLanguage: .zhHans), "zh-CN")
         XCTAssertEqual(SpeechEngineConfigStore.defaultAnalyzerLocale(appLanguage: .en), "en-US")
     }
+
+    // MARK: - auto 模式（哨兵 + mode 访问器）
+
+    func test09_autoSentinel_roundTripAndMode() {
+        var config = SpeechEngineConfig()
+        config.analyzerLocale = SpeechEngineConfigStore.analyzerLocaleAutoValue
+        SpeechEngineConfigStore.save(config, defaults: defaults)
+        let loaded = SpeechEngineConfigStore.load(defaults: defaults)
+        XCTAssertEqual(loaded.analyzerLocale, "auto")
+        XCTAssertEqual(loaded.analyzerLocaleMode, .auto)
+    }
+
+    func test10_concreteLocale_modeIsFixed_backwardCompatible() {
+        // 存量用户 defaults 里是具体 bcp47 → 行为不变（fixed），auto 纯 opt-in
+        defaults.set("ja-JP", forKey: SpeechEngineConfigStore.Keys.analyzerLocale)
+        let loaded = SpeechEngineConfigStore.load(defaults: defaults)
+        XCTAssertEqual(loaded.analyzerLocaleMode, .fixed("ja-JP"))
+        // 未存 locale → 默认值也是 fixed
+        XCTAssertEqual(SpeechEngineConfig().analyzerLocaleMode,
+                       .fixed(SpeechEngineConfigStore.defaultAnalyzerLocale()))
+    }
+
+    // MARK: - auto sticky store
+
+    func test11_autoStickyLocale_defaultAndRoundTrip() {
+        // 未存 → 回落 defaultAnalyzerLocale()
+        XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults),
+                       SpeechEngineConfigStore.defaultAnalyzerLocale())
+        // 四候选 locale 合法
+        SpeechEngineConfigStore.saveAutoStickyLocale("ja-JP", defaults: defaults)
+        XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults), "ja-JP")
+        // "senseVoice" 哨兵合法（下一句直接用本地引擎）
+        SpeechEngineConfigStore.saveAutoStickyLocale(
+            SpeechEngineConfigStore.autoStickySenseVoiceValue, defaults: defaults)
+        XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults),
+                       SpeechEngineConfigStore.autoStickySenseVoiceValue)
+    }
+
+    func test12_autoStickyLocale_garbageValueFallsBack() {
+        defaults.set("fr-FR", forKey: SpeechEngineConfigStore.Keys.autoStickyLocale)
+        XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults),
+                       SpeechEngineConfigStore.defaultAnalyzerLocale())
+        defaults.set("auto", forKey: SpeechEngineConfigStore.Keys.autoStickyLocale)
+        XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults),
+                       SpeechEngineConfigStore.defaultAnalyzerLocale())
+    }
 }

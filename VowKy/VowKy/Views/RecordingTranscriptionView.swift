@@ -33,7 +33,9 @@ final class RecordingTranscriptionWindowController {
             },
             diarizer: SubprocessSpeakerDiarizer(numSpeakers: { DiarizationConfigStore.recordingSpeakerCount() }),
             // 极速引擎终稿替换（引擎全局化；分离开启/非 26 系统自动为 nil）
-            analyzerFinalPassFactory: RecordingTranscriptionViewModel.liveAnalyzerFinalPassFactory()
+            analyzerFinalPassFactory: RecordingTranscriptionViewModel.liveAnalyzerFinalPassFactory(),
+            // 语言=「自动」时的终稿路由（按本地终稿文本判语言；与上面互斥）
+            analyzerAutoFinalPassProvider: RecordingTranscriptionViewModel.liveAnalyzerAutoFinalPassProvider()
         )
         let view = RecordingTranscriptionView(viewModel: viewModel)
             .environmentObject(LocalizationManager.shared)

@@ -118,11 +118,16 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private let diarizer: SpeakerDiarizing?
     /// 分离开关读取（进入 finishing 后处理前读取，允许录音中途改开关）。测试可注入绕过真实 UserDefaults。
     private let diarizationEnabledProvider: () -> Bool
-    /// 极速引擎终稿转写器工厂：裁决引擎为 SpeechAnalyzer 时 start() 经此构建（快照口径）。
+    /// 极速引擎终稿转写器工厂（固定 locale 模式）：裁决引擎为 SpeechAnalyzer 时 start() 经此构建（快照口径）。
     /// 生产默认闭包内含编译门控；测试注入 mock FileTranscribing。
     private let analyzerFinalPassFactory: () -> FileTranscribing?
     /// 本次录音的极速引擎终稿转写器快照（start() 时按当时设置裁决；nil = 本次用 SenseVoice 终稿）。
     private var engineFinalPassTranscriber: FileTranscribing?
+    /// auto 模式（语言=「自动」）终稿上下文工厂：与 analyzerFinalPassFactory 互斥
+    /// （live 层按 locale 模式保证至多一个非 nil）。测试注入 mock。
+    private let analyzerAutoFinalPassProvider: () -> AnalyzerAutoFinalPassContext?
+    /// 本次录音的 auto 终稿上下文快照（nil = 非 auto 模式）。
+    private var engineAutoFinalPass: AnalyzerAutoFinalPassContext?
 
     private var activePreparedOutput: PreparedRecordingTranscriptionOutput?
     private var sampleContinuation: AsyncStream<[Float]>.Continuation?
@@ -155,7 +160,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
         diarizer: SpeakerDiarizing? = nil,
         diarizationEnabledProvider: (() -> Bool)? = nil,
-        analyzerFinalPassFactory: (() -> FileTranscribing?)? = nil
+        analyzerFinalPassFactory: (() -> FileTranscribing?)? = nil,
+        analyzerAutoFinalPassProvider: (() -> AnalyzerAutoFinalPassContext?)? = nil
     ) {
         self.appState = appState
         self.audioRecorder = audioRecorder ?? appState.audioRecorder
@@ -174,20 +180,53 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         // 默认惰性（恒 nil = 本地引擎终稿）：生产端（窗口控制器）显式注入 liveAnalyzerFinalPassFactory。
         // 绝不内嵌读真实 UserDefaults 的默认——测试会随用户当前引擎设置漂移。
         self.analyzerFinalPassFactory = analyzerFinalPassFactory ?? { nil }
+        // 同上 DI 红线：默认惰性恒 nil；生产端显式注入 liveAnalyzerAutoFinalPassProvider。
+        self.analyzerAutoFinalPassProvider = analyzerAutoFinalPassProvider ?? { nil }
     }
 
-    /// 生产用极速引擎终稿工厂：裁决引擎为 SpeechAnalyzer（且录音分离关）才返回转写器——
+    /// 生产用极速引擎终稿工厂（固定 locale 模式）：裁决引擎为 SpeechAnalyzer（且录音分离关）才返回转写器——
     /// 分离开启恒 SenseVoice 的互锁在 resolvedEngine 内生效（编译门控照 AppState 先例）。
+    /// 语言选「自动」时返回 nil，走 liveAnalyzerAutoFinalPassProvider（防 "auto" 哨兵漏进 SA 构造）。
     static func liveAnalyzerFinalPassFactory() -> () -> FileTranscribing? {
         {
             #if compiler(>=6.2)
             if #available(macOS 26.0, *),
                SpeechEngineConfigStore.resolvedEngine(
                    diarizationOn: DiarizationConfigStore.isRecordingEnabled()
-               ) == .speechAnalyzer {
+               ) == .speechAnalyzer,
+               case .fixed(let locale) = SpeechEngineConfigStore.load().analyzerLocaleMode {
                 return SpeechAnalyzerFileTranscriber(
                     decoder: MediaAudioDecoder(),
-                    localeIdentifier: SpeechEngineConfigStore.load().analyzerLocale
+                    localeIdentifier: locale
+                )
+            }
+            #endif
+            return nil
+        }
+    }
+
+    /// 生产用 auto 模式终稿上下文：引擎=SpeechAnalyzer、语言=「自动」（且录音分离关）才返回。
+    /// 路由输入是本地引擎终稿文本（SA 替换前已在手），检测零成本。
+    static func liveAnalyzerAutoFinalPassProvider() -> () -> AnalyzerAutoFinalPassContext? {
+        {
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *),
+               SpeechEngineConfigStore.resolvedEngine(
+                   diarizationOn: DiarizationConfigStore.isRecordingEnabled()
+               ) == .speechAnalyzer,
+               SpeechEngineConfigStore.load().analyzerLocaleMode == .auto {
+                return AnalyzerAutoFinalPassContext(
+                    transcriberForLocale: { locale in
+                        SpeechAnalyzerFileTranscriber(
+                            decoder: MediaAudioDecoder(),
+                            localeIdentifier: locale
+                        )
+                    },
+                    installedLocales: {
+                        await SpeechAnalyzerAssetStatus.installedSubset(
+                            of: SpeechEngineConfigStore.autoRoutableLocales
+                        )
+                    }
                 )
             }
             #endif
@@ -323,6 +362,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         lastFinalSegments = []
         // 终稿引擎快照：按 start 瞬间的设置裁决本次录音（与文件转录任务启动快照口径一致）
         engineFinalPassTranscriber = analyzerFinalPassFactory()
+        engineAutoFinalPass = analyzerAutoFinalPassProvider()
         refreshTranslationSetup(resetCoordinator: true)
 
         startupTask = Task { [weak self] in
@@ -644,9 +684,30 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     /// 成功则替换 SenseVoice 终稿（照 runDiarizationPostPass 的后处理模式）。
     /// 任何失败返回 nil → complete 回退 SenseVoice 终稿并注记，绝不丢文稿。
     /// 分离场景恒 SenseVoice：分离开启（含录音中途打开）时直接跳过。
-    private func runAnalyzerFinalPass(audioURL: URL, operationID: UUID) async -> String? {
-        guard let transcriber = engineFinalPassTranscriber, isActive(operationID) else { return nil }
+    /// auto 模式：按本地终稿文本路由语言——单语言按该 locale 替换；
+    /// 混说/粤语保留本地终稿并注记（本地引擎本就是混说唯一能识别的引擎）；其余 keep 静默保留。
+    private func runAnalyzerFinalPass(audioURL: URL, senseVoiceText: String, operationID: UUID) async -> String? {
+        guard isActive(operationID) else { return nil }
         guard !(diarizer != nil && diarizationEnabledProvider()) else { return nil }
+
+        let transcriber: FileTranscribing?
+        if let auto = engineAutoFinalPass {
+            let installed = await auto.installedLocales()
+            switch AnalyzerLocaleRouter.route(text: senseVoiceText, installedLocales: installed) {
+            case .analyzer(let locale):
+                transcriber = auto.transcriberForLocale(locale)
+            case .keepSenseVoice(.mixed), .keepSenseVoice(.likelyCantonese):
+                if isActive(operationID) {
+                    engineNote = L("recording.note.autoMixedKeptLocal")
+                }
+                return nil
+            case .keepSenseVoice:
+                return nil
+            }
+        } else {
+            transcriber = engineFinalPassTranscriber
+        }
+        guard let transcriber, isActive(operationID) else { return nil }
 
         diarizationPhaseText = L("recording.status.analyzerPass")
         do {
@@ -822,6 +883,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                     if diarized == nil {
                         analyzerText = await self?.runAnalyzerFinalPass(
                             audioURL: preparedOutput.audioURL,
+                            senseVoiceText: result.finalText,
                             operationID: operationID
                         )
                     }

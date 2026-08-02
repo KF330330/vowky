@@ -581,6 +581,83 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.transcriptText, "本地终稿")
     }
 
+    // MARK: - auto 模式终稿路由（语言=「自动」，2026-08-02）
+
+    /// auto 模式录到完成：注入 auto 终稿上下文（transcriberForLocale 记录收到的 locale）。
+    private func runAutoRecordingToCompletion(
+        transcriber: MockAnalyzerFinalPassTranscribing?,
+        installed: Set<String> = ["zh-CN", "en-US", "ja-JP", "ko-KR"],
+        recognizer: @escaping ([Float]) -> String? = { _ in "本地终稿" },
+        onLocaleRequested: ((String) -> Void)? = nil
+    ) async throws -> RecordingTranscriptionViewModel {
+        mockRecorder.samplesToEmitOnStart = [Array(repeating: Float(0.1), count: 32_000)]
+        mockFinalRecognizer.recognizeResultProvider = recognizer
+        let viewModel = makeViewModel(
+            analyzerAutoFinalPassProvider: {
+                AnalyzerAutoFinalPassContext(
+                    transcriberForLocale: { locale in
+                        onLocaleRequested?(locale)
+                        return transcriber
+                    },
+                    installedLocales: { installed }
+                )
+            }
+        )
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.stop()
+        try await waitUntil("recording completes") { viewModel.state == .completed }
+        return viewModel
+    }
+
+    func testAutoFinalPass_singleLanguage_routesLocaleAndReplacesTranscript() async throws {
+        let analyzerPass = MockAnalyzerFinalPassTranscribing(.success("极速引擎终稿"))
+        var requestedLocales: [String] = []
+        let viewModel = try await runAutoRecordingToCompletion(
+            transcriber: analyzerPass,
+            onLocaleRequested: { requestedLocales.append($0) }
+        )
+
+        XCTAssertEqual(requestedLocales, ["zh-CN"], "本地终稿为中文 → 路由 zh-CN")
+        XCTAssertEqual(viewModel.transcriptText, "极速引擎终稿")
+        XCTAssertEqual(analyzerPass.transcribeCallCount, 1)
+        XCTAssertNil(viewModel.engineNote)
+    }
+
+    func testAutoFinalPass_mixedSpeech_keepsLocalTranscriptWithNote() async throws {
+        let analyzerPass = MockAnalyzerFinalPassTranscribing(.success("不应出现"))
+        let mixed = "我们今天讨论了三个重要问题都解决了ありがとうございます"
+        let viewModel = try await runAutoRecordingToCompletion(
+            transcriber: analyzerPass,
+            recognizer: { _ in mixed }
+        )
+
+        XCTAssertEqual(analyzerPass.transcribeCallCount, 0, "混说恒本地引擎")
+        XCTAssertEqual(viewModel.transcriptText, mixed)
+        XCTAssertNotNil(viewModel.engineNote, "混说保留本地终稿需注记")
+    }
+
+    func testAutoFinalPass_transcriberThrows_fallsBackWithNote() async throws {
+        let analyzerPass = MockAnalyzerFinalPassTranscribing(.failure)
+        let viewModel = try await runAutoRecordingToCompletion(transcriber: analyzerPass)
+
+        XCTAssertEqual(viewModel.transcriptText, "本地终稿", "SA 失败必须回退本地终稿，绝不丢文稿")
+        XCTAssertEqual(analyzerPass.transcribeCallCount, 1)
+        XCTAssertNotNil(viewModel.engineNote)
+    }
+
+    func testAutoFinalPass_targetNotInstalled_keepsLocalSilently() async throws {
+        let analyzerPass = MockAnalyzerFinalPassTranscribing(.success("不应出现"))
+        let viewModel = try await runAutoRecordingToCompletion(
+            transcriber: analyzerPass,
+            installed: ["en-US"] // zh-CN 未安装
+        )
+
+        XCTAssertEqual(analyzerPass.transcribeCallCount, 0)
+        XCTAssertEqual(viewModel.transcriptText, "本地终稿")
+        XCTAssertNil(viewModel.engineNote, "未安装静默保留本地，不打扰")
+    }
+
     func testDiarizationDisabledNeverInvokesDiarizer() async throws {
         let diarizer = MockDiarizer()
         diarizer.segmentsToReturn = [SpeakerSegment(start: 0, end: 1, speaker: 0)]
@@ -598,7 +675,8 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
         diarizer: SpeakerDiarizing? = nil,
         diarizationEnabled: Bool = false,
-        analyzerFinalPassFactory: (() -> FileTranscribing?)? = nil
+        analyzerFinalPassFactory: (() -> FileTranscribing?)? = nil,
+        analyzerAutoFinalPassProvider: (() -> AnalyzerAutoFinalPassContext?)? = nil
     ) -> RecordingTranscriptionViewModel {
         RecordingTranscriptionViewModel(
             appState: appState,
@@ -611,7 +689,8 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
             // 注入固定值绕过真实 UserDefaults，测试绝不读写用户偏好
             diarizationEnabledProvider: { diarizationEnabled },
             // 终稿引擎默认钉死本地：默认工厂会读真实 UserDefaults 的引擎设置，测试绝不依赖
-            analyzerFinalPassFactory: analyzerFinalPassFactory ?? { nil }
+            analyzerFinalPassFactory: analyzerFinalPassFactory ?? { nil },
+            analyzerAutoFinalPassProvider: analyzerAutoFinalPassProvider ?? { nil }
         )
     }
 

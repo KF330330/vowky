@@ -263,6 +263,14 @@ enum SpeechAnalyzerAssetStatus {
         }
     }
 
+    /// 候选集中已安装的子集(bcp47 归一化)；auto 模式路由与设置页汇总共用。
+    static func installedSubset(of candidates: [String]) async -> Set<String> {
+        let installed = await SpeechTranscriber.installedLocales.map { $0.identifier(.bcp47) }
+        return Set(candidates.filter { candidate in
+            installed.contains(Locale(identifier: candidate).identifier(.bcp47))
+        })
+    }
+
     /// 主动下载 locale 资产(设置侧入口)。无需下载时直接返回。
     static func ensureInstalled(_ identifier: String) async throws {
         let transcriber = SpeechTranscriber(

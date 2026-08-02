@@ -20,7 +20,9 @@ struct VowKyApp: App {
         permissionChecker: RealPermissionChecker(),
         backupService: AudioBackupService(),
         // 听写极速引擎（macOS 26+ 且用户选中时生效；失败自动回落 SenseVoice）
-        analyzerDictationRecognizerProvider: AppState.liveAnalyzerDictationProvider()
+        analyzerDictationRecognizerProvider: AppState.liveAnalyzerDictationProvider(),
+        // 听写「自动语言」模式（引擎=极速且语言选「自动」时生效；lazy sticky，检测只影响下一句）
+        analyzerAutoDictationProvider: AppState.liveAnalyzerAutoDictationProvider()
     )
 
     init() {

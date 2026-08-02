@@ -12,16 +12,37 @@ enum SpeechEngineKind: String, Codable, CaseIterable {
 
 struct SpeechEngineConfig: Equatable {
     var engine: SpeechEngineKind = .senseVoice
-    /// SpeechAnalyzer 转录语言（bcp47）。SpeechTranscriber 无自动语言检测，必须显式指定。
+    /// SpeechAnalyzer 转录语言（bcp47），或哨兵值 "auto"（自动检测切换）。
+    /// SpeechTranscriber 无自动语言检测，「自动」由 AnalyzerLocaleRouter 按识别文本自造。
     var analyzerLocale: String = SpeechEngineConfigStore.defaultAnalyzerLocale()
+
+    /// 类型化访问：mode 与 locale 同存一个 key，杜绝双 key 失同步。
+    var analyzerLocaleMode: AnalyzerLocaleMode {
+        analyzerLocale == SpeechEngineConfigStore.analyzerLocaleAutoValue
+            ? .auto : .fixed(analyzerLocale)
+    }
+}
+
+/// analyzer 转录语言的两种模式：固定 locale 或自动检测（lazy sticky，见 AnalyzerAutoEngine）。
+enum AnalyzerLocaleMode: Equatable {
+    case auto
+    case fixed(String)
 }
 
 enum SpeechEngineConfigStore {
 
     enum Keys {
-        static let engine         = "speech.engine"
-        static let analyzerLocale = "speech.analyzer.locale"
+        static let engine           = "speech.engine"
+        static let analyzerLocale   = "speech.analyzer.locale"
+        /// auto 模式的 sticky 状态（运行时状态，非用户意图，故不进 SpeechEngineConfig）
+        static let autoStickyLocale = "speech.analyzer.autoLastLocale"
     }
+
+    /// analyzerLocale 的「自动」哨兵值。生产消费点一律经 analyzerLocaleMode 分流，绝不直接进 Locale 构造。
+    static let analyzerLocaleAutoValue = "auto"
+
+    /// sticky 的特殊值：下一句听写直接用本地 SenseVoice（上一句检测到混说/粤语/目标未安装）。
+    static let autoStickySenseVoiceValue = "senseVoice"
 
     static func load(defaults: UserDefaults = .standard) -> SpeechEngineConfig {
         var engine = defaults.string(forKey: Keys.engine)
@@ -84,4 +105,21 @@ enum SpeechEngineConfigStore {
         ("ja-JP", "settings.model.analyzerLocale.jaJP"),
         ("ko-KR", "settings.model.analyzerLocale.koKR"),
     ]
+
+    /// auto 模式可路由的候选 locale（= 设置页四选项的 bcp47 列）。
+    static var autoRoutableLocales: [String] { analyzerLocaleChoices.map(\.bcp47) }
+
+    /// auto 模式听写的 sticky locale：四候选 locale 或 autoStickySenseVoiceValue；
+    /// 非法值/未存 → defaultAnalyzerLocale()。
+    static func autoStickyLocale(defaults: UserDefaults = .standard) -> String {
+        if let stored = defaults.string(forKey: Keys.autoStickyLocale),
+           stored == autoStickySenseVoiceValue || autoRoutableLocales.contains(stored) {
+            return stored
+        }
+        return defaultAnalyzerLocale()
+    }
+
+    static func saveAutoStickyLocale(_ value: String, defaults: UserDefaults = .standard) {
+        defaults.set(value, forKey: Keys.autoStickyLocale)
+    }
 }

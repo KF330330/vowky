@@ -234,6 +234,8 @@ struct SettingsView: View {
     private enum AnalyzerAssetUIStatus: Equatable {
         case idle, checking, ready, downloading, unsupported
         case failed(String)
+        /// auto 模式：候选语言的已装/缺失汇总（元素为已本地化的语言名）
+        case autoSummary(installed: [String], missing: [String])
     }
 
     init(updater: SPUUpdater? = nil, updateCoordinator: UpdateReminderCoordinator? = nil, appState: AppState? = nil) {
@@ -330,6 +332,8 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     Picker(loc.string("settings.model.analyzerLocale"), selection: $analyzerLocale) {
+                        Text(loc.string("settings.model.analyzerLocale.auto"))
+                            .tag(SpeechEngineConfigStore.analyzerLocaleAutoValue)
                         ForEach(SpeechEngineConfigStore.analyzerLocaleChoices, id: \.bcp47) { choice in
                             Text(loc.string(choice.displayKey)).tag(choice.bcp47)
                         }
@@ -337,6 +341,14 @@ struct SettingsView: View {
                     .onChange(of: analyzerLocale) { _ in
                         saveSpeechEngineConfig()
                         refreshAnalyzerAssets()
+                    }
+
+                    if analyzerLocale == SpeechEngineConfigStore.analyzerLocaleAutoValue {
+                        // 自动模式行为与代价说明（lazy sticky：切语言第一句可能错，检测只影响下一句）
+                        Text(loc.string("settings.model.analyzerLocale.autoNote"))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     analyzerAssetStatusRow
@@ -654,6 +666,31 @@ struct SettingsView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
+        case .autoSummary(let installed, let missing):
+            VStack(alignment: .leading, spacing: 4) {
+                let separator = loc.string("settings.model.assets.autoSeparator")
+                if !installed.isEmpty {
+                    Text(String(format: loc.string("settings.model.assets.autoSummary"),
+                                installed.joined(separator: separator)))
+                        .font(.caption).foregroundColor(.green)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !missing.isEmpty {
+                    HStack(spacing: 8) {
+                        Text(String(format: loc.string("settings.model.assets.autoMissing"),
+                                    missing.joined(separator: separator)))
+                            .font(.caption).foregroundColor(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(loc.string("settings.model.assets.autoDownloadMissing")) {
+                            #if compiler(>=6.2)
+                            if #available(macOS 26.0, *) { downloadMissingAutoLocales() }
+                            #endif
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
         }
     }
 
@@ -664,11 +701,15 @@ struct SettingsView: View {
         SpeechEngineConfigStore.save(config)
     }
 
-    /// 检查/下载当前 locale 的系统语音资产（仅极速引擎选中时）。
+    /// 检查/下载当前 locale 的系统语音资产（仅极速引擎选中时）；「自动」时改为候选语言汇总。
     private func refreshAnalyzerAssets() {
         #if compiler(>=6.2)
         guard #available(macOS 26.0, *), speechEngine == .speechAnalyzer else {
             analyzerAssetStatus = .idle
+            return
+        }
+        if analyzerLocale == SpeechEngineConfigStore.analyzerLocaleAutoValue {
+            refreshAutoLocaleSummary()
             return
         }
         let locale = analyzerLocale
@@ -696,6 +737,54 @@ struct SettingsView: View {
         analyzerAssetStatus = .idle
         #endif
     }
+
+    #if compiler(>=6.2)
+    /// auto 模式的资产汇总：候选四语言逐个查支持性+安装态，产出已装/缺失清单。
+    @available(macOS 26.0, *)
+    private func refreshAutoLocaleSummary() {
+        analyzerAssetStatus = .checking
+        Task { @MainActor in
+            let names = await autoLocaleNames()
+            analyzerAssetStatus = .autoSummary(installed: names.installed, missing: names.missing)
+        }
+    }
+
+    @available(macOS 26.0, *)
+    private func autoLocaleNames() async -> (installed: [String], missing: [String]) {
+        let installedSet = await SpeechAnalyzerAssetStatus.installedSubset(
+            of: SpeechEngineConfigStore.autoRoutableLocales
+        )
+        var installed: [String] = []
+        var missing: [String] = []
+        for choice in SpeechEngineConfigStore.analyzerLocaleChoices {
+            // 系统不支持的语言不列入（与固定模式 unsupported 口径一致）
+            guard await SpeechAnalyzerAssetStatus.isSupported(choice.bcp47) else { continue }
+            if installedSet.contains(choice.bcp47) {
+                installed.append(loc.string(choice.displayKey))
+            } else {
+                missing.append(loc.string(choice.displayKey))
+            }
+        }
+        return (installed, missing)
+    }
+
+    /// 下载 auto 候选中缺失的语言资产，完成后重查汇总。
+    @available(macOS 26.0, *)
+    private func downloadMissingAutoLocales() {
+        analyzerAssetStatus = .downloading
+        Task { @MainActor in
+            let installedSet = await SpeechAnalyzerAssetStatus.installedSubset(
+                of: SpeechEngineConfigStore.autoRoutableLocales
+            )
+            for choice in SpeechEngineConfigStore.analyzerLocaleChoices
+            where !installedSet.contains(choice.bcp47) {
+                guard await SpeechAnalyzerAssetStatus.isSupported(choice.bcp47) else { continue }
+                try? await SpeechAnalyzerAssetStatus.ensureInstalled(choice.bcp47)
+            }
+            refreshAutoLocaleSummary()
+        }
+    }
+    #endif
 
     // MARK: - Permission Refresh
 

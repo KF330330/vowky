@@ -517,11 +517,13 @@
 "settings.model.label.speechAnalyzer" = "Apple SpeechAnalyzer（系统）";
 "settings.model.engine.speechAnalyzer" = "系统极速转录（SpeechAnalyzer）";
 "settings.model.engine.requiresOS26" = "系统极速转录需要 macOS 26 或更高版本。";
-"settings.model.engine.speedNote" = "极速引擎：速度极快，但准确率可能略低（数字与专有名词较弱、偶有多余空格），且需手动选定转录语言。对语音输入、录音转文字、文件/链接转录全部生效；录音中的实时预览与字幕仍由本地引擎驱动，说话人分离开启时该次转录恒用本地引擎。";
+"settings.model.engine.speedNote" = "极速引擎：速度极快，但准确率可能略低（数字与专有名词较弱、偶有多余空格）。转录语言可手动选定，或选「自动」按说话内容检测切换（多语言混说时自动使用本地引擎结果）。对语音输入、录音转文字、文件/链接转录全部生效；录音中的实时预览与字幕仍由本地引擎驱动，说话人分离开启时该次转录恒用本地引擎。";
 "settings.model.engine.switchAlert.title" = "切换到系统极速转录？";
-"settings.model.engine.switchAlert.message" = "切换后对语音输入、录音转文字、文件/链接转录全部生效。速度极快（数分钟音频约几秒转完），但效果可能相对差一点：数字与专有名词较弱、偶有多余空格；且需手动选定转录语言（不支持自动检测）。录音实时预览/字幕仍由本地引擎驱动；说话人分离开启时恒用本地引擎。可随时切回。";
+"settings.model.engine.switchAlert.message" = "切换后对语音输入、录音转文字、文件/链接转录全部生效。速度极快（数分钟音频约几秒转完），但效果可能相对差一点：数字与专有名词较弱、偶有多余空格。转录语言可手动选定，或选「自动」按说话内容检测切换（多语言混说时自动用本地引擎结果）。录音实时预览/字幕仍由本地引擎驱动；说话人分离开启时恒用本地引擎。可随时切回。";
 "settings.model.engine.switchAlert.confirm" = "切换";
 "settings.model.analyzerLocale" = "转录语言";
+"settings.model.analyzerLocale.auto" = "自动（按说话内容检测）";
+"settings.model.analyzerLocale.autoNote" = "自动模式：每句用上一句检测到的语言极速出字，说新语言的第一句可能识别错、下一句自动跟上；检测到多语言混说或粤语时自动改用本地引擎（下一句起）。录音终稿与文件/链接转录则先检测内容再选择引擎，混说自动用本地引擎。";
 "settings.model.analyzerLocale.zhCN" = "中文（普通话）";
 "settings.model.analyzerLocale.enUS" = "英语（美国）";
 "settings.model.analyzerLocale.jaJP" = "日语";
@@ -532,6 +534,10 @@
 "settings.model.assets.failed" = "系统语音资产下载失败，请检查网络后重试";
 "settings.model.assets.retry" = "重试";
 "settings.model.assets.unsupported" = "该语言不受系统极速转录支持";
+"settings.model.assets.autoSummary" = "已就绪：%@";
+"settings.model.assets.autoMissing" = "未安装：%@（将由本地引擎处理）";
+"settings.model.assets.autoDownloadMissing" = "下载缺失语言";
+"settings.model.assets.autoSeparator" = "、";
 "speechAnalyzer.error.unsupportedLocale" = "系统极速转录不支持语言 %@，请在设置中更换转录语言或切回默认引擎";
 "speechAnalyzer.error.assetsUnavailable" = "系统语音资产不可用：请联网后在设置中下载，或切回默认引擎";
 "speechAnalyzer.error.analysisFailed" = "系统转写失败：%@";
@@ -549,4 +555,5 @@
 "diarization.note.fallback" = "说话人分离失败，已输出无标签文稿";
 "recording.status.analyzerPass" = "极速引擎生成终稿…";
 "recording.note.analyzerFallback" = "极速引擎终稿失败，已使用本地引擎文稿";
+"recording.note.autoMixedKeptLocal" = "检测到多语言混说，本次使用本地引擎文稿";
 "diarization.note.subtitleSource" = "已用平台字幕，未做说话人分离";
