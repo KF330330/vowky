@@ -1,5 +1,8 @@
-// SpeechAnalyzer 极速引擎（需求 C）：macOS 26+ 的系统级转写,零模型体积,实测比 SenseVoice 4 线程快约 10 倍。
-// 仅用于文件/链接转录(用户拍板);热键听写与录音仍走 SenseVoice。
+// SpeechAnalyzer 极速引擎：macOS 26+ 的系统级转写,零模型体积,实测比 SenseVoice 4 线程快约 10 倍。
+// 引擎切换全局生效(2026-08-02 用户拍板):文件/链接转录用本类;热键听写用
+// SpeechAnalyzerSpeechRecognizer;录音转文字在停止后对落盘 wav 做终稿替换
+// (实时预览/字幕仍由 SenseVoice 驱动——冻结分段依赖 token 时间戳,本引擎提供不了)。
+// 说话人分离开启的操作恒 SenseVoice(互锁,见 SpeechEngineConfigStore.resolve)。
 //
 // 编译门控:Speech framework 自 10.15 就存在,#if canImport(Speech) 恒真——必须用 compiler(>=6.2)
 // (Xcode 26 带 Swift 6.2+)整文件隔离,Xcode 16.2 回退构建时本文件整体排除,其余一切照旧。
@@ -128,7 +131,7 @@ final class SpeechAnalyzerFileTranscriber: FileTranscribing {
                         timeRange: MediaAudioTimeRange(start: pumpedSeconds, duration: remaining)
                     )
                     guard !decoded.samples.isEmpty, decoded.sampleRate > 0 else { break }
-                    guard let buffer = Self.makeBuffer(
+                    guard let buffer = SpeechAnalyzerAudio.makeBuffer(
                         samples: decoded.samples,
                         sampleRate: decoded.sampleRate,
                         targetFormat: analysisFormat
@@ -193,8 +196,13 @@ final class SpeechAnalyzerFileTranscriber: FileTranscribing {
         return result
     }
 
+}
+
+/// SpeechAnalyzer 各接入方（文件转录 / 听写 / 录音终稿替换）共享的音频工具。
+@available(macOS 26.0, *)
+enum SpeechAnalyzerAudio {
     /// Float32 mono 样本 → AVAudioPCMBuffer;分析格式不同时经 AVAudioConverter 转换。
-    private static func makeBuffer(
+    static func makeBuffer(
         samples: [Float],
         sampleRate: Int,
         targetFormat: AVAudioFormat?

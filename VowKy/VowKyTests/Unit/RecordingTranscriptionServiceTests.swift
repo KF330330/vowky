@@ -87,6 +87,43 @@ final class RecordingTranscriptionServiceTests: XCTestCase {
         }
     }
 
+    func testEngineSplitsOversizedTailIntoBoundedChunks() async throws {
+        // P0 回归（2026-08-02）：停止时剩余 pending 曾整段单发送识别——29.9s 尾段
+        // 超过 SenseVoice 有效上限（>28s 病态区，真实录音整稿被解成 11 字碎片）。
+        // 现应按低能量边界拆块，任何一次识别输入 ≤ (28+2)s。
+        let audioURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vowky_engine_tail_\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: audioURL) }
+
+        let finalRecognizer = MockSpeechRecognizer()
+        finalRecognizer.queuedRecognizeResults = ["尾段一", "尾段二"]
+
+        let writer = try WAVSampleFileWriter(url: audioURL)
+        // finalSegmentDuration/finalBoundarySearchWindow 用生产默认（28/2）
+        let engine = RecordingTranscriptionEngine(
+            finalRecognizer: finalRecognizer,
+            writer: writer,
+            sampleRate: 10,
+            previewDecodeInterval: 100
+        )
+
+        // 29.9s @10Hz = 299 样本 < 入队门槛 (28+2)*10=300，全部留到停止时的尾段路径
+        let stream = AsyncStream<[Float]> { continuation in
+            continuation.yield(Array(repeating: Float(0.1), count: 299))
+            continuation.finish()
+        }
+
+        let result = try await engine.run(audioChunks: stream) { _ in }
+
+        // 全程高能量无低能量边界 → makeChunks 回退在 target(28s=280 样本) 处切开
+        XCTAssertEqual(finalRecognizer.receivedSamples.map(\.count), [280, 19])
+        XCTAssertTrue(
+            finalRecognizer.receivedSamples.allSatisfy { $0.count <= 300 },
+            "任何最终稿解码块不得超过 (28+2)s"
+        )
+        XCTAssertEqual(result.finalText, "尾段一\n尾段二")
+    }
+
     func testEngineEmitsFinalizationProgress() async throws {
         let audioURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("vowky_engine_progress_\(UUID().uuidString).wav")

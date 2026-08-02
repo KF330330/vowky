@@ -224,7 +224,7 @@ struct SettingsView: View {
     @State private var translationTestResult: String?
     @State private var translationTestInProgress: Bool = false
 
-    // 识别引擎（需求 C：SpeechAnalyzer 极速引擎，仅文件/链接转录）
+    // 识别引擎（SpeechAnalyzer 极速引擎，三场景全局生效；分离/录音预览恒本地，见 SpeechEngineConfig）
     @State private var speechEngine: SpeechEngineKind
     @State private var analyzerLocale: String
     /// 切到极速引擎前的取舍确认弹窗（用户硬性要求：切换时必须提示「极快但效果可能略差」）

@@ -146,6 +146,13 @@ private struct BilingualParagraphRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
+            if let speakerLabel = paragraph.speakerLabel {
+                Text(speakerLabel)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(TranscriptionTheme.accentDark)
+                    .padding(.top, 2)
+            }
+
             Text(paragraph.text)
                 .font(.system(size: 14))
                 .foregroundColor(TranscriptionTheme.textPrimary)

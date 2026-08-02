@@ -439,6 +439,148 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.diarizationNote)
     }
 
+    func testDiarizationSuccessFinalSegmentsSameSourceAsDisk() async throws {
+        // P0 回归（2026-08-02）：分离成功时窗口/翻译数据源必须与落盘同源
+        // （同一批逐段重识别结果），不得再用整段长解码的 result.finalText。
+        let diarizer = MockDiarizer()
+        // 边界值全部取二进制可精确表示的 0.25 倍数，避免 Double 截断使样本数偏 1
+        diarizer.segmentsToReturn = [
+            SpeakerSegment(start: 0, end: 0.5, speaker: 0),
+            SpeakerSegment(start: 1.0, end: 1.5, speaker: 4),
+            SpeakerSegment(start: 1.75, end: 2.0, speaker: 4),
+        ]
+        // padding 后:段1 (0,0.75)=12000、段2 (0.75,1.75)=16000、段3 (1.5,2.0)=8000;引擎整段 32000
+        let (viewModel, _) = try await runRecordingToCompletion(
+            diarizer: diarizer, diarizationEnabled: true,
+            recognizer: { samples in
+                switch samples.count {
+                case 12_000: return "甲的第一句"
+                case 16_000: return "乙的第一句"
+                case 8_000: return "乙的第二句"
+                default: return "整段长解码产物"
+                }
+            }
+        )
+
+        // 落盘 = labeled 全文（连续同人合并）
+        let expectedDisk = SpeakerSegmentComposer.compose([
+            .init(speaker: 1, text: "甲的第一句"),
+            .init(speaker: 2, text: "乙的第一句"),
+            .init(speaker: 2, text: "乙的第二句"),
+        ]) { LL("diarization.speakerLabel", $0) }
+        XCTAssertEqual(viewModel.transcriptText, expectedDisk)
+
+        // 窗口/翻译数据源 = 同一批段落：text 无标签、标签只在说话人变化处
+        XCTAssertEqual(
+            viewModel.lastFinalSegments.map(\.text),
+            ["甲的第一句", "乙的第一句", "乙的第二句"]
+        )
+        XCTAssertEqual(
+            viewModel.lastFinalSegments.map(\.speakerLabel),
+            [LL("diarization.speakerLabel", 1), LL("diarization.speakerLabel", 2), nil]
+        )
+        // 整段长解码产物绝不进窗口/翻译数据源
+        XCTAssertFalse(viewModel.lastFinalSegments.contains { $0.text.contains("整段长解码产物") })
+    }
+
+    func testNoDiarizationFinalSegmentsUsePlainTranscript() async throws {
+        let (viewModel, _) = try await runRecordingToCompletion(
+            diarizer: nil, diarizationEnabled: false,
+            recognizer: { _ in "原文全部" }
+        )
+
+        XCTAssertEqual(
+            viewModel.lastFinalSegments,
+            [TranslationCoordinator.FinalSegment(speakerLabel: nil, text: "原文全部")]
+        )
+    }
+
+    // MARK: - 极速引擎终稿替换（引擎切换全局化，2026-08-02）
+
+    /// 录 2 秒到完成，注入极速引擎终稿转写器 mock。
+    private func runRecordingToCompletion(
+        analyzerPass: MockAnalyzerFinalPassTranscribing,
+        diarizer: SpeakerDiarizing? = nil,
+        diarizationEnabled: Bool = false,
+        recognizer: @escaping ([Float]) -> String? = { _ in "本地终稿" }
+    ) async throws -> RecordingTranscriptionViewModel {
+        mockRecorder.samplesToEmitOnStart = [Array(repeating: Float(0.1), count: 32_000)]
+        mockFinalRecognizer.recognizeResultProvider = recognizer
+        let viewModel = makeViewModel(
+            diarizer: diarizer,
+            diarizationEnabled: diarizationEnabled,
+            analyzerFinalPassFactory: { analyzerPass }
+        )
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.stop()
+        try await waitUntil("recording completes") { viewModel.state == .completed }
+        return viewModel
+    }
+
+    func testAnalyzerFinalPassReplacesTranscript() async throws {
+        let analyzerPass = MockAnalyzerFinalPassTranscribing(.success("极速引擎终稿"))
+        let viewModel = try await runRecordingToCompletion(analyzerPass: analyzerPass)
+
+        XCTAssertEqual(viewModel.transcriptText, "极速引擎终稿")
+        XCTAssertEqual(analyzerPass.transcribeCallCount, 1)
+        XCTAssertNil(viewModel.engineNote)
+        // 翻译/窗口数据源同步用极速引擎终稿（无标签单段）
+        XCTAssertEqual(
+            viewModel.lastFinalSegments,
+            [TranslationCoordinator.FinalSegment(speakerLabel: nil, text: "极速引擎终稿")]
+        )
+        let output = try XCTUnwrap(viewModel.output)
+        XCTAssertEqual(try String(contentsOf: output.textURL), "极速引擎终稿")
+    }
+
+    func testAnalyzerFinalPassFailureFallsBackToSenseVoiceWithNote() async throws {
+        let analyzerPass = MockAnalyzerFinalPassTranscribing(.failure)
+        let viewModel = try await runRecordingToCompletion(analyzerPass: analyzerPass)
+
+        XCTAssertEqual(viewModel.transcriptText, "本地终稿", "SA 失败必须回退本地引擎终稿，绝不丢文稿")
+        XCTAssertEqual(analyzerPass.transcribeCallCount, 1)
+        XCTAssertNotNil(viewModel.engineNote)
+    }
+
+    func testAnalyzerFinalPassSkippedWhenDiarizationProducesLabels() async throws {
+        let analyzerPass = MockAnalyzerFinalPassTranscribing(.success("不应出现"))
+        let diarizer = MockDiarizer()
+        diarizer.segmentsToReturn = [
+            SpeakerSegment(start: 0, end: 0.8, speaker: 0),
+            SpeakerSegment(start: 1.0, end: 1.8, speaker: 4),
+        ]
+        let viewModel = try await runRecordingToCompletion(
+            analyzerPass: analyzerPass,
+            diarizer: diarizer,
+            diarizationEnabled: true,
+            recognizer: { samples in
+                switch samples.count {
+                case 16_000: return "甲的话"
+                case 19_200: return "乙的话"
+                default: return "本地终稿"
+                }
+            }
+        )
+
+        XCTAssertEqual(analyzerPass.transcribeCallCount, 0, "分离场景恒本地引擎")
+        XCTAssertTrue(viewModel.transcriptText.contains("甲的话"))
+    }
+
+    func testAnalyzerFinalPassSkippedWhenDiarizationAttemptedButFailed() async throws {
+        let analyzerPass = MockAnalyzerFinalPassTranscribing(.success("不应出现"))
+        let diarizer = MockDiarizer()
+        diarizer.errorToThrow = SpeakerDiarizationError.processFailed("mock failure")
+        let viewModel = try await runRecordingToCompletion(
+            analyzerPass: analyzerPass,
+            diarizer: diarizer,
+            diarizationEnabled: true
+        )
+
+        XCTAssertEqual(analyzerPass.transcribeCallCount, 0, "分离开启（即使失败）也恒本地引擎")
+        XCTAssertEqual(viewModel.transcriptText, "本地终稿")
+    }
+
     func testDiarizationDisabledNeverInvokesDiarizer() async throws {
         let diarizer = MockDiarizer()
         diarizer.segmentsToReturn = [SpeakerSegment(start: 0, end: 1, speaker: 0)]
@@ -455,7 +597,8 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         resultRecorder: ((String) -> Void)? = nil,
         metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
         diarizer: SpeakerDiarizing? = nil,
-        diarizationEnabled: Bool = false
+        diarizationEnabled: Bool = false,
+        analyzerFinalPassFactory: (() -> FileTranscribing?)? = nil
     ) -> RecordingTranscriptionViewModel {
         RecordingTranscriptionViewModel(
             appState: appState,
@@ -466,7 +609,9 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
             metadataRecorder: metadataRecorder,
             diarizer: diarizer,
             // 注入固定值绕过真实 UserDefaults，测试绝不读写用户偏好
-            diarizationEnabledProvider: { diarizationEnabled }
+            diarizationEnabledProvider: { diarizationEnabled },
+            // 终稿引擎默认钉死本地：默认工厂会读真实 UserDefaults 的引擎设置，测试绝不依赖
+            analyzerFinalPassFactory: analyzerFinalPassFactory ?? { nil }
         )
     }
 
@@ -483,5 +628,35 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTFail("Timed out waiting for \(description)")
+    }
+}
+
+/// 极速引擎终稿转写器 mock（runAnalyzerFinalPass 注入用）。
+private final class MockAnalyzerFinalPassTranscribing: FileTranscribing {
+    enum Outcome {
+        case success(String)
+        case failure
+    }
+
+    private let outcome: Outcome
+    private(set) var transcribeCallCount = 0
+    private(set) var lastURL: URL?
+
+    init(_ outcome: Outcome) {
+        self.outcome = outcome
+    }
+
+    func transcribe(
+        url: URL,
+        progress: @escaping @MainActor (FileTranscriptionProgress) -> Void
+    ) async throws -> String {
+        transcribeCallCount += 1
+        lastURL = url
+        switch outcome {
+        case .success(let text):
+            return text
+        case .failure:
+            throw FileTranscriptionError.noRecognizedText
+        }
     }
 }

@@ -289,7 +289,10 @@ struct RecordingTranscriptionEngine {
         finalRecognizer: SpeechRecognizerProtocol,
         writer: WAVSampleFileWriter,
         sampleRate: Int,
-        finalSegmentDuration: TimeInterval = 30,
+        // 28 + 边界搜索 ±2s → 任何最终稿解码块 ≤30s。SenseVoice 单发超过 30s 会退化成
+        // 「全篇压缩碎片」（2026-08-02 用真实 30.79s 录音复现：208 字整稿被解成 11 字），
+        // 30 的旧默认叠加边界搜索最大可产出 32s 块，恰好落入病态区。
+        finalSegmentDuration: TimeInterval = 28,
         finalBoundarySearchWindow: TimeInterval = 2,
         previewDecodeInterval: TimeInterval = 1.5
     ) {
@@ -385,14 +388,26 @@ struct RecordingTranscriptionEngine {
         let previewText = await previewDecoder.stop()
 
         if !pendingFinalSamples.isEmpty {
-            finalContinuation?.yield(DecodedAudioChunk(
+            // 尾段同样按低能量边界切块（≤ finalSegmentDuration + searchWindow）：
+            // 停止时剩余 pending 可达近 32s，整段单发正是退化重灾区。
+            // ≤ finalSegmentDuration 的尾巴 makeChunks 原样单块返回，行为与旧实现一致。
+            var tailStartTime = finalSegmentStartTime
+            for tailChunk in FileTranscriptionService.makeChunks(
                 samples: pendingFinalSamples,
-                startTime: finalSegmentStartTime,
-                duration: Double(pendingFinalSamples.count) / Double(sampleRate)
-            ))
+                sampleRate: sampleRate,
+                targetDuration: finalSegmentDuration,
+                searchWindow: finalBoundarySearchWindow
+            ) {
+                finalContinuation?.yield(DecodedAudioChunk(
+                    samples: tailChunk.samples,
+                    startTime: tailStartTime,
+                    duration: tailChunk.duration
+                ))
+                tailStartTime += tailChunk.duration
+                let snapshot = await counter.incTotal()
+                await finalizationProgress(snapshot)
+            }
             pendingFinalSamples.removeAll(keepingCapacity: false)
-            let snapshot = await counter.incTotal()
-            await finalizationProgress(snapshot)
         }
         finalContinuation?.finish()
         let closedSnapshot = await counter.markClosed()

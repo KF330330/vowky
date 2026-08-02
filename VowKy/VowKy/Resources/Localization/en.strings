@@ -517,9 +517,9 @@
 "settings.model.label.speechAnalyzer" = "Apple SpeechAnalyzer (system)";
 "settings.model.engine.speechAnalyzer" = "System fast transcription (SpeechAnalyzer)";
 "settings.model.engine.requiresOS26" = "System fast transcription requires macOS 26 or later.";
-"settings.model.engine.speedNote" = "Fast engine: large files finish in seconds, but accuracy may be slightly lower (weaker numbers and proper nouns, occasional stray spaces), and the transcription language must be set manually. File/link transcription only; hotkey dictation and recording are unaffected.";
+"settings.model.engine.speedNote" = "Fast engine: extremely fast, but accuracy may be slightly lower (weaker numbers and proper nouns, occasional stray spaces), and the transcription language must be set manually. Applies to voice input, recording transcription, and file/link transcription; the live preview and subtitles during recording still run on the local engine, and any transcription with speaker separation enabled always uses the local engine.";
 "settings.model.engine.switchAlert.title" = "Switch to system fast transcription?";
-"settings.model.engine.switchAlert.message" = "Extremely fast (minutes of audio transcribed in seconds), but results may be slightly worse: weaker numbers and proper nouns, occasional stray spaces; the transcription language must be set manually (no auto-detection). You can switch back anytime.";
+"settings.model.engine.switchAlert.message" = "Applies to voice input, recording transcription, and file/link transcription. Extremely fast (minutes of audio transcribed in seconds), but results may be slightly worse: weaker numbers and proper nouns, occasional stray spaces; the transcription language must be set manually (no auto-detection). Live preview/subtitles during recording still run on the local engine; speaker separation always uses the local engine. You can switch back anytime.";
 "settings.model.engine.switchAlert.confirm" = "Switch";
 "settings.model.analyzerLocale" = "Transcription language";
 "settings.model.analyzerLocale.zhCN" = "Chinese (Mandarin)";
@@ -547,4 +547,6 @@
 "diarization.status.separating" = "Separating speakers…";
 "diarization.status.relabeling" = "Labeling speakers %d/%d";
 "diarization.note.fallback" = "Speaker separation failed; plain transcript saved";
+"recording.status.analyzerPass" = "Generating final transcript with fast engine...";
+"recording.note.analyzerFallback" = "Fast-engine transcript failed; local engine transcript used";
 "diarization.note.subtitleSource" = "Platform subtitles used; no speaker separation";

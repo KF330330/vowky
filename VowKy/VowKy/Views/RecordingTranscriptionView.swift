@@ -31,7 +31,9 @@ final class RecordingTranscriptionWindowController {
             metadataRecorder: { text, meta in
                 HistoryStore.shared.insertWithMetadata(content: text, sourceType: meta.sourceType, metadata: meta)
             },
-            diarizer: SubprocessSpeakerDiarizer(numSpeakers: { DiarizationConfigStore.recordingSpeakerCount() })
+            diarizer: SubprocessSpeakerDiarizer(numSpeakers: { DiarizationConfigStore.recordingSpeakerCount() }),
+            // 极速引擎终稿替换（引擎全局化；分离开启/非 26 系统自动为 nil）
+            analyzerFinalPassFactory: RecordingTranscriptionViewModel.liveAnalyzerFinalPassFactory()
         )
         let view = RecordingTranscriptionView(viewModel: viewModel)
             .environmentObject(LocalizationManager.shared)
@@ -445,6 +447,13 @@ struct RecordingTranscriptionView: View {
                 }
 
                 if let note = viewModel.diarizationNote {
+                    Text(note)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(TranscriptionTheme.warning)
+                        .lineLimit(1)
+                }
+
+                if let note = viewModel.engineNote {
                     Text(note)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(TranscriptionTheme.warning)

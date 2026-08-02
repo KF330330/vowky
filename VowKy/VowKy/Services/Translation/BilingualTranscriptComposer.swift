@@ -17,15 +17,17 @@ enum BilingualTranscriptComposer {
 
     /// 原文行 + 紧随的 `> 译文` 引用行为一组，组间空行分隔。
     /// 失败段标注「（翻译失败）」，同语言跳过段只保留原文——原文永远完整。
+    /// 说话人标签（分离产物）内联在段首原文行前，与主 .md 口径一致。
     static func compose(paragraphs: [TranscriptParagraph]) -> String {
         let blocks = paragraphs.map { paragraph -> String in
+            let original = (paragraph.speakerLabel ?? "") + paragraph.text
             switch paragraph.translation {
             case .translated(let translation):
-                return "\(paragraph.text)\n> \(quoted(translation))"
+                return "\(original)\n> \(quoted(translation))"
             case .failed:
-                return "\(paragraph.text)\n> \(LL("bilingual.export.translationFailed"))"
+                return "\(original)\n> \(LL("bilingual.export.translationFailed"))"
             case .pending, .skippedSameLanguage:
-                return paragraph.text
+                return original
             }
         }
         return blocks.joined(separator: "\n\n") + "\n"

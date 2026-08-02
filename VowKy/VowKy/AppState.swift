@@ -36,6 +36,9 @@ final class AppState: ObservableObject {
     let audioRecorder: AudioRecorderProtocol
     private let permissionChecker: PermissionCheckerProtocol
     private let backupService: AudioBackupProtocol?
+    /// 听写场景的极速引擎提供者：当前裁决引擎为 SpeechAnalyzer 时返回其识别器，否则 nil。
+    /// 生产默认闭包内含编译门控与按 locale 缓存；测试注入 mock 或保持默认（非 26 系统恒 nil）。
+    private let analyzerDictationRecognizerProvider: () -> SpeechRecognizerProtocol?
 
     /// Optional services wired during setup()
     var hotkeyManager: HotkeyManager?
@@ -53,12 +56,60 @@ final class AppState: ObservableObject {
         speechRecognizer: SpeechRecognizerProtocol,
         audioRecorder: AudioRecorderProtocol,
         permissionChecker: PermissionCheckerProtocol,
-        backupService: AudioBackupProtocol? = nil
+        backupService: AudioBackupProtocol? = nil,
+        analyzerDictationRecognizerProvider: (() -> SpeechRecognizerProtocol?)? = nil
     ) {
         self.speechRecognizer = speechRecognizer
         self.audioRecorder = audioRecorder
         self.permissionChecker = permissionChecker
         self.backupService = backupService
+        // 默认惰性（恒 nil = 纯 SenseVoice）：生产端在 VowKyApp 显式注入 liveAnalyzerDictationProvider()。
+        // 绝不在这里内嵌读真实 UserDefaults 的默认——单测大量直接构造 AppState，
+        // 会随用户当前引擎设置漂移甚至在测试宿主里拉起真 SpeechAnalyzer。
+        self.analyzerDictationRecognizerProvider = analyzerDictationRecognizerProvider ?? { nil }
+    }
+
+    /// 生产用听写极速引擎提供者（编译门控照 makeFileTranscriptionService 先例）：
+    /// 每次听写按当前设置裁决；实例按 locale 缓存，避免每句重建。
+    static func liveAnalyzerDictationProvider() -> () -> SpeechRecognizerProtocol? {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            var cached: (locale: String, recognizer: SpeechRecognizerProtocol)?
+            return {
+                guard SpeechEngineConfigStore.resolvedEngine(diarizationOn: false) == .speechAnalyzer else {
+                    return nil
+                }
+                let locale = SpeechEngineConfigStore.load().analyzerLocale
+                if let cached, cached.locale == locale { return cached.recognizer }
+                let recognizer = SpeechAnalyzerSpeechRecognizer(localeIdentifier: locale)
+                cached = (locale, recognizer)
+                return recognizer
+            }
+        }
+        #endif
+        return { nil }
+    }
+
+    /// 听写识别统一入口（热键主流程与崩溃恢复共用）：
+    /// 裁决引擎为 SpeechAnalyzer 时先试极速引擎——返回 nil（资产未装/会话失败）即回落；
+    /// 否则/回落走原封不动的 SenseVoice 路径（含 helper 崩溃重试一次）。
+    /// 音频保全判据不变：调用方仍只看 speechRecognizer.isReady（SenseVoice transport 状态），
+    /// 极速引擎单独失败绝不触发保全（回落后由 SenseVoice 结果决定）。
+    private func recognizeForDictation(samples: [Float]) async -> String? {
+        if let analyzer = analyzerDictationRecognizerProvider() {
+            if let text = await analyzer.recognize(samples: samples, sampleRate: 16000) {
+                return text
+            }
+            CrashLogger.log("[Recognize] SpeechAnalyzer dictation failed, falling back to SenseVoice")
+        }
+        var result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+        // nil + isReady=false ⇒ 传输/helper 失败（transport 失败路径都会同步清 readyState），
+        // 重试一次让 transport 自动 respawn helper；nil + isReady=true ⇒ 真没识别到内容。
+        if result == nil && !speechRecognizer.isReady {
+            CrashLogger.log("[Recognize] Infra failure (helper down), retrying once...")
+            result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
+        }
+        return result
     }
 
     // MARK: - Setup (called once at app launch)
@@ -404,13 +455,7 @@ final class AppState: ObservableObject {
         Task { @MainActor in
             CrashLogger.log("[Recognize] Starting speech recognition...")
             print("[VowKy][AppState] Starting recognition...")
-            var result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
-            // nil + isReady=false ⇒ 传输/helper 失败（transport 失败路径都会同步清 readyState），
-            // 重试一次让 transport 自动 respawn helper；nil + isReady=true ⇒ 真没识别到内容。
-            if result == nil && !speechRecognizer.isReady {
-                CrashLogger.log("[Recognize] Infra failure (helper down), retrying once...")
-                result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
-            }
+            let result = await recognizeForDictation(samples: samples)
             let resultDesc = result.map { "\($0.count) chars" } ?? "nil"
             CrashLogger.log("[Recognize] Result: \(resultDesc)")
             print("[VowKy][AppState] Recognition result: \(resultDesc)")
@@ -664,11 +709,7 @@ final class AppState: ObservableObject {
         // Recognize the recovered audio
         state = .recognizing
         Task { @MainActor in
-            var result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
-            if result == nil && !speechRecognizer.isReady {
-                CrashLogger.log("[Recovery] Infra failure (helper down), retrying once...")
-                result = await speechRecognizer.recognize(samples: samples, sampleRate: 16000)
-            }
+            let result = await recognizeForDictation(samples: samples)
             CrashLogger.log("[Recovery] Recognition result: \(result.map { "\($0.count) chars" } ?? "nil")")
             guard let text = result, !text.isEmpty else {
                 if result == nil && !speechRecognizer.isReady {

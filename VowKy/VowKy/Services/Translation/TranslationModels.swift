@@ -51,6 +51,9 @@ struct TranscriptParagraph: Identifiable, Equatable {
     let text: String
     let isPartial: Bool
     var translation: ParagraphTranslationState
+    /// 说话人标签（如「说话人 1：」），仅用于显示/落盘装饰。
+    /// 红线：text 永远不含标签——翻译管线只吃无标签文本。
+    var speakerLabel: String? = nil
 }
 
 // MARK: - Config

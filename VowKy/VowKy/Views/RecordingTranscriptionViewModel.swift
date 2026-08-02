@@ -48,8 +48,15 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     @Published private(set) var diarizationPhaseText: String?
     /// 分离失败已降级的注记（完成后显示；下次 start 清空）。
     @Published private(set) var diarizationNote: String?
+    /// 极速引擎终稿替换失败、已回退本地引擎终稿的注记（完成后显示；下次 start 清空）。
+    @Published private(set) var engineNote: String?
     /// 本次完成的分离说话人数（埋点用；单人/未分离为 0）。
     private var lastDiarizationSpeakerCount = 0
+    /// 本次完成的终稿同源段落（分离成功=逐段重识别产物；否则=plain 终稿单段）。
+    /// complete() 与「完成态中途开翻译」共用同一数据源，保证翻译管线
+    /// 永远吃与落盘同源的无标签文本（transcriptText 分离后是 labeled，绝不能直接喂）。
+    /// internal 供单测断言同源不变量。
+    private(set) var lastFinalSegments: [TranslationCoordinator.FinalSegment] = []
 
     // MARK: 字幕浮窗
 
@@ -111,6 +118,11 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private let diarizer: SpeakerDiarizing?
     /// 分离开关读取（进入 finishing 后处理前读取，允许录音中途改开关）。测试可注入绕过真实 UserDefaults。
     private let diarizationEnabledProvider: () -> Bool
+    /// 极速引擎终稿转写器工厂：裁决引擎为 SpeechAnalyzer 时 start() 经此构建（快照口径）。
+    /// 生产默认闭包内含编译门控；测试注入 mock FileTranscribing。
+    private let analyzerFinalPassFactory: () -> FileTranscribing?
+    /// 本次录音的极速引擎终稿转写器快照（start() 时按当时设置裁决；nil = 本次用 SenseVoice 终稿）。
+    private var engineFinalPassTranscriber: FileTranscribing?
 
     private var activePreparedOutput: PreparedRecordingTranscriptionOutput?
     private var sampleContinuation: AsyncStream<[Float]>.Continuation?
@@ -142,7 +154,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         resultRecorder: ((String) -> Void)? = nil,
         metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
         diarizer: SpeakerDiarizing? = nil,
-        diarizationEnabledProvider: (() -> Bool)? = nil
+        diarizationEnabledProvider: (() -> Bool)? = nil,
+        analyzerFinalPassFactory: (() -> FileTranscribing?)? = nil
     ) {
         self.appState = appState
         self.audioRecorder = audioRecorder ?? appState.audioRecorder
@@ -154,8 +167,31 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         }
         self.metadataRecorder = metadataRecorder
         self.diarizer = diarizer
-        self.diarizationEnabledProvider = diarizationEnabledProvider ?? {
+        let diarizationProvider = diarizationEnabledProvider ?? {
             DiarizationConfigStore.isRecordingEnabled()
+        }
+        self.diarizationEnabledProvider = diarizationProvider
+        // 默认惰性（恒 nil = 本地引擎终稿）：生产端（窗口控制器）显式注入 liveAnalyzerFinalPassFactory。
+        // 绝不内嵌读真实 UserDefaults 的默认——测试会随用户当前引擎设置漂移。
+        self.analyzerFinalPassFactory = analyzerFinalPassFactory ?? { nil }
+    }
+
+    /// 生产用极速引擎终稿工厂：裁决引擎为 SpeechAnalyzer（且录音分离关）才返回转写器——
+    /// 分离开启恒 SenseVoice 的互锁在 resolvedEngine 内生效（编译门控照 AppState 先例）。
+    static func liveAnalyzerFinalPassFactory() -> () -> FileTranscribing? {
+        {
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *),
+               SpeechEngineConfigStore.resolvedEngine(
+                   diarizationOn: DiarizationConfigStore.isRecordingEnabled()
+               ) == .speechAnalyzer {
+                return SpeechAnalyzerFileTranscriber(
+                    decoder: MediaAudioDecoder(),
+                    localeIdentifier: SpeechEngineConfigStore.load().analyzerLocale
+                )
+            }
+            #endif
+            return nil
         }
     }
 
@@ -282,7 +318,11 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         bilingualSaveCancellable = nil
         diarizationPhaseText = nil
         diarizationNote = nil
+        engineNote = nil
         lastDiarizationSpeakerCount = 0
+        lastFinalSegments = []
+        // 终稿引擎快照：按 start 瞬间的设置裁决本次录音（与文件转录任务启动快照口径一致）
+        engineFinalPassTranscriber = analyzerFinalPassFactory()
         refreshTranslationSetup(resetCoordinator: true)
 
         startupTask = Task { [weak self] in
@@ -414,7 +454,12 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         }
         guard enabled, let coordinator = translationCoordinator else { return }
         // 中途开启：把已有文字立即补译
-        if state == .completed || state == .finishing {
+        if state == .completed, !lastFinalSegments.isEmpty {
+            // 完成态用保存的同源段落——transcriptText 分离后是 labeled 文本，
+            // 直接喂会让说话人标签进翻译管线（红线）
+            coordinator.ingestFinal(segments: lastFinalSegments)
+            scheduleBilingualTranscriptSave()
+        } else if state == .completed || state == .finishing {
             let text = transcriptText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { coordinator.ingestFinal(text: text) }
             // finishing 阶段不挂订阅：complete() 送终稿时会重新调度，避免把预览稿写盘
@@ -504,12 +549,19 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         DiarizationConfigStore.setRecordingSpeakerCount(count)
     }
 
+    /// 分离后处理产物：labeled 全文（落盘/历史）+ 同一批逐段重识别结果的显示段落
+    /// （窗口双语视图/翻译管线用，text 无标签前缀）。两者同源，窗口显示 ≡ 落盘内容。
+    struct DiarizedTranscript {
+        let labeledText: String
+        let displaySegments: [TranslationCoordinator.FinalSegment]
+    }
+
     /// 录完后的说话人分离后处理。开关关/单说话人/任何失败都返回 nil（= 用无标签原文稿）。
     private func runDiarizationPostPass(
         audioURL: URL,
         sampleCount: Int,
         operationID: UUID
-    ) async -> String? {
+    ) async -> DiarizedTranscript? {
         guard let diarizer, diarizationEnabledProvider(), isActive(operationID) else { return nil }
         let sampleRate = 16_000
         let audioDuration = Double(sampleCount) / Double(sampleRate)
@@ -565,11 +617,47 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             let composed = SpeakerSegmentComposer.compose(labeled) { LL("diarization.speakerLabel", $0) }
             guard !composed.isEmpty else { return nil }
             lastDiarizationSpeakerCount = speakerCount
-            return composed
+            // 显示段落与 labeled 全文同源：同一批逐段重识别结果。
+            // 标签只在说话人变化处出现（与 compose 的连续同人合并口径一致）。
+            var displaySegments: [TranslationCoordinator.FinalSegment] = []
+            var previousSpeaker: Int?
+            for segment in labeled where !segment.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let label = segment.speaker != previousSpeaker
+                    ? LL("diarization.speakerLabel", segment.speaker)
+                    : nil
+                displaySegments.append(.init(speakerLabel: label, text: segment.text))
+                previousSpeaker = segment.speaker
+            }
+            return DiarizedTranscript(labeledText: composed, displaySegments: displaySegments)
         } catch {
             NSLog("[VowKy][Recording] 分离后处理失败，使用无标签文稿: \(error.localizedDescription)")
             if isActive(operationID) {
                 diarizationNote = L("diarization.note.fallback")
+            }
+            return nil
+        }
+    }
+
+    // MARK: - 极速引擎终稿替换
+
+    /// 录完后的极速引擎（SpeechAnalyzer）终稿后处理：对已落盘 wav 整体转写，
+    /// 成功则替换 SenseVoice 终稿（照 runDiarizationPostPass 的后处理模式）。
+    /// 任何失败返回 nil → complete 回退 SenseVoice 终稿并注记，绝不丢文稿。
+    /// 分离场景恒 SenseVoice：分离开启（含录音中途打开）时直接跳过。
+    private func runAnalyzerFinalPass(audioURL: URL, operationID: UUID) async -> String? {
+        guard let transcriber = engineFinalPassTranscriber, isActive(operationID) else { return nil }
+        guard !(diarizer != nil && diarizationEnabledProvider()) else { return nil }
+
+        diarizationPhaseText = L("recording.status.analyzerPass")
+        do {
+            let text = try await transcriber.transcribe(url: audioURL) { _ in }
+            guard isActive(operationID) else { return nil }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        } catch {
+            NSLog("[VowKy][Recording] 极速引擎终稿失败，回退本地引擎终稿: \(error.localizedDescription)")
+            if isActive(operationID) {
+                engineNote = L("recording.note.analyzerFallback")
             }
             return nil
         }
@@ -723,12 +811,26 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                     }
                     // 说话人分离后处理（用户拍板：录完后一次性处理，不动录制中字幕冻结架构）。
                     // 任何失败返回 nil → complete 使用无标签原文稿，绝不丢文稿。
-                    let labeledText = await self?.runDiarizationPostPass(
+                    let diarized = await self?.runDiarizationPostPass(
                         audioURL: preparedOutput.audioURL,
                         sampleCount: writer.sampleCount,
                         operationID: operationID
                     )
-                    await self?.complete(result: result, labeledText: labeledText, operationID: operationID)
+                    // 极速引擎终稿替换（引擎快照为 SpeechAnalyzer 且无分离产出时）。
+                    // wav 已由 engine.run 的 defer finalize，可整体转写。
+                    var analyzerText: String?
+                    if diarized == nil {
+                        analyzerText = await self?.runAnalyzerFinalPass(
+                            audioURL: preparedOutput.audioURL,
+                            operationID: operationID
+                        )
+                    }
+                    await self?.complete(
+                        result: result,
+                        diarized: diarized,
+                        analyzerText: analyzerText,
+                        operationID: operationID
+                    )
                 } catch is CancellationError {
                     await self?.completeCancellation(operationID: operationID)
                 } catch {
@@ -761,7 +863,12 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         finalizationProgress = progress
     }
 
-    private func complete(result: RecordingTranscriptionResult, labeledText: String? = nil, operationID: UUID) {
+    private func complete(
+        result: RecordingTranscriptionResult,
+        diarized: DiarizedTranscript? = nil,
+        analyzerText: String? = nil,
+        operationID: UUID
+    ) {
         guard isActive(operationID), let preparedOutput = activePreparedOutput else { return }
 
         stopTimer()
@@ -772,10 +879,15 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         subtitleCancellable = nil
         subtitlePacer.reset()
 
-        // 主文稿用带标签版本（分离成功时）；翻译管线只吃无标签原文
+        // 主文稿用带标签版本（分离成功时）；翻译管线只吃无标签文本
         // （AnchoredParagraphSplitter/字幕/双语对照均不容说话人前缀——这里是唯一分流闸门）。
-        let plainText = result.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let labeled = labeledText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 分离成功时窗口/翻译用同源 displaySegments（与落盘 .md 同一批识别结果），
+        // 不再用整段长解码的 result.finalText——两者可能质量悬殊（2026-08-02 P0）。
+        // 终稿优先级：labeled（分离） > analyzerText（极速引擎替换） > SenseVoice plain。
+        let plainText = analyzerText?.isEmpty == false
+            ? analyzerText!
+            : result.finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let labeled = diarized?.labeledText.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalText = (labeled?.isEmpty == false) ? labeled! : plainText
 
         do {
@@ -810,17 +922,29 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                 "char_count": finalText.count,
                 "diar": (diarizer != nil && diarizationEnabledProvider()) ? 1 : 0,
                 "speakers": lastDiarizationSpeakerCount,
+                "engine": analyzerText?.isEmpty == false ? "sa" : "sv",
             ]
             if diarizationNote != nil {
                 doneData["diar_fallback"] = 1
+            }
+            if engineNote != nil {
+                doneData["sa_fallback"] = 1
             }
             AnalyticsService.shared.track("rec_transcribe_done", data: doneData)
 
             writeSubtitleLogIfNeeded(textURL: preparedOutput.textURL)
 
-            // 最终稿（加标点后文本变化）整稿重新送译，得到双语终态
-            if !plainText.isEmpty {
-                translationCoordinator?.ingestFinal(text: plainText)
+            // 最终稿整稿重新送译，得到双语终态。分离成功=同源段落（带显示标签）；
+            // 否则=plain 终稿单段。lastFinalSegments 同时供「完成态中途开翻译」复用。
+            if diarized != nil, labeled?.isEmpty == false {
+                lastFinalSegments = diarized!.displaySegments
+            } else if !plainText.isEmpty {
+                lastFinalSegments = [.init(speakerLabel: nil, text: plainText)]
+            } else {
+                lastFinalSegments = []
+            }
+            if !lastFinalSegments.isEmpty {
+                translationCoordinator?.ingestFinal(segments: lastFinalSegments)
                 scheduleBilingualTranscriptSave()
             }
         } catch {

@@ -517,9 +517,9 @@
 "settings.model.label.speechAnalyzer" = "Apple SpeechAnalyzer（系统）";
 "settings.model.engine.speechAnalyzer" = "系统极速转录（SpeechAnalyzer）";
 "settings.model.engine.requiresOS26" = "系统极速转录需要 macOS 26 或更高版本。";
-"settings.model.engine.speedNote" = "极速引擎：大文件秒级转完，但准确率可能略低（数字与专有名词较弱、偶有多余空格），且需手动选定转录语言。仅用于文件/链接转录；热键听写与录音不受影响。";
+"settings.model.engine.speedNote" = "极速引擎：速度极快，但准确率可能略低（数字与专有名词较弱、偶有多余空格），且需手动选定转录语言。对语音输入、录音转文字、文件/链接转录全部生效；录音中的实时预览与字幕仍由本地引擎驱动，说话人分离开启时该次转录恒用本地引擎。";
 "settings.model.engine.switchAlert.title" = "切换到系统极速转录？";
-"settings.model.engine.switchAlert.message" = "速度极快（数分钟音频约几秒转完），但效果可能相对差一点：数字与专有名词较弱、偶有多余空格；且需手动选定转录语言（不支持自动检测）。可随时切回。";
+"settings.model.engine.switchAlert.message" = "切换后对语音输入、录音转文字、文件/链接转录全部生效。速度极快（数分钟音频约几秒转完），但效果可能相对差一点：数字与专有名词较弱、偶有多余空格；且需手动选定转录语言（不支持自动检测）。录音实时预览/字幕仍由本地引擎驱动；说话人分离开启时恒用本地引擎。可随时切回。";
 "settings.model.engine.switchAlert.confirm" = "切换";
 "settings.model.analyzerLocale" = "转录语言";
 "settings.model.analyzerLocale.zhCN" = "中文（普通话）";
@@ -547,4 +547,6 @@
 "diarization.status.separating" = "正在分离说话人…";
 "diarization.status.relabeling" = "正在按说话人整理 %d/%d";
 "diarization.note.fallback" = "说话人分离失败，已输出无标签文稿";
+"recording.status.analyzerPass" = "极速引擎生成终稿…";
+"recording.note.analyzerFallback" = "极速引擎终稿失败，已使用本地引擎文稿";
 "diarization.note.subtitleSource" = "已用平台字幕，未做说话人分离";

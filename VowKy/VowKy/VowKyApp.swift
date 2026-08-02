@@ -18,7 +18,9 @@ struct VowKyApp: App {
         speechRecognizer: RemoteSpeechRecognizer(transport: .shared),
         audioRecorder: AudioRecorder(),
         permissionChecker: RealPermissionChecker(),
-        backupService: AudioBackupService()
+        backupService: AudioBackupService(),
+        // 听写极速引擎（macOS 26+ 且用户选中时生效；失败自动回落 SenseVoice）
+        analyzerDictationRecognizerProvider: AppState.liveAnalyzerDictationProvider()
     )
 
     init() {

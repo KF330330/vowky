@@ -1,6 +1,8 @@
 import Foundation
 
-/// 文件/链接转录的识别引擎。热键听写与录音不受此选项影响（用户拍板：极速引擎仅文件/链接转录）。
+/// 语音识别引擎。三场景全局生效（2026-08-02 用户拍板）：热键听写、录音转文字、文件/链接转录。
+/// 例外：说话人分离开启的操作恒 SenseVoice（互锁）；录音实时预览/字幕恒 SenseVoice
+/// （冻结分段依赖 token 时间戳，SpeechAnalyzer 提供不了），极速引擎只负责录音终稿。
 enum SpeechEngineKind: String, Codable, CaseIterable {
     /// 内置 SenseVoice-Small int8（默认）：速度/ITN/体积综合最优
     case senseVoice
@@ -47,7 +49,7 @@ enum SpeechEngineConfigStore {
     }
 
     /// 纯函数引擎裁决，供单测（#available 不可 mock）：
-    /// 分离开启时恒 SenseVoice（引擎选择只影响未开分离的文件/链接转录）。
+    /// 分离开启时恒 SenseVoice；其余场景（听写/录音终稿/文件转录）按存储值+可用性裁决。
     static func resolve(
         stored: SpeechEngineKind,
         speechAnalyzerAvailable: Bool,

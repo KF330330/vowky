@@ -366,4 +366,54 @@ final class TranslationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.paragraphs.map(\.id), ["c-0"])
         XCTAssertTrue(coordinator.paragraphs.allSatisfy { !$0.isPartial })
     }
+
+    // MARK: - ingestFinal(segments:) 说话人标签（2026-08-02 P0 同源修复）
+
+    func test23_ingestFinalSegments_labelsOnSegmentHeads_textsUnlabeled() async {
+        let provider = MockTranslationProvider()
+        let coordinator = makeCoordinator(provider: provider, target: english)
+
+        coordinator.ingestFinal(segments: [
+            .init(speakerLabel: "说话人 1：", text: "你好朋友。\n今天下大雨。"),
+            .init(speakerLabel: nil, text: "嗯哼继续。"),
+            .init(speakerLabel: "说话人 2：", text: "好的没问题。"),
+        ])
+
+        // 段内按句切分；标签只落段首句，text 永远无标签前缀
+        XCTAssertEqual(
+            coordinator.paragraphs.map(\.text),
+            ["你好朋友。", "今天下大雨。", "嗯哼继续。", "好的没问题。"]
+        )
+        XCTAssertEqual(
+            coordinator.paragraphs.map(\.speakerLabel),
+            ["说话人 1：", nil, nil, "说话人 2："]
+        )
+        XCTAssertTrue(coordinator.paragraphs.allSatisfy { !$0.isPartial })
+
+        // 红线：翻译请求 key 是无标签句文本，标签绝不进翻译管线
+        await waitUntil { provider.requestedTexts.count >= 4 }
+        XCTAssertTrue(provider.requestedTexts.allSatisfy { !$0.contains("说话人") })
+    }
+
+    func test24_ingestFinalText_delegatesToSegments_noLabels() async {
+        let provider = MockTranslationProvider()
+        let coordinator = makeCoordinator(provider: provider, target: english)
+
+        coordinator.ingestFinal(text: "第一句话说完。\n第二句话说完。")
+
+        XCTAssertEqual(coordinator.paragraphs.map(\.text), ["第一句话说完。", "第二句话说完。"])
+        XCTAssertEqual(coordinator.paragraphs.map(\.speakerLabel), [nil, nil])
+    }
+
+    func test25_streamingIngestAfterFinalSegments_clearsLabels() async {
+        let provider = MockTranslationProvider()
+        let coordinator = makeCoordinator(provider: provider, target: english)
+        coordinator.ingestFinal(segments: [
+            .init(speakerLabel: "说话人 1：", text: "先到的终稿句。"),
+        ])
+
+        coordinator.ingest(update: update(committed: "新一轮开场白。", partial: ""))
+
+        XCTAssertEqual(coordinator.paragraphs.map(\.speakerLabel), [nil])
+    }
 }

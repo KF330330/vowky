@@ -34,6 +34,9 @@ final class TranslationCoordinator: ObservableObject {
     /// 最近一次 ingest 的段落快照，供状态更新后重建 paragraphs
     private var committedTexts: [String] = []
     private var partialTexts: [String] = []
+    /// 与 committedTexts 逐位对齐的说话人标签（仅 ingestFinal(segments:) 产生；流式 ingest 恒空）。
+    /// 标签只进 TranscriptParagraph.speakerLabel 显示字段，翻译缓存 key 始终是无标签句文本。
+    private var committedLabels: [String?] = []
 
     init(
         provider: TranslationProviding,
@@ -53,6 +56,7 @@ final class TranslationCoordinator: ObservableObject {
         guard !isShutDown else { return }
         let split = splitter.split(committed: update.committedText, partial: update.partialText)
         committedTexts = split.committed
+        committedLabels = Array(repeating: nil, count: split.committed.count)
         partialTexts = split.partial
         updateDetectedSource()
         rebuildParagraphs()
@@ -62,12 +66,34 @@ final class TranslationCoordinator: ObservableObject {
 
     /// 完成阶段：最终稿（加标点后）整稿按段送译，全部视为 committed。
     func ingestFinal(text: String) {
+        ingestFinal(segments: [FinalSegment(speakerLabel: nil, text: text)])
+    }
+
+    /// 最终稿的一段：可携带说话人标签（说话人分离产物）。text 必须不含标签前缀。
+    struct FinalSegment: Equatable {
+        let speakerLabel: String?
+        let text: String
+    }
+
+    /// 完成阶段（分段版）：各段内部按句切分，段首句携带说话人标签（仅显示用）。
+    /// 与录音落盘 .md 同源：段列表就是分离逐段重识别的产物，窗口显示 ≡ 落盘内容。
+    func ingestFinal(segments: [FinalSegment]) {
         guard !isShutDown else { return }
         partialTask?.cancel()
         partialTask = nil
         // 最终稿权威：锚清空，整稿全量重切（此时字幕已收起，无重现风险；双语落盘保真）
         splitter.reset()
-        committedTexts = Self.splitParagraphs(text)
+        var texts: [String] = []
+        var labels: [String?] = []
+        for segment in segments {
+            let pieces = Self.splitParagraphs(segment.text)
+            for (index, piece) in pieces.enumerated() {
+                texts.append(piece)
+                labels.append(index == 0 ? segment.speakerLabel : nil)
+            }
+        }
+        committedTexts = texts
+        committedLabels = labels
         partialTexts = []
         updateDetectedSource()
         rebuildParagraphs()
@@ -244,7 +270,8 @@ final class TranslationCoordinator: ObservableObject {
                 id: "c-\(index)",
                 text: text,
                 isPartial: false,
-                translation: translationState(for: text)
+                translation: translationState(for: text),
+                speakerLabel: index < committedLabels.count ? committedLabels[index] : nil
             ))
         }
         for (index, text) in partialTexts.enumerated() {
