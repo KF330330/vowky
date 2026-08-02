@@ -90,6 +90,18 @@ enum SpeechEngineConfigStore {
         )
     }
 
+    /// 默认全自动策略（2026-08-02 用户拍板：设置页不再暴露引擎/语言选择，一切默认自动）：
+    /// SA 运行时可用且分离关 → auto 模式（极速+本地混合，lazy sticky/终稿路由/文件抽样）；否则本地引擎。
+    /// 存量 speech.engine / speech.analyzer.locale 视为遗留值，live 层不再读取（sticky 键继续使用）。
+    /// 复用 resolve 保住分离互锁语义。
+    static func autoPolicyActive(diarizationOn: Bool) -> Bool {
+        resolve(
+            stored: .speechAnalyzer,
+            speechAnalyzerAvailable: speechAnalyzerRuntimeAvailable,
+            diarizationOn: diarizationOn
+        ) == .speechAnalyzer
+    }
+
     /// 默认转录语言：跟随 app 界面语言映射。
     static func defaultAnalyzerLocale(appLanguage: AppLanguage = LanguagePreferenceStore.load()) -> String {
         switch appLanguage {

@@ -36,8 +36,8 @@ final class AppState: ObservableObject {
     let audioRecorder: AudioRecorderProtocol
     private let permissionChecker: PermissionCheckerProtocol
     private let backupService: AudioBackupProtocol?
-    /// 听写场景的极速引擎提供者：当前裁决引擎为 SpeechAnalyzer 且语言为固定 locale 时返回其识别器，否则 nil。
-    /// 生产默认闭包内含编译门控与按 locale 缓存；测试注入 mock 或保持默认（非 26 系统恒 nil）。
+    /// 固定 locale 的极速识别器提供者。默认全自动策略后生产不再注入（恒 nil），
+    /// 保留注入缝供单测覆盖「固定引擎优先→回落」契约。
     private let analyzerDictationRecognizerProvider: () -> SpeechRecognizerProtocol?
     /// auto 模式（语言=「自动」，lazy sticky）听写上下文提供者：引擎为 SpeechAnalyzer 且选「自动」时返回上下文，否则 nil。
     private let analyzerAutoDictationProvider: () -> AnalyzerAutoDictationContext?
@@ -66,7 +66,7 @@ final class AppState: ObservableObject {
         self.audioRecorder = audioRecorder
         self.permissionChecker = permissionChecker
         self.backupService = backupService
-        // 默认惰性（恒 nil = 纯 SenseVoice）：生产端在 VowKyApp 显式注入 liveAnalyzerDictationProvider()。
+        // 默认惰性（恒 nil = 纯 SenseVoice）；此缝现仅单测注入（生产走 auto provider）。
         // 绝不在这里内嵌读真实 UserDefaults 的默认——单测大量直接构造 AppState，
         // 会随用户当前引擎设置漂移甚至在测试宿主里拉起真 SpeechAnalyzer。
         self.analyzerDictationRecognizerProvider = analyzerDictationRecognizerProvider ?? { nil }
@@ -74,29 +74,8 @@ final class AppState: ObservableObject {
         self.analyzerAutoDictationProvider = analyzerAutoDictationProvider ?? { nil }
     }
 
-    /// 生产用听写极速引擎提供者（编译门控照 makeFileTranscriptionService 先例）：
-    /// 每次听写按当前设置裁决；实例按 locale 缓存，避免每句重建。
-    /// 仅固定 locale 模式生效——「自动」走 liveAnalyzerAutoDictationProvider（防 "auto" 哨兵漏进 SA 构造）。
-    static func liveAnalyzerDictationProvider() -> () -> SpeechRecognizerProtocol? {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            var cached: (locale: String, recognizer: SpeechRecognizerProtocol)?
-            return {
-                guard SpeechEngineConfigStore.resolvedEngine(diarizationOn: false) == .speechAnalyzer,
-                      case .fixed(let locale) = SpeechEngineConfigStore.load().analyzerLocaleMode else {
-                    return nil
-                }
-                if let cached, cached.locale == locale { return cached.recognizer }
-                let recognizer = SpeechAnalyzerSpeechRecognizer(localeIdentifier: locale)
-                cached = (locale, recognizer)
-                return recognizer
-            }
-        }
-        #endif
-        return { nil }
-    }
-
-    /// 生产用 auto 模式听写上下文（lazy sticky）：引擎=SpeechAnalyzer 且语言=「自动」才返回。
+    /// 生产用 auto 模式听写上下文（lazy sticky）——默认全自动策略下的唯一听写极速入口
+    /// （2026-08-02 用户拍板：无引擎/语言选择 UI，SA 可用即自动生效）。
     /// SA 实例按 locale 字典缓存（至多四候选）；sticky 存 UserDefaults（跨启动保留）。
     /// installedLocales 只在后台检测/回落路径消费（不在极速出字关键路径），每次现查不缓存。
     static func liveAnalyzerAutoDictationProvider() -> () -> AnalyzerAutoDictationContext? {
@@ -104,8 +83,7 @@ final class AppState: ObservableObject {
         if #available(macOS 26.0, *) {
             var recognizers: [String: SpeechRecognizerProtocol] = [:]
             return {
-                guard SpeechEngineConfigStore.resolvedEngine(diarizationOn: false) == .speechAnalyzer,
-                      SpeechEngineConfigStore.load().analyzerLocaleMode == .auto else {
+                guard SpeechEngineConfigStore.autoPolicyActive(diarizationOn: false) else {
                     return nil
                 }
                 return AnalyzerAutoDictationContext(
@@ -605,35 +583,29 @@ final class AppState: ObservableObject {
         // 分离开关按任务启动瞬间快照(本工厂每个任务调一次);模型缺失时静默视为关闭(UI 侧开关也会禁用)。
         let diarizationOn = DiarizationConfigStore.isFileEnabled() && DiarizationModelCatalog.availableInBundle()
 
-        // 引擎裁决:分离开启时恒 SenseVoice;SpeechAnalyzer 仅 macOS 26+ 且用户显式选择。
-        // 语言=「自动」时走抽样检测包装器(头/中/尾窗探测语言,单语言极速全量,混说回落本地切块)。
+        // 默认全自动策略:分离开启恒 SenseVoice;macOS 26+ 自动走抽样检测包装器
+        // (头/中/尾窗探测语言,单语言极速全量,混说回落本地切块),无需用户选择。
         #if compiler(>=6.2)
         if #available(macOS 26.0, *),
-           SpeechEngineConfigStore.resolvedEngine(diarizationOn: diarizationOn) == .speechAnalyzer {
-            let makeAnalyzer: (String) -> FileTranscribing? = { [weak self] locale in
-                SpeechAnalyzerFileTranscriber(
-                    decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
-                    localeIdentifier: locale,
-                    yieldToVoiceInput: { await self?.waitWhileVoiceInputActive() }
-                )
-            }
-            switch SpeechEngineConfigStore.load().analyzerLocaleMode {
-            case .fixed(let locale):
-                if let transcriber = makeAnalyzer(locale) { return transcriber }
-            case .auto:
-                return AutoRoutingFileTranscriber(
-                    decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
-                    probeRecognizer: speechRecognizer,
-                    senseVoiceService: makeSenseVoiceFileTranscriptionService(diarizationOn: diarizationOn),
-                    analyzerFactory: makeAnalyzer,
-                    installedLocales: {
-                        await SpeechAnalyzerAssetStatus.installedSubset(
-                            of: SpeechEngineConfigStore.autoRoutableLocales
-                        )
-                    },
-                    yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
-                )
-            }
+           SpeechEngineConfigStore.autoPolicyActive(diarizationOn: diarizationOn) {
+            return AutoRoutingFileTranscriber(
+                decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
+                probeRecognizer: speechRecognizer,
+                senseVoiceService: makeSenseVoiceFileTranscriptionService(diarizationOn: diarizationOn),
+                analyzerFactory: { [weak self] locale in
+                    SpeechAnalyzerFileTranscriber(
+                        decoder: MediaAudioDecoder(fallbackDecoder: FFmpegAudioFallbackDecoder()),
+                        localeIdentifier: locale,
+                        yieldToVoiceInput: { await self?.waitWhileVoiceInputActive() }
+                    )
+                },
+                installedLocales: {
+                    await SpeechAnalyzerAssetStatus.installedSubset(
+                        of: SpeechEngineConfigStore.autoRoutableLocales
+                    )
+                },
+                yieldToVoiceInput: { [weak self] in await self?.waitWhileVoiceInputActive() }
+            )
         }
         #endif
 

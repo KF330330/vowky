@@ -118,8 +118,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     private let diarizer: SpeakerDiarizing?
     /// 分离开关读取（进入 finishing 后处理前读取，允许录音中途改开关）。测试可注入绕过真实 UserDefaults。
     private let diarizationEnabledProvider: () -> Bool
-    /// 极速引擎终稿转写器工厂（固定 locale 模式）：裁决引擎为 SpeechAnalyzer 时 start() 经此构建（快照口径）。
-    /// 生产默认闭包内含编译门控；测试注入 mock FileTranscribing。
+    /// 固定 locale 的极速终稿转写器工厂。默认全自动策略后生产不再注入（恒 nil），
+    /// 保留注入缝供单测覆盖「固定引擎终稿替换/回退」契约。
     private let analyzerFinalPassFactory: () -> FileTranscribing?
     /// 本次录音的极速引擎终稿转写器快照（start() 时按当时设置裁决；nil = 本次用 SenseVoice 终稿）。
     private var engineFinalPassTranscriber: FileTranscribing?
@@ -177,44 +177,24 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             DiarizationConfigStore.isRecordingEnabled()
         }
         self.diarizationEnabledProvider = diarizationProvider
-        // 默认惰性（恒 nil = 本地引擎终稿）：生产端（窗口控制器）显式注入 liveAnalyzerFinalPassFactory。
+        // 默认惰性（恒 nil = 本地引擎终稿）；此缝现仅单测注入（生产走 auto provider）。
         // 绝不内嵌读真实 UserDefaults 的默认——测试会随用户当前引擎设置漂移。
         self.analyzerFinalPassFactory = analyzerFinalPassFactory ?? { nil }
         // 同上 DI 红线：默认惰性恒 nil；生产端显式注入 liveAnalyzerAutoFinalPassProvider。
         self.analyzerAutoFinalPassProvider = analyzerAutoFinalPassProvider ?? { nil }
     }
 
-    /// 生产用极速引擎终稿工厂（固定 locale 模式）：裁决引擎为 SpeechAnalyzer（且录音分离关）才返回转写器——
-    /// 分离开启恒 SenseVoice 的互锁在 resolvedEngine 内生效（编译门控照 AppState 先例）。
-    /// 语言选「自动」时返回 nil，走 liveAnalyzerAutoFinalPassProvider（防 "auto" 哨兵漏进 SA 构造）。
-    static func liveAnalyzerFinalPassFactory() -> () -> FileTranscribing? {
-        {
-            #if compiler(>=6.2)
-            if #available(macOS 26.0, *),
-               SpeechEngineConfigStore.resolvedEngine(
-                   diarizationOn: DiarizationConfigStore.isRecordingEnabled()
-               ) == .speechAnalyzer,
-               case .fixed(let locale) = SpeechEngineConfigStore.load().analyzerLocaleMode {
-                return SpeechAnalyzerFileTranscriber(
-                    decoder: MediaAudioDecoder(),
-                    localeIdentifier: locale
-                )
-            }
-            #endif
-            return nil
-        }
-    }
-
-    /// 生产用 auto 模式终稿上下文：引擎=SpeechAnalyzer、语言=「自动」（且录音分离关）才返回。
+    /// 生产用 auto 模式终稿上下文——默认全自动策略下的唯一极速终稿入口
+    /// （2026-08-02 用户拍板：无引擎/语言选择 UI；分离开启恒 SenseVoice 的互锁在 autoPolicyActive 内生效）。
     /// 路由输入是本地引擎终稿文本（SA 替换前已在手），检测零成本。
+    /// 固定 locale 的 analyzerFinalPassFactory 注入缝仅测试使用，生产不再注入。
     static func liveAnalyzerAutoFinalPassProvider() -> () -> AnalyzerAutoFinalPassContext? {
         {
             #if compiler(>=6.2)
             if #available(macOS 26.0, *),
-               SpeechEngineConfigStore.resolvedEngine(
+               SpeechEngineConfigStore.autoPolicyActive(
                    diarizationOn: DiarizationConfigStore.isRecordingEnabled()
-               ) == .speechAnalyzer,
-               SpeechEngineConfigStore.load().analyzerLocaleMode == .auto {
+               ) {
                 return AnalyzerAutoFinalPassContext(
                     transcriberForLocale: { locale in
                         SpeechAnalyzerFileTranscriber(

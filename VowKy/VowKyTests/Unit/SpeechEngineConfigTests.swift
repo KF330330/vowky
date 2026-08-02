@@ -128,4 +128,16 @@ final class SpeechEngineConfigTests: XCTestCase {
         XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults),
                        SpeechEngineConfigStore.defaultAnalyzerLocale())
     }
+
+    // MARK: - 默认全自动策略（2026-08-02：设置页无引擎/语言选择）
+
+    func test13_autoPolicyActive_followsRuntimeAndDiarizationInterlock() {
+        // 分离开启恒 false（互锁复用 resolve）
+        XCTAssertFalse(SpeechEngineConfigStore.autoPolicyActive(diarizationOn: true))
+        // 分离关时只看运行时可用性——不读任何存储的引擎/语言设置（遗留值被忽略）
+        XCTAssertEqual(
+            SpeechEngineConfigStore.autoPolicyActive(diarizationOn: false),
+            SpeechEngineConfigStore.speechAnalyzerRuntimeAvailable
+        )
+    }
 }

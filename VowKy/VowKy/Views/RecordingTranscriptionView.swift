@@ -32,9 +32,7 @@ final class RecordingTranscriptionWindowController {
                 HistoryStore.shared.insertWithMetadata(content: text, sourceType: meta.sourceType, metadata: meta)
             },
             diarizer: SubprocessSpeakerDiarizer(numSpeakers: { DiarizationConfigStore.recordingSpeakerCount() }),
-            // 极速引擎终稿替换（引擎全局化；分离开启/非 26 系统自动为 nil）
-            analyzerFinalPassFactory: RecordingTranscriptionViewModel.liveAnalyzerFinalPassFactory(),
-            // 语言=「自动」时的终稿路由（按本地终稿文本判语言；与上面互斥）
+            // 全自动终稿路由（按本地终稿文本判语言；macOS 26+ 自动生效，分离开启/旧系统为 nil）
             analyzerAutoFinalPassProvider: RecordingTranscriptionViewModel.liveAnalyzerAutoFinalPassProvider()
         )
         let view = RecordingTranscriptionView(viewModel: viewModel)
