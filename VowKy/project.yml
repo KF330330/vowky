@@ -160,6 +160,7 @@ targets:
       - path: VowKy/Services/SpeechRecognizer.swift
       - path: VowKy/Services/VowKyModelLocator.swift
       - path: VowKy/Services/Diarization/DiarizationModelCatalog.swift  # 分离模型文件名(主 app 也用)
+      - path: VowKy/Services/Diarization/SpeakerCountEstimator.swift    # 自动人数两遍估计(主 app 测试也用)
       - path: VowKy/Services/WAVSampleFileWriter.swift  # --diarize 读 canonical WAV(主 app 也用)
     settings:
       base:

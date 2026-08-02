@@ -97,18 +97,50 @@ enum DiarizeCLI {
 
         NSLog("[VowKy][DiarizeCLI] start: \(samples.count) samples, numSpeakers=\(numSpeakers)")
 
+        // 进度节流 + 多遍映射:自动模式预留两遍空间(第一遍 [0,50%],第二遍 [50%,100%]),
+        // 保证 app 侧看到的分数单调不回退;强制人数模式单遍,按原始值输出。
+        let isAuto = numSpeakers <= 0
+        let totalPasses = isAuto ? 2 : 1
         var lastEmit = Date.distantPast
-        let segments = diarizer.process(samples: samples) { processed, total in
-            let now = Date()
-            if now.timeIntervalSince(lastEmit) >= progressThrottleInterval || processed == total {
+        var chunkTotal = 0
+        func makeProgressHandler(pass: Int) -> (Int, Int) -> Void {
+            { processed, total in
+                chunkTotal = total
+                let now = Date()
+                guard now.timeIntervalSince(lastEmit) >= progressThrottleInterval || processed == total else { return }
                 lastEmit = now
-                emit(.progress(processed: processed, total: total))
+                emit(.progress(processed: (pass - 1) * total + processed, total: totalPasses * total))
             }
         }
 
-        let dtos = segments.map {
+        var segments = diarizer.process(samples: samples, onProgress: makeProgressHandler(pass: 1))
+        var dtos = segments.map {
             DiarizeSegmentDTO(s: Double($0.start), e: Double($0.end), spk: $0.speaker)
         }
+
+        // 自动模式两遍策略:第一遍阈值聚类后数「可靠簇」得 N(见 SpeakerCountEstimator);
+        // N 少于第一遍簇数时,强制 num_clusters=N 整体重跑归属(引擎无重聚类 API)。
+        // N 与第一遍簇数一致时跳过第二遍,结果与单遍完全相同(四人基准即此路径)。
+        if isAuto {
+            let pass1Clusters = Set(dtos.map(\.spk)).count
+            if let estimated = SpeakerCountEstimator.estimate(segments: dtos), estimated < pass1Clusters {
+                NSLog("[VowKy][DiarizeCLI] two-pass: pass1 clusters=\(pass1Clusters), reliable=\(estimated), rerunning")
+                var pass2Config = sherpaOnnxOfflineSpeakerDiarizationConfig(
+                    segmentation: segmentationConfig,
+                    embedding: embeddingConfig,
+                    clustering: sherpaOnnxFastClusteringConfig(numClusters: estimated, threshold: threshold)
+                )
+                diarizer.setConfig(config: &pass2Config)
+                segments = diarizer.process(samples: samples, onProgress: makeProgressHandler(pass: 2))
+                dtos = segments.map {
+                    DiarizeSegmentDTO(s: Double($0.start), e: Double($0.end), spk: $0.speaker)
+                }
+            } else if chunkTotal > 0 {
+                // 跳过第二遍:补一条满进度,让 UI 干净收尾在 100%
+                emit(.progress(processed: totalPasses * chunkTotal, total: totalPasses * chunkTotal))
+            }
+        }
+
         NSLog("[VowKy][DiarizeCLI] done: \(dtos.count) segments")
         emit(.result(dtos))
         return 0

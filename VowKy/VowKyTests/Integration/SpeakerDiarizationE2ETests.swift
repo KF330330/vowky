@@ -55,6 +55,12 @@ final class SpeakerDiarizationE2ETests: XCTestCase {
         XCTAssertEqual(SpeakerSegmentComposer.distinctSpeakerCount(segments), 4, "自动估计说话人数应为 4")
         XCTAssertEqual(segments.map(\.speaker), expectedSpeakers, "说话人归属序列应与基准一致")
 
+        // 两遍自动估计:基准音频第一遍即 4 个可靠簇(与簇数一致),
+        // 子进程会跳过第二遍 → 归属结果与单遍完全相同。锁住这个不变量。
+        let pass1DTOs = raw.map { DiarizeSegmentDTO(s: $0.start, e: $0.end, spk: $0.speaker) }
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: pass1DTOs), 4,
+                       "第一遍可靠簇估计应为 4,保证子进程跳过第二遍")
+
         // 3) 逐段真实 SenseVoice 识别 → 关键短语断言
         let recognizer = LocalSpeechRecognizer()
         recognizer.loadModel()
