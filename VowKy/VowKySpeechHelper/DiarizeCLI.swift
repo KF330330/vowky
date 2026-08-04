@@ -8,8 +8,10 @@ import Foundation
 // 结果经真实 stdout 行协议输出(见 DiarizeSubprocessProtocol),完成即退出,内存瞬态释放。
 enum DiarizeCLI {
 
-    /// 分离模型线程数。与识别器同基准(2026-07-31 实测 4 线程)。
-    private static let numThreads = 4
+    /// 分离模型线程数。与识别器同基准(2026-07-31 实测 4 线程);
+    /// VOWKY_DIARIZE_THREADS 环境变量可覆盖(线程调参实验用,生产不设=默认)。
+    private static let numThreads = ProcessInfo.processInfo
+        .environment["VOWKY_DIARIZE_THREADS"].flatMap(Int.init) ?? 4
 
     /// PROGRESS 行最小间隔,防刷屏。
     private static let progressThrottleInterval: TimeInterval = 0.5
