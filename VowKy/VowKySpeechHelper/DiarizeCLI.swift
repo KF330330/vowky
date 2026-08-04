@@ -10,8 +10,12 @@ enum DiarizeCLI {
 
     /// 分离模型线程数。与识别器同基准(2026-07-31 实测 4 线程);
     /// VOWKY_DIARIZE_THREADS 环境变量可覆盖(线程调参实验用,生产不设=默认)。
-    private static let numThreads = ProcessInfo.processInfo
-        .environment["VOWKY_DIARIZE_THREADS"].flatMap(Int.init) ?? 4
+    /// 覆盖值夹取 1...16:越界/非法一律回退默认,防 Int32 转换 trap(codex 三审)。
+    private static let numThreads: Int = {
+        guard let raw = ProcessInfo.processInfo.environment["VOWKY_DIARIZE_THREADS"],
+              let value = Int(raw), (1...16).contains(value) else { return 4 }
+        return value
+    }()
 
     /// PROGRESS 行最小间隔,防刷屏。
     private static let progressThrottleInterval: TimeInterval = 0.5
