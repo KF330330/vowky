@@ -124,26 +124,32 @@ enum DiarizeCLI {
         // 估计器的质心合并/小簇保护需要声纹嵌入:此处注入 CAM++ 提取
         // (一次性子进程,双载 embedding 模型的内存瞬态可接受)。
         if isAuto {
-            var extractorConfig = sherpaOnnxSpeakerEmbeddingExtractorConfig(
-                model: modelPaths.embedding,
-                numThreads: numThreads
-            )
-            let extractor = SherpaOnnxSpeakerEmbeddingExtractorWrapper(config: &extractorConfig)
-            let embeddingForRanges: ([(Double, Double)]) -> [Float]? = { ranges in
-                guard extractor.impl != nil else { return nil }
-                var concatenated: [Float] = []
-                for (start, end) in ranges {
-                    let lower = max(0, Int(start * Double(sampleRate)))
-                    let upper = min(samples.count, Int(end * Double(sampleRate)))
-                    guard upper > lower else { continue }
-                    concatenated.append(contentsOf: samples[lower..<upper])
+            // 短音频估计器不启用质心合并(与地板同 60s 门槛,语音并集 ≤ 音频时长),
+            // 不必双载 embedding 模型
+            let audioSeconds = Double(samples.count) / Double(sampleRate)
+            var embeddingForRanges: (([(Double, Double)]) -> [Float]?)?
+            if audioSeconds >= SpeakerCountEstimator.durationFloorActivation {
+                var extractorConfig = sherpaOnnxSpeakerEmbeddingExtractorConfig(
+                    model: modelPaths.embedding,
+                    numThreads: numThreads
+                )
+                let extractor = SherpaOnnxSpeakerEmbeddingExtractorWrapper(config: &extractorConfig)
+                embeddingForRanges = { ranges in
+                    guard extractor.impl != nil else { return nil }
+                    var concatenated: [Float] = []
+                    for (start, end) in ranges {
+                        let lower = max(0, Int(start * Double(sampleRate)))
+                        let upper = min(samples.count, Int(end * Double(sampleRate)))
+                        guard upper > lower else { continue }
+                        concatenated.append(contentsOf: samples[lower..<upper])
+                    }
+                    guard !concatenated.isEmpty else { return nil }
+                    let stream = extractor.createStream()
+                    stream.acceptWaveform(samples: concatenated, sampleRate: sampleRate)
+                    stream.inputFinished()
+                    let embedding = extractor.compute(stream: stream)
+                    return embedding.isEmpty ? nil : embedding
                 }
-                guard !concatenated.isEmpty else { return nil }
-                let stream = extractor.createStream()
-                stream.acceptWaveform(samples: concatenated, sampleRate: sampleRate)
-                stream.inputFinished()
-                let embedding = extractor.compute(stream: stream)
-                return embedding.isEmpty ? nil : embedding
             }
             let pass1Clusters = Set(dtos.map(\.spk)).count
             if let estimated = SpeakerCountEstimator.estimate(

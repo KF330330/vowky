@@ -61,6 +61,35 @@ final class SpeakerDiarizationE2ETests: XCTestCase {
         XCTAssertEqual(SpeakerCountEstimator.estimate(segments: pass1DTOs), 4,
                        "第一遍可靠簇估计应为 4,保证子进程跳过第二遍")
 
+        // 生产质心合并路径回归网(codex 二审 #4):与 DiarizeCLI 相同的真实 CAM++ 嵌入闭包。
+        // 基准音频不足 60s,生产上质心合并不会启用;此处把门槛压到 0 强制走合并逻辑,
+        // 锁住「真实 CAM++ 质心不会把四个真人互并」(异人质心距实测最小 0.50 > 阈值 0.45)。
+        var extractorConfig = sherpaOnnxSpeakerEmbeddingExtractorConfig(model: embeddingModel, numThreads: 4)
+        let extractor = SherpaOnnxSpeakerEmbeddingExtractorWrapper(config: &extractorConfig)
+        try XCTSkipIf(extractor.impl == nil, "声纹提取器创建失败")
+        let embeddingForRanges: ([(Double, Double)]) -> [Float]? = { ranges in
+            var concatenated: [Float] = []
+            for (start, end) in ranges {
+                let lower = max(0, Int(start * Double(sampleRate)))
+                let upper = min(samples.count, Int(end * Double(sampleRate)))
+                guard upper > lower else { continue }
+                concatenated.append(contentsOf: samples[lower..<upper])
+            }
+            guard !concatenated.isEmpty else { return nil }
+            let stream = extractor.createStream()
+            stream.acceptWaveform(samples: concatenated, sampleRate: sampleRate)
+            stream.inputFinished()
+            let embedding = extractor.compute(stream: stream)
+            return embedding.isEmpty ? nil : embedding
+        }
+        XCTAssertEqual(
+            SpeakerCountEstimator.estimate(
+                segments: pass1DTOs, embeddingForRanges: embeddingForRanges, floorActivation: 0
+            ),
+            4,
+            "真实 CAM++ 质心合并不应把四人基准的任何两簇互并"
+        )
+
         // 3) 逐段真实 SenseVoice 识别 → 关键短语断言
         let recognizer = LocalSpeechRecognizer()
         recognizer.loadModel()

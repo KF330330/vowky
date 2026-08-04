@@ -26,9 +26,11 @@ enum SpeakerCountEstimator {
     /// 假簇最长段 ≤1.47s;四人基准每簇最长段 ≥3.29s。宽档只在全篇短句时兜底。
     static let reliableDurationBars: [Double] = [2.0, 1.5, 1.0]
 
-    /// 簇总时长地板 = min(cap, share × 全部语音时长),仅当全部语音 ≥ activation 才启用。
+    /// 簇总时长地板 = min(cap, share × 语音区间并集时长),仅当并集时长 ≥ activation 才启用。
     /// 地板专治长录音防饱和;短录音(如 22s 短句对话)地板可能倒挂淘汰少发言真人,
     /// 故 60s 以下地板恒 0,逐位保持 08-02 既有行为(codex review #4)。
+    /// 时长基准用**区间并集**而非各簇累加——重叠说话会把累加值虚高翻过门槛(codex 二审 #2)。
+    /// 质心合并同受此门槛(codex 二审 #1):鸿沟数据来自长录音,短录音上纯风险无收益。
     /// 若地板淘汰了全部候选簇则忽略地板(绝不允许估计为 0)。
     static let durationFloorShare: Double = 0.05
     static let durationFloorCap: Double = 30.0
@@ -49,12 +51,15 @@ enum SpeakerCountEstimator {
     ///   nil(或提取失败)时跳过质心合并与小簇保护,退化为纯时长判据。
     ///   helper 注入真实 CAM++ 提取;单测注入合成向量。
     /// - Parameter log: 诊断输出(簇统计/质心距离/合并决策),校准与线上排查用;nil 静默。
+    /// - Parameter floorActivation: 地板/质心合并的启用门槛(秒,按语音并集时长);
+    ///   仅测试覆盖生产质心路径时下调(基准音频不足 60s),生产恒用默认值。
     /// 返回 nil = 无法估计(无段,或所有簇最长段 < 最宽门槛),调用方应沿用第一遍结果。
     /// 估计值恒 ≤ 第一遍簇数,只会减少假说话人,不会凭空增加。
     static func estimate(
         segments: [DiarizeSegmentDTO],
         embeddingForRanges: (([(Double, Double)]) -> [Float]?)? = nil,
-        log: ((String) -> Void)? = nil
+        log: ((String) -> Void)? = nil,
+        floorActivation: Double = durationFloorActivation
     ) -> Int? {
         // 簇级统计
         struct Cluster {
@@ -63,10 +68,8 @@ enum SpeakerCountEstimator {
             var segments: [(Double, Double)] = []
         }
         var clusters: [Int: Cluster] = [:]
-        var totalSpeech: Double = 0
         for segment in segments {
             let duration = segment.e - segment.s
-            totalSpeech += duration
             var cluster = clusters[segment.spk] ?? Cluster()
             cluster.longest = max(cluster.longest, duration)
             cluster.total += duration
@@ -74,6 +77,9 @@ enum SpeakerCountEstimator {
             clusters[segment.spk] = cluster
         }
         guard !clusters.isEmpty else { return nil }
+        // 语音并集时长(重叠说话不重复计),供门槛与地板份额使用
+        let speechSpan = mergeIntervals(segments.map { ($0.s, $0.e) })
+            .reduce(0) { $0 + ($1.1 - $1.0) }
 
         // 一级:最长单段梯度门槛
         var bar: Double?
@@ -85,21 +91,22 @@ enum SpeakerCountEstimator {
         let barPassed = clusters.filter { $0.value.longest >= bar }
 
         // 一级:簇总时长地板(长录音防饱和;短录音不启用;淘汰全部则忽略地板)
-        let floor = totalSpeech >= durationFloorActivation
-            ? Swift.min(durationFloorCap, durationFloorShare * totalSpeech)
+        let longEnough = speechSpan >= floorActivation
+        let floor = longEnough
+            ? Swift.min(durationFloorCap, durationFloorShare * speechSpan)
             : 0
         var kept = barPassed.filter { $0.value.total >= floor }
         if kept.isEmpty { kept = barPassed }
 
         if let log {
-            log("totalSpeech=\(f1(totalSpeech))s bar=\(bar) floor=\(f1(floor))s clusters=\(clusters.count) barPassed=\(barPassed.count) kept=\(kept.count)")
+            log("speechSpan=\(f1(speechSpan))s bar=\(bar) floor=\(f1(floor))s clusters=\(clusters.count) barPassed=\(barPassed.count) kept=\(kept.count)")
             for (id, c) in clusters.sorted(by: { $0.key < $1.key }) {
                 log("cluster \(id): longest=\(f1(c.longest))s total=\(f1(c.total))s segs=\(c.segments.count) \(kept[id] != nil ? "KEPT" : (barPassed[id] != nil ? "floor-dropped" : "bar-dropped"))")
             }
         }
 
-        // 无嵌入注入:退化为纯时长判据
-        guard let embeddingForRanges else { return kept.count }
+        // 无嵌入注入,或短录音(质心合并与地板同门槛):退化为纯时长判据
+        guard longEnough, let embeddingForRanges else { return kept.count }
 
         // 质心提取:先减去其他簇的时间区间(重叠语音是混合波形,会让不同真人质心趋同,
         // codex review #2;sherpa 上游算聚类嵌入同样排除重叠帧),再取最长几片拼接,
@@ -117,7 +124,9 @@ enum SpeakerCountEstimator {
             for piece in pieces {
                 if ranges.count >= centroidMaxSegments || budget <= 0 { break }
                 let duration = piece.1 - piece.0
-                if duration < centroidMinSegmentDuration && !ranges.isEmpty { break }
+                // 片段一律 ≥ 下限(降序排列,首个不足即可停):
+                // 重叠剔除后的碎片声纹不可靠,宁可无质心按独立簇计(codex 二审 #3)
+                if duration < centroidMinSegmentDuration { break }
                 ranges.append((piece.0, piece.0 + Swift.min(duration, budget)))
                 budget -= Swift.min(duration, budget)
             }

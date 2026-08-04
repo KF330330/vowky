@@ -122,14 +122,15 @@ final class SpeakerCountEstimatorTests: XCTestCase {
     }
 
     func test12_centroidMerge_collapsesSplitSpeaker() {
-        // 4 个大簇都过门槛过地板,但 0/1 与 2/3 分别是同一真人被拆(质心距 ≈0)→ 2
+        // 长录音(并集 80s):4 个大簇都过门槛过地板,但 0/1 与 2/3 分别是
+        // 同一真人被拆(质心距 ≈0)→ 2
         let segments = [
-            seg(0, 6, 0), seg(10, 16, 1), seg(20, 26, 2), seg(30, 36, 3),
+            seg(0, 20, 0), seg(30, 50, 1), seg(60, 80, 2), seg(90, 110, 3),
         ]
         let vectors: [Int: [Float]] = [
             0: [1, 0], 1: [0.995, 0.1], 2: [0, 1], 3: [0.1, 0.995],
         ]
-        let embed = embedder(vectors, startToSpk: [0: 0, 10: 1, 20: 2, 30: 3])
+        let embed = embedder(vectors, startToSpk: [0: 0, 30: 1, 60: 2, 90: 3])
         XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
     }
 
@@ -175,8 +176,8 @@ final class SpeakerCountEstimatorTests: XCTestCase {
     }
 
     func test16_embeddingFailure_fallsBackToDurationOnly() {
-        // 嵌入提取失败(闭包返回 nil):退化为纯时长判据,不合并不保护
-        let segments = [seg(0, 6, 0), seg(10, 16, 1)]
+        // 长录音上嵌入提取失败(闭包返回 nil):退化为纯时长判据,不合并
+        let segments = [seg(0, 40, 0), seg(50, 90, 1)]
         let result = SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: { _ in nil })
         XCTAssertEqual(result, 2)
     }
@@ -198,38 +199,39 @@ final class SpeakerCountEstimatorTests: XCTestCase {
     }
 
     func test19_centroidSampling_excludesOverlapWithOtherClusters() {
-        // 簇 0=(0,10) 簇 1=(5,15) 重叠 5s:各自质心只取非重叠部分(混合波形会让质心趋同)
-        let segments = [seg(0, 10, 0), seg(5, 15, 1)]
+        // 簇 0=(0,40) 簇 1=(35,75) 重叠 5s(并集 75s):各自质心只取非重叠部分
+        // (混合波形会让质心趋同),且按 15s 预算截断
+        let segments = [seg(0, 40, 0), seg(35, 75, 1)]
         var recorded: [[(Double, Double)]] = []
         let embed: ([(Double, Double)]) -> [Float]? = { ranges in
             recorded.append(ranges)
-            return ranges.first!.0 < 5 ? [1, 0] : [0, 1]
+            return ranges.first!.0 < 35 ? [1, 0] : [0, 1]
         }
         XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
         let flat = recorded.flatMap { $0 }.sorted { $0.0 < $1.0 }
         XCTAssertEqual(flat.count, 2)
         XCTAssertEqual(flat[0].0, 0, accuracy: 0.001)
-        XCTAssertEqual(flat[0].1, 5, accuracy: 0.001)
-        XCTAssertEqual(flat[1].0, 10, accuracy: 0.001)
-        XCTAssertEqual(flat[1].1, 15, accuracy: 0.001)
+        XCTAssertEqual(flat[0].1, 15, accuracy: 0.001)   // (0,35) 截到预算 15s
+        XCTAssertEqual(flat[1].0, 40, accuracy: 0.001)
+        XCTAssertEqual(flat[1].1, 55, accuracy: 0.001)   // (40,75) 截到预算 15s
     }
 
     func test20_fullyOverlappedCluster_getsNoCentroid_notMerged() {
-        // 簇 1 完全被簇 0 覆盖:无非重叠音频 → 无质心 → 不合并(闭包若被调用会返回相同向量,
-        // 计成 1 即证明质心被误算;期望 2)
-        let segments = [seg(0, 10, 0), seg(20, 30, 0), seg(0, 10, 1)]
+        // 簇 1 完全被簇 0 覆盖(并集 100s):无非重叠音频 → 无质心 → 不合并
+        // (闭包恒返回相同向量,若质心被误算会并成 1;期望 2)
+        let segments = [seg(0, 40, 0), seg(60, 100, 0), seg(0, 40, 1)]
         let embed: ([(Double, Double)]) -> [Float]? = { _ in [1, 0] }
         XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
     }
 
     func test21_nanEmbedding_treatedAsExtractionFailure() {
         // 保留簇嵌入含 NaN:视为提取失败(该簇不参与合并按独立计),不得让距离计算被 NaN 污染。
-        // 三个保留簇:0/1 向量相同应合并,2 为 NaN → 2(若 NaN 被放行,行为未定义)
-        let segments = [seg(0, 6, 0), seg(10, 16, 1), seg(20, 26, 2)]
+        // 长录音(并集 60s)三个保留簇:0/1 向量相同应合并,2 为 NaN → 2(若 NaN 被放行,行为未定义)
+        let segments = [seg(0, 20, 0), seg(30, 50, 1), seg(60, 80, 2)]
         let vectors: [Int: [Float]] = [
             0: [1, 0, 0], 1: [0.995, 0.1, 0], 2: [Float.nan, 0, 1],
         ]
-        let embed = embedder(vectors, startToSpk: [0: 0, 10: 1, 20: 2])
+        let embed = embedder(vectors, startToSpk: [0: 0, 30: 1, 60: 2])
         XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
     }
 
@@ -244,6 +246,39 @@ final class SpeakerCountEstimatorTests: XCTestCase {
         }
         segments.append(seg(40, 41.0, 1))
         XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments), 2)
+    }
+
+    // MARK: - codex 二审修复(2026-08-04):并集时长/短录音不合并/碎片不提声纹
+
+    func test23_overlapDoesNotInflateSpanPastActivation() {
+        // codex 二审 #2 场景:59s 主簇 + 与其重叠的 2.5s 真人簇,各簇累加 61.5s 会虚高
+        // 翻过 60s 门槛 → 地板 3.1s 淘汰真人;并集时长 59s < 60s → 地板不启用 → 2
+        let segments = [seg(0, 59, 0), seg(10, 12.5, 1)]
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments), 2)
+    }
+
+    func test24_shortRecording_centroidMergeDisabled() {
+        // 短录音(并集 40s):质心合并与地板同门槛,不启用——闭包不得被调用,
+        // 即便两簇向量相同也不合并 → 2
+        let segments = [seg(0, 20, 0), seg(30, 50, 1)]
+        var called = 0
+        let embed: ([(Double, Double)]) -> [Float]? = { _ in
+            called += 1
+            return [1, 0]
+        }
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
+        XCTAssertEqual(called, 0, "短录音不得触发质心提取")
+    }
+
+    func test25_subSecondPiecesAfterOverlapRemoval_noCentroid() {
+        // codex 二审 #3:簇 1 过门槛(原段 2.0s)但重叠剔除后仅剩 0.9s 碎片——
+        // 碎片声纹不可靠,不得提质心;闭包恒同向量,若碎片被提会并成 1 → 期望 2
+        let segments = [
+            seg(0, 40, 0), seg(50, 71, 0),            // 并集 61.9s,门槛启用
+            seg(38.9, 40.9, 1), seg(58.9, 60.9, 1),   // 剔除重叠后仅 (40,40.9)=0.9s
+        ]
+        let embed: ([(Double, Double)]) -> [Float]? = { _ in [1, 0] }
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
     }
 
     func test17_shortRecordingBehaviorUnchangedByFloor() {
