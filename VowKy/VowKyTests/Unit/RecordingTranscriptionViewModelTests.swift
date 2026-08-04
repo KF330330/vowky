@@ -202,6 +202,49 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(content.contains("[00:05] 第二句字幕"), content)
     }
 
+    // MARK: - 字幕开关持久化（persist 参数）
+
+    /// 该键读写走真实 UserDefaults.standard（VM 无注入缝），测试须快照并恢复原值。
+    private func snapshotSubtitleEnabledKey() {
+        let key = SubtitleDefaults.enabled
+        let original = UserDefaults.standard.object(forKey: key)
+        addTeardownBlock {
+            if let original {
+                UserDefaults.standard.set(original, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+    }
+
+    func testSetSubtitleEnabledWithoutPersist_doesNotWriteDefaults() {
+        snapshotSubtitleEnabledKey()
+        UserDefaults.standard.set(false, forKey: SubtitleDefaults.enabled)
+        let viewModel = makeViewModel()
+
+        viewModel.setSubtitleEnabled(true, persist: false)
+
+        XCTAssertTrue(viewModel.subtitleEnabled, "会话内开关应生效")
+        XCTAssertEqual(
+            UserDefaults.standard.object(forKey: SubtitleDefaults.enabled) as? Bool, false,
+            "persist:false（E2E 钩子路径）绝不能污染用户的「记住上次选择」"
+        )
+    }
+
+    func testSetSubtitleEnabledDefault_persistsUserChoice() {
+        snapshotSubtitleEnabledKey()
+        UserDefaults.standard.set(false, forKey: SubtitleDefaults.enabled)
+        let viewModel = makeViewModel()
+
+        viewModel.setSubtitleEnabled(true)
+
+        XCTAssertTrue(viewModel.subtitleEnabled)
+        XCTAssertEqual(
+            UserDefaults.standard.object(forKey: SubtitleDefaults.enabled) as? Bool, true,
+            "用户路径（默认 persist:true）应记住选择——守住记忆行为不被误删"
+        )
+    }
+
     // MARK: - 暂停/继续
 
     func testPauseFromRecordingEntersPausedAndPausesRecorder() async throws {

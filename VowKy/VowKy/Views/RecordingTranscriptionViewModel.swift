@@ -184,8 +184,8 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         self.analyzerAutoFinalPassProvider = analyzerAutoFinalPassProvider ?? { nil }
     }
 
-    /// 生产用 auto 模式终稿上下文——默认全自动策略下的唯一极速终稿入口
-    /// （2026-08-02 用户拍板：无引擎/语言选择 UI；分离开启恒 SenseVoice 的互锁在 autoPolicyActive 内生效）。
+    /// 生产用 auto 模式终稿上下文——快速模式下的唯一极速终稿入口
+    /// （2026-08-04 用户拍板：默认标准速度恒本地，设置页可切快速；分离开启恒 SenseVoice 的互锁在 autoPolicyActive 内生效）。
     /// 路由输入是本地引擎终稿文本（SA 替换前已在手），检测零成本。
     /// 固定 locale 的 analyzerFinalPassFactory 注入缝仅测试使用，生产不再注入。
     static func liveAnalyzerAutoFinalPassProvider() -> () -> AnalyzerAutoFinalPassContext? {
@@ -713,9 +713,12 @@ final class RecordingTranscriptionViewModel: ObservableObject {
 
     // MARK: - 字幕浮窗
 
-    func setSubtitleEnabled(_ enabled: Bool) {
+    /// persist=false：仅会话内生效不写盘（Debug E2E 钩子用，避免污染用户的「记住上次选择」）。
+    func setSubtitleEnabled(_ enabled: Bool, persist: Bool = true) {
         subtitleEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: SubtitleDefaults.enabled)
+        if persist {
+            UserDefaults.standard.set(enabled, forKey: SubtitleDefaults.enabled)
+        }
         syncSubtitle()
     }
 

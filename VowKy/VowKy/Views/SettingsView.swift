@@ -198,6 +198,7 @@ struct SettingsView: View {
     @State private var autoCopyToClipboard = UserDefaults.standard.bool(forKey: "autoCopyToClipboard")
     @State private var urlCookieSource: String = UserDefaults.standard.string(forKey: FileTranscriptionViewModel.cookieSourceDefaultsKey) ?? "none"
     @State private var urlSubtitlePriority: String = UserDefaults.standard.string(forKey: FileTranscriptionViewModel.subtitlePriorityDefaultsKey) ?? "all"
+    @State private var speechSpeedMode: SpeechSpeedMode = SpeechEngineConfigStore.loadSpeedMode()
     @State private var automaticUpdateChecks: Bool = {
         let defaults = UserDefaults.standard
         if defaults.object(forKey: VowKyApp.automaticUpdateChecksDefaultsKey) == nil {
@@ -274,8 +275,24 @@ struct SettingsView: View {
                 }
             }
 
-            // 识别引擎/语言不再暴露任何选择（2026-08-02 用户拍板「一切默认自动」）：
-            // macOS 26+ 自动用极速+本地混合策略（按说话内容自动切语言、混说自动本地），旧系统自动本地引擎。
+            // 识别速度（2026-08-04 用户拍板：默认标准速度=恒本地，快速模式 opt-in）。
+            // macOS <26 无极速引擎、两档物理等价，整区隐藏（维持旧系统无引擎 UI 的现状）。
+            if SpeechEngineConfigStore.speechAnalyzerRuntimeAvailable {
+                Section(loc.string("settings.section.speechMode")) {
+                    Picker(loc.string("settings.speechMode.picker"), selection: $speechSpeedMode) {
+                        Text(loc.string("settings.speechMode.standard")).tag(SpeechSpeedMode.standard)
+                        Text(loc.string("settings.speechMode.fast")).tag(SpeechSpeedMode.fast)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: speechSpeedMode) { newValue in
+                        SpeechEngineConfigStore.saveSpeedMode(newValue)
+                    }
+                    Text(loc.string("settings.speechMode.hint"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
 
             // Permissions
             Section(loc.string("settings.section.permissions")) {

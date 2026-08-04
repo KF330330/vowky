@@ -557,3 +557,10 @@
 "recording.note.analyzerFallback" = "Fast-engine transcript failed; local engine transcript used";
 "recording.note.autoMixedKeptLocal" = "Mixed languages detected; local engine transcript used for this recording";
 "diarization.note.subtitleSource" = "Platform subtitles used; no speaker separation";
+
+/* ===== Recognition speed mode (2026-08-04) ===== */
+"settings.section.speechMode" = "Recognition Speed";
+"settings.speechMode.picker" = "Engine mode";
+"settings.speechMode.standard" = "Standard speed";
+"settings.speechMode.fast" = "Fast";
+"settings.speechMode.hint" = "Standard speed: local engine with higher accuracy. Fast: much faster transcription with slightly lower accuracy. Transcriptions with speaker separation always use the local engine regardless of this setting.";

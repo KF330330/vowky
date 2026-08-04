@@ -74,8 +74,8 @@ final class AppState: ObservableObject {
         self.analyzerAutoDictationProvider = analyzerAutoDictationProvider ?? { nil }
     }
 
-    /// 生产用 auto 模式听写上下文（lazy sticky）——默认全自动策略下的唯一听写极速入口
-    /// （2026-08-02 用户拍板：无引擎/语言选择 UI，SA 可用即自动生效）。
+    /// 生产用 auto 模式听写上下文（lazy sticky）——快速模式下的唯一听写极速入口
+    /// （2026-08-04 用户拍板：默认标准速度恒本地，设置页切快速后 SA 可用即生效）。
     /// SA 实例按 locale 字典缓存（至多四候选）；sticky 存 UserDefaults（跨启动保留）。
     /// installedLocales 只在后台检测/回落路径消费（不在极速出字关键路径），每次现查不缓存。
     static func liveAnalyzerAutoDictationProvider() -> () -> AnalyzerAutoDictationContext? {
@@ -217,7 +217,7 @@ final class AppState: ObservableObject {
     private func setupDebugRecordingHooks() {
         let center = DistributedNotificationCenter.default()
         let pairs: [(String, (RecordingTranscriptionViewModel) -> Void)] = [
-            ("com.vowky.debug.recording.start", { $0.setSubtitleEnabled(true); $0.start() }),
+            ("com.vowky.debug.recording.start", { $0.setSubtitleEnabled(true, persist: false); $0.start() }),
             ("com.vowky.debug.recording.stop", { $0.stop() }),
             ("com.vowky.debug.recording.cancel", { $0.cancel() }),
         ]
@@ -598,8 +598,8 @@ final class AppState: ObservableObject {
         // 分离开关按任务启动瞬间快照(本工厂每个任务调一次);模型缺失时静默视为关闭(UI 侧开关也会禁用)。
         let diarizationOn = DiarizationConfigStore.isFileEnabled() && DiarizationModelCatalog.availableInBundle()
 
-        // 默认全自动策略:分离开启恒 SenseVoice;macOS 26+ 自动走抽样检测包装器
-        // (头/中/尾窗探测语言,单语言极速全量,混说回落本地切块),无需用户选择。
+        // 引擎策略:分离开启恒 SenseVoice;快速模式(macOS 26+,设置页 opt-in)走抽样检测包装器
+        // (头/中/尾窗探测语言,单语言极速全量,混说回落本地切块);默认标准速度恒本地。
         #if compiler(>=6.2)
         if #available(macOS 26.0, *),
            SpeechEngineConfigStore.autoPolicyActive(diarizationOn: diarizationOn) {

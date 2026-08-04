@@ -129,15 +129,71 @@ final class SpeechEngineConfigTests: XCTestCase {
                        SpeechEngineConfigStore.defaultAnalyzerLocale())
     }
 
-    // MARK: - 默认全自动策略（2026-08-02：设置页无引擎/语言选择）
+    // MARK: - 引擎速度模式策略（2026-08-04：默认标准速度，快速 opt-in）
 
-    func test13_autoPolicyActive_followsRuntimeAndDiarizationInterlock() {
+    func test13_autoPolicyActive_fastModeFollowsRuntimeAndDiarizationInterlock() {
+        // 用户选快速模式（只读新 speech.mode，不读遗留 speech.engine）
+        SpeechEngineConfigStore.saveSpeedMode(.fast, defaults: defaults)
         // 分离开启恒 false（互锁复用 resolve）
-        XCTAssertFalse(SpeechEngineConfigStore.autoPolicyActive(diarizationOn: true))
-        // 分离关时只看运行时可用性——不读任何存储的引擎/语言设置（遗留值被忽略）
+        XCTAssertFalse(SpeechEngineConfigStore.autoPolicyActive(diarizationOn: true, defaults: defaults))
+        // 分离关时只看运行时可用性
         XCTAssertEqual(
-            SpeechEngineConfigStore.autoPolicyActive(diarizationOn: false),
+            SpeechEngineConfigStore.autoPolicyActive(diarizationOn: false, defaults: defaults),
             SpeechEngineConfigStore.speechAnalyzerRuntimeAvailable
         )
+    }
+
+    func test14_speedMode_defaultIsStandard_garbageFallsBack_roundTrip() {
+        // 未存 → standard（2026-08-04 拍板：默认恒本地，准确率优先）
+        XCTAssertEqual(SpeechEngineConfigStore.loadSpeedMode(defaults: defaults), .standard)
+        // 垃圾值 → standard
+        defaults.set("turbo", forKey: SpeechEngineConfigStore.Keys.speedMode)
+        XCTAssertEqual(SpeechEngineConfigStore.loadSpeedMode(defaults: defaults), .standard)
+        // save/load 往返
+        SpeechEngineConfigStore.saveSpeedMode(.fast, defaults: defaults)
+        XCTAssertEqual(SpeechEngineConfigStore.loadSpeedMode(defaults: defaults), .fast)
+        SpeechEngineConfigStore.saveSpeedMode(.standard, defaults: defaults)
+        XCTAssertEqual(SpeechEngineConfigStore.loadSpeedMode(defaults: defaults), .standard)
+    }
+
+    func test15_resolveAutoPolicy_standardAlwaysLocal() {
+        // 标准速度模式恒本地——即使 SA 可用且分离关
+        XCTAssertFalse(SpeechEngineConfigStore.resolveAutoPolicy(
+            mode: .standard, speechAnalyzerAvailable: true, diarizationOn: false))
+    }
+
+    func test16_resolveAutoPolicy_fastFollowsAvailabilityAndInterlock() {
+        XCTAssertTrue(SpeechEngineConfigStore.resolveAutoPolicy(
+            mode: .fast, speechAnalyzerAvailable: true, diarizationOn: false))
+        XCTAssertFalse(SpeechEngineConfigStore.resolveAutoPolicy(
+            mode: .fast, speechAnalyzerAvailable: false, diarizationOn: false))
+        XCTAssertFalse(SpeechEngineConfigStore.resolveAutoPolicy(
+            mode: .fast, speechAnalyzerAvailable: true, diarizationOn: true))
+    }
+
+    func test17_autoPolicyActive_defaultStandardAlwaysFalse() {
+        // 未存 speech.mode（新装/存量升级用户）→ 默认标准速度 → 策略恒关，不受运行时可用性影响
+        XCTAssertFalse(SpeechEngineConfigStore.autoPolicyActive(diarizationOn: false, defaults: defaults))
+        defaults.set(SpeechSpeedMode.standard.rawValue, forKey: SpeechEngineConfigStore.Keys.speedMode)
+        XCTAssertFalse(SpeechEngineConfigStore.autoPolicyActive(diarizationOn: false, defaults: defaults))
+    }
+
+    func test18_saveSpeedModeFast_clearsSenseVoiceStickySentinelOnly() {
+        // sticky 停在「恒本地」哨兵 → 切快速时清掉（回落默认 locale）
+        SpeechEngineConfigStore.saveAutoStickyLocale(
+            SpeechEngineConfigStore.autoStickySenseVoiceValue, defaults: defaults)
+        SpeechEngineConfigStore.saveSpeedMode(.fast, defaults: defaults)
+        XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults),
+                       SpeechEngineConfigStore.defaultAnalyzerLocale())
+        // sticky 是语言记忆 → 保留
+        SpeechEngineConfigStore.saveAutoStickyLocale("ja-JP", defaults: defaults)
+        SpeechEngineConfigStore.saveSpeedMode(.fast, defaults: defaults)
+        XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults), "ja-JP")
+        // 切标准不清 sticky
+        SpeechEngineConfigStore.saveAutoStickyLocale(
+            SpeechEngineConfigStore.autoStickySenseVoiceValue, defaults: defaults)
+        SpeechEngineConfigStore.saveSpeedMode(.standard, defaults: defaults)
+        XCTAssertEqual(SpeechEngineConfigStore.autoStickyLocale(defaults: defaults),
+                       SpeechEngineConfigStore.autoStickySenseVoiceValue)
     }
 }

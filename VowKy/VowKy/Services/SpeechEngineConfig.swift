@@ -29,6 +29,15 @@ enum AnalyzerLocaleMode: Equatable {
     case fixed(String)
 }
 
+/// 引擎速度模式（2026-08-04 用户拍板，默认标准速度=准确率优先）。
+/// 新 key speech.mode；遗留 speech.engine / speech.analyzer.locale 继续不读不迁移。
+enum SpeechSpeedMode: String, CaseIterable {
+    /// 极速+本地混合（原 2026-08-02 全自动策略），用户主动 opt-in
+    case fast
+    /// 恒本地 SenseVoice（默认）
+    case standard
+}
+
 enum SpeechEngineConfigStore {
 
     enum Keys {
@@ -36,6 +45,8 @@ enum SpeechEngineConfigStore {
         static let analyzerLocale   = "speech.analyzer.locale"
         /// auto 模式的 sticky 状态（运行时状态，非用户意图，故不进 SpeechEngineConfig）
         static let autoStickyLocale = "speech.analyzer.autoLastLocale"
+        /// 引擎速度模式（fast/standard，缺省 standard）
+        static let speedMode = "speech.mode"
     }
 
     /// analyzerLocale 的「自动」哨兵值。生产消费点一律经 analyzerLocaleMode 分流，绝不直接进 Locale 构造。
@@ -90,16 +101,46 @@ enum SpeechEngineConfigStore {
         )
     }
 
-    /// 默认全自动策略（2026-08-02 用户拍板：设置页不再暴露引擎/语言选择，一切默认自动）：
-    /// SA 运行时可用且分离关 → auto 模式（极速+本地混合，lazy sticky/终稿路由/文件抽样）；否则本地引擎。
-    /// 存量 speech.engine / speech.analyzer.locale 视为遗留值，live 层不再读取（sticky 键继续使用）。
-    /// 复用 resolve 保住分离互锁语义。
-    static func autoPolicyActive(diarizationOn: Bool) -> Bool {
-        resolve(
+    /// 引擎速度模式（2026-08-04 用户拍板：默认标准速度=恒本地，设置页可切快速）。
+    /// 缺省/非法值 → standard；存量 speech.engine / speech.analyzer.locale 仍为遗留值不读。
+    static func loadSpeedMode(defaults: UserDefaults = .standard) -> SpeechSpeedMode {
+        defaults.string(forKey: Keys.speedMode).flatMap(SpeechSpeedMode.init(rawValue:)) ?? .standard
+    }
+
+    static func saveSpeedMode(_ mode: SpeechSpeedMode, defaults: UserDefaults = .standard) {
+        defaults.set(mode.rawValue, forKey: Keys.speedMode)
+        // 切到快速时：sticky 若停在「恒本地」哨兵则清掉，让下一句立即回极速
+        // （不清也会在下一个单语言句自愈；只清哨兵、保留 ja-JP 等语言记忆）。
+        if mode == .fast,
+           defaults.string(forKey: Keys.autoStickyLocale) == autoStickySenseVoiceValue {
+            defaults.removeObject(forKey: Keys.autoStickyLocale)
+        }
+    }
+
+    /// 纯函数版策略裁决（供单测；#available 不可 mock）：
+    /// standard 恒 false（本地引擎）；fast 复用 resolve 保住分离互锁语义。
+    static func resolveAutoPolicy(
+        mode: SpeechSpeedMode,
+        speechAnalyzerAvailable: Bool,
+        diarizationOn: Bool
+    ) -> Bool {
+        guard mode == .fast else { return false }
+        return resolve(
             stored: .speechAnalyzer,
-            speechAnalyzerAvailable: speechAnalyzerRuntimeAvailable,
+            speechAnalyzerAvailable: speechAnalyzerAvailable,
             diarizationOn: diarizationOn
         ) == .speechAnalyzer
+    }
+
+    /// 生产策略点（三注入点唯一上游：听写 provider / 录音终稿 / 文件转录工厂）：
+    /// 用户选快速且 SA 运行时可用且分离关 → auto 模式（极速+本地混合，lazy sticky/终稿路由/文件抽样）；
+    /// 其余（含默认标准速度）恒本地引擎。
+    static func autoPolicyActive(diarizationOn: Bool, defaults: UserDefaults = .standard) -> Bool {
+        resolveAutoPolicy(
+            mode: loadSpeedMode(defaults: defaults),
+            speechAnalyzerAvailable: speechAnalyzerRuntimeAvailable,
+            diarizationOn: diarizationOn
+        )
     }
 
     /// 默认转录语言：跟随 app 界面语言映射。

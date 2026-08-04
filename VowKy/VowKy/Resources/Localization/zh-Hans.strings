@@ -557,3 +557,10 @@
 "recording.note.analyzerFallback" = "极速引擎终稿失败，已使用本地引擎文稿";
 "recording.note.autoMixedKeptLocal" = "检测到多语言混说，本次使用本地引擎文稿";
 "diarization.note.subtitleSource" = "已用平台字幕，未做说话人分离";
+
+/* ===== Recognition speed mode (2026-08-04) ===== */
+"settings.section.speechMode" = "识别速度";
+"settings.speechMode.picker" = "引擎模式";
+"settings.speechMode.standard" = "标准速度模式";
+"settings.speechMode.fast" = "快速模式";
+"settings.speechMode.hint" = "标准速度模式：本地引擎，准确率更高。快速模式：转换速度极快，准确率相对差一点点。开启说话人分离的转写始终使用本地引擎，不受此设置影响。";

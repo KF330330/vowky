@@ -19,8 +19,8 @@ struct VowKyApp: App {
         audioRecorder: AudioRecorder(),
         permissionChecker: RealPermissionChecker(),
         backupService: AudioBackupService(),
-        // 听写全自动策略（macOS 26+ 自动生效，无需用户选择；lazy sticky，检测只影响下一句；
-        // 失败自动回落 SenseVoice）。固定 locale 注入缝仅测试使用，生产不再注入。
+        // 听写极速入口（快速模式 opt-in 且 macOS 26+ 才生效，默认标准速度恒本地；lazy sticky，
+        // 检测只影响下一句；失败自动回落 SenseVoice）。固定 locale 注入缝仅测试使用，生产不再注入。
         analyzerAutoDictationProvider: AppState.liveAnalyzerAutoDictationProvider()
     )
 
