@@ -33,7 +33,15 @@ final class SpeechAnalyzerSpeechRecognizer: SpeechRecognizerProtocol {
     }
 
     func recognize(samples: [Float], sampleRate: Int) async -> String? {
-        guard !samples.isEmpty else { return "" }
+        await recognizeWithConfidence(samples: samples, sampleRate: sampleRate)?.text
+    }
+
+    /// 带置信度的识别(B2 取数管道)。返回契约同 recognize:nil=infra 失败,text=""=无语音。
+    /// confidence=nil 表示引擎未给出置信度属性(不作任何回落判断依据)。
+    func recognizeWithConfidence(
+        samples: [Float], sampleRate: Int
+    ) async -> (text: String, confidence: SpeechConfidenceStats?)? {
+        guard !samples.isEmpty else { return ("", nil) }
         guard await SpeechAnalyzerAssetStatus.isInstalled(localeIdentifier) else {
             assetReady = false
             NSLog("[VowKy][SpeechAnalyzer] 听写：语音资产未安装(\(localeIdentifier))，回落本地引擎")
@@ -45,17 +53,30 @@ final class SpeechAnalyzerSpeechRecognizer: SpeechRecognizerProtocol {
             locale: Locale(identifier: localeIdentifier),
             transcriptionOptions: [],
             reportingOptions: [],
-            attributeOptions: []
+            attributeOptions: [.transcriptionConfidence, .audioTimeRange]
         )
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let analysisFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
 
-        let collectTask = Task<String, Error> {
+        let collectTask = Task<(String, [(Double, Double)]), Error> {
             var parts: [String] = []
+            var runs: [(Double, Double)] = []
             for try await result in transcriber.results where result.isFinal {
                 parts.append(String(result.text.characters))
+                for run in result.text.runs {
+                    guard let confidence = run.transcriptionConfidence else { continue }
+                    // 权重取 run 覆盖的音频时长;缺时间属性按字符数折算(0.2s/字符量级即可,
+                    // 聚合只关心相对权重)
+                    let weight: Double
+                    if let range = run.audioTimeRange {
+                        weight = max(0, range.duration.seconds)
+                    } else {
+                        weight = Double(result.text[run.range].characters.count) * 0.2
+                    }
+                    runs.append((confidence, weight))
+                }
             }
-            return parts.joined()
+            return (parts.joined(), runs)
         }
 
         do {
@@ -74,9 +95,15 @@ final class SpeechAnalyzerSpeechRecognizer: SpeechRecognizerProtocol {
             inputBuilder.yield(AnalyzerInput(buffer: buffer))
             inputBuilder.finish()
             try await analyzer.finalizeAndFinishThroughEndOfInput()
-            let text = try await collectTask.value
-            return SpeechAnalyzerTextCleaner.clean(text)
+            let (rawText, runs) = try await collectTask.value
+            let text = SpeechAnalyzerTextCleaner.clean(rawText)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            let stats = SpeechConfidenceAggregator.aggregate(runs)
+            if let stats {
+                NSLog("[VowKy][SpeechAnalyzer] confidence(\(localeIdentifier)): mean=%.3f p10=%.3f weight=%.1fs chars=\(text.count)",
+                      stats.mean, stats.p10, stats.totalWeight)
+            }
+            return (text, stats)
         } catch {
             collectTask.cancel()
             await analyzer.cancelAndFinishNow()

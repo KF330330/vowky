@@ -133,9 +133,10 @@ final class SpeakerCountEstimatorTests: XCTestCase {
         XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
     }
 
-    func test13_smallClusterProtection_countsDistantQuietSpeaker() {
-        // 长录音:两个大簇(不同人) + 一个被地板剔除的小簇(有 2.5s 可信长段,
-        // 质心与两个大簇正交=很远)→ 少发言真人,计入 → 3
+    func test13_droppedDistantSmallCluster_isNotResurrected() {
+        // 长录音:两个大簇 + 一个被地板剔除、质心与两大簇都远的小簇。
+        // 「小簇保护」已否决(实测真人 0.59 与噪声簇 0.68 区间倒挂,保护只会造幻影):
+        // 被剔除簇一律交第二遍吞并 → 2;安静真人由 UI 手动人数选项兜底
         let segments =
             cluster(0, at: 0, longest: 8, total: 300)
             + cluster(1, at: 700, longest: 6, total: 280)
@@ -144,7 +145,7 @@ final class SpeakerCountEstimatorTests: XCTestCase {
             0: [1, 0, 0], 1: [0, 1, 0], 2: [0, 0, 1],
         ]
         let embed = embedder(vectors, startToSpk: [0: 0, 700: 1, 1400: 2])
-        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 3)
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
     }
 
     func test14_smallClusterNearKeptCentroid_isAbsorbed() {
@@ -160,8 +161,8 @@ final class SpeakerCountEstimatorTests: XCTestCase {
         XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
     }
 
-    func test15_twoProtectedClustersSameVoice_countOnce() {
-        // 两个被剔除小簇同属一个安静真人(彼此质心 ≈0 距离)→ 只计一次 → 3
+    func test15_multipleDroppedClusters_neverInflateEstimate() {
+        // 多个被剔除小簇(无论质心多远)都不增加估计值:估计只由保留簇合并结果决定 → 2
         let segments =
             cluster(0, at: 0, longest: 8, total: 300)
             + cluster(1, at: 700, longest: 6, total: 280)
@@ -170,7 +171,7 @@ final class SpeakerCountEstimatorTests: XCTestCase {
             0: [1, 0, 0], 1: [0, 1, 0], 2: [0, 0, 1], 3: [0, 0.1, 0.995],
         ]
         let embed = embedder(vectors, startToSpk: [0: 0, 700: 1, 1400: 2, 1500: 3])
-        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 3)
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
     }
 
     func test16_embeddingFailure_fallsBackToDurationOnly() {
@@ -178,6 +179,71 @@ final class SpeakerCountEstimatorTests: XCTestCase {
         let segments = [seg(0, 6, 0), seg(10, 16, 1)]
         let result = SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: { _ in nil })
         XCTAssertEqual(result, 2)
+    }
+
+    // MARK: - codex review 修复(2026-08-04):取样上限/重叠排除/NaN/短录音地板
+
+    func test18_centroidSampling_respectsBudgetCap() {
+        // 单段 100s 的超长独白簇:送提取的音频总时长必须 ≤ 15s(截断,不整段灌入)
+        let segments = [seg(0, 100, 0), seg(200, 210, 1)]
+        var requested: [Double] = []
+        let embed: ([(Double, Double)]) -> [Float]? = { ranges in
+            requested.append(ranges.reduce(0) { $0 + ($1.1 - $1.0) })
+            return ranges.first!.0 < 100 ? [1, 0] : [0, 1]
+        }
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
+        for total in requested {
+            XCTAssertLessThanOrEqual(total, SpeakerCountEstimator.centroidMaxTotalDuration + 0.001)
+        }
+    }
+
+    func test19_centroidSampling_excludesOverlapWithOtherClusters() {
+        // 簇 0=(0,10) 簇 1=(5,15) 重叠 5s:各自质心只取非重叠部分(混合波形会让质心趋同)
+        let segments = [seg(0, 10, 0), seg(5, 15, 1)]
+        var recorded: [[(Double, Double)]] = []
+        let embed: ([(Double, Double)]) -> [Float]? = { ranges in
+            recorded.append(ranges)
+            return ranges.first!.0 < 5 ? [1, 0] : [0, 1]
+        }
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
+        let flat = recorded.flatMap { $0 }.sorted { $0.0 < $1.0 }
+        XCTAssertEqual(flat.count, 2)
+        XCTAssertEqual(flat[0].0, 0, accuracy: 0.001)
+        XCTAssertEqual(flat[0].1, 5, accuracy: 0.001)
+        XCTAssertEqual(flat[1].0, 10, accuracy: 0.001)
+        XCTAssertEqual(flat[1].1, 15, accuracy: 0.001)
+    }
+
+    func test20_fullyOverlappedCluster_getsNoCentroid_notMerged() {
+        // 簇 1 完全被簇 0 覆盖:无非重叠音频 → 无质心 → 不合并(闭包若被调用会返回相同向量,
+        // 计成 1 即证明质心被误算;期望 2)
+        let segments = [seg(0, 10, 0), seg(20, 30, 0), seg(0, 10, 1)]
+        let embed: ([(Double, Double)]) -> [Float]? = { _ in [1, 0] }
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
+    }
+
+    func test21_nanEmbedding_treatedAsExtractionFailure() {
+        // 保留簇嵌入含 NaN:视为提取失败(该簇不参与合并按独立计),不得让距离计算被 NaN 污染。
+        // 三个保留簇:0/1 向量相同应合并,2 为 NaN → 2(若 NaN 被放行,行为未定义)
+        let segments = [seg(0, 6, 0), seg(10, 16, 1), seg(20, 26, 2)]
+        let vectors: [Int: [Float]] = [
+            0: [1, 0, 0], 1: [0.995, 0.1, 0], 2: [Float.nan, 0, 1],
+        ]
+        let embed = embedder(vectors, startToSpk: [0: 0, 10: 1, 20: 2])
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments, embeddingForRanges: embed), 2)
+    }
+
+    func test22_shortRecording_floorInactive_keepsQuietSpeaker() {
+        // codex #4 场景:22s 短句对话,主说话人 15×1.4s(总 21s),少发言真人单段 1.0s。
+        // 地板若启用会是 1.1s > 1.0s 淘汰真人;60s 以下地板恒 0,旧行为=2
+        var segments: [DiarizeSegmentDTO] = []
+        var cursor: Double = 0
+        for _ in 0..<15 {
+            segments.append(seg(cursor, cursor + 1.4, 0))
+            cursor += 2
+        }
+        segments.append(seg(40, 41.0, 1))
+        XCTAssertEqual(SpeakerCountEstimator.estimate(segments: segments), 2)
     }
 
     func test17_shortRecordingBehaviorUnchangedByFloor() {

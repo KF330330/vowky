@@ -82,17 +82,18 @@ final class AppState: ObservableObject {
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             var recognizers: [String: SpeechRecognizerProtocol] = [:]
+            let recognizerFor: (String) -> SpeechRecognizerProtocol? = { locale in
+                if let cached = recognizers[locale] { return cached }
+                let recognizer = SpeechAnalyzerSpeechRecognizer(localeIdentifier: locale)
+                recognizers[locale] = recognizer
+                return recognizer
+            }
             return {
                 guard SpeechEngineConfigStore.autoPolicyActive(diarizationOn: false) else {
                     return nil
                 }
-                return AnalyzerAutoDictationContext(
-                    recognizerForLocale: { locale in
-                        if let cached = recognizers[locale] { return cached }
-                        let recognizer = SpeechAnalyzerSpeechRecognizer(localeIdentifier: locale)
-                        recognizers[locale] = recognizer
-                        return recognizer
-                    },
+                var context = AnalyzerAutoDictationContext(
+                    recognizerForLocale: recognizerFor,
                     stickyLocale: { SpeechEngineConfigStore.autoStickyLocale() },
                     updateStickyLocale: { SpeechEngineConfigStore.saveAutoStickyLocale($0) },
                     installedLocales: {
@@ -105,6 +106,17 @@ final class AppState: ObservableObject {
                         Task { @MainActor in SpeechAnalyzerAssetAutoInstaller.requestInstall(locale) }
                     }
                 )
+                // 低置信回落取数管道：p10 由 SpeechAnalyzerSpeechRecognizer 聚合(时长加权)
+                context.recognizeWithConfidence = { locale, samples, sampleRate in
+                    guard let recognizer = recognizerFor(locale) as? SpeechAnalyzerSpeechRecognizer else {
+                        return nil
+                    }
+                    guard let result = await recognizer.recognizeWithConfidence(
+                        samples: samples, sampleRate: sampleRate
+                    ) else { return nil }
+                    return (result.text, result.confidence?.p10)
+                }
+                return context
             }
         }
         #endif

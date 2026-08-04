@@ -244,6 +244,12 @@ enum SpeechAnalyzerAudio {
     }
 }
 
+// 自定义词汇注入(AnalysisContext.contextualStrings)已实测并否决(2026-08-04):
+// macOS 26.5 上 SpeechTranscriber 不消费 contextualStrings——文件 init 传入、setContext、
+// 流式(app 同款路径)三种姿势 × 中英两语 × 同音字纠偏场景全部零效果(探针与音频归档在
+// _local/evals/2026-08-04-fast-engine/,未来 macOS 版本可直接复测)。
+// DictationTranscriber 有 customizedLanguage(自定义语言模型)通道,如需词汇功能走那条另行立项。
+
 /// 设置界面用的资产/支持性查询封装(同样受编译门控,调用方经 #if compiler(>=6.2) 访问)。
 @available(macOS 26.0, *)
 enum SpeechAnalyzerAssetStatus {

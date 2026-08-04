@@ -9,11 +9,15 @@ import Foundation
 ///
 /// 对策(两级估计,2026-08-04 升级):
 /// 1. 时长过滤:最长单段 ≥ 梯度门槛(真实说话人几乎总有长句)且簇总时长过地板
-///    (地板随录音总语音时长伸缩,短录音自动退化为无地板,保持 08-02 行为)。
-/// 2. 声纹质心合并:候选簇取最长几段音频提取 CAM++ 质心,距离近的候选簇合并计数
-///    ——解决「主说话人被拆成多个大簇都被保留」(同上游「长簇定人数」通行做法的质心版)。
-/// 3. 小簇保护:被过滤但有 ≥protectMinSegment 长段的簇,若质心距所有保留簇都很远,
-///    视为「少发言的真人」计入,不强行吞并。
+///    (地板只在长录音启用,短录音逐位保持 08-02 行为)。
+/// 2. 声纹质心合并:候选簇取最长几段音频(排除与他簇重叠的区间)提取 CAM++ 质心,
+///    距离近的候选簇合并计数——解决「主说话人被拆成多个大簇都被保留」。
+///    实测(08-04 一小时录音)同人分裂簇质心距 0.08~0.12,异人 0.84~0.87,鸿沟清晰。
+///
+/// 曾试验第三级「小簇保护」(被过滤簇质心距所有保留簇都远则计为安静真人),已否决:
+/// 实测真实安静说话人距离 0.59,而噪声/重叠假簇 0.68/0.79——区间倒挂无阈值可分,
+/// 一小时录音上保护级把 2 个噪声簇计成幻影真人并污染整体归属(464 碎段进幻影桶)。
+/// 安静少发言真人由 UI 手动「说话人数」选项兜底(该路径不走本估计器)。
 /// N 与第一遍簇数不同时,由调用方强制 num_clusters=N 重跑归属。
 enum SpeakerCountEstimator {
 
@@ -22,25 +26,20 @@ enum SpeakerCountEstimator {
     /// 假簇最长段 ≤1.47s;四人基准每簇最长段 ≥3.29s。宽档只在全篇短句时兜底。
     static let reliableDurationBars: [Double] = [2.0, 1.5, 1.0]
 
-    /// 簇总时长地板 = min(cap, share × 全部语音时长)。
-    /// 短录音 share 项趋近 0 → 地板失效(08-02 行为不变);长录音里
-    /// 总时长占比过小的过门槛簇多为漂移假簇,先过滤再交质心合并兜底。
+    /// 簇总时长地板 = min(cap, share × 全部语音时长),仅当全部语音 ≥ activation 才启用。
+    /// 地板专治长录音防饱和;短录音(如 22s 短句对话)地板可能倒挂淘汰少发言真人,
+    /// 故 60s 以下地板恒 0,逐位保持 08-02 既有行为(codex review #4)。
     /// 若地板淘汰了全部候选簇则忽略地板(绝不允许估计为 0)。
     static let durationFloorShare: Double = 0.05
     static let durationFloorCap: Double = 30.0
+    static let durationFloorActivation: Double = 60.0
 
     /// 质心合并距离(余弦距离,1−cos):候选簇质心距离 ≤ 此值视为同一真人。
-    /// 2026-08-04 校准:一小时双人录音同人跨簇质心距 ≤0.35,四人基准异人质心距 ≥0.62。
+    /// 2026-08-04 校准:一小时双人录音同人分裂簇 0.08~0.12,异人 0.84~0.87;
+    /// 四人基准异人最小 0.50;8-02 双人异人 0.67——0.45 居鸿沟中间且不误并 0.50。
     static let centroidMergeDistance: Float = 0.45
 
-    /// 小簇保护距离:被过滤簇质心距所有保留簇质心都 > 此值才算独立真人。
-    /// 取值须 ≥ centroidMergeDistance;介于两者之间视为归属不明,交第二遍吞并。
-    static let centroidProtectDistance: Float = 0.65
-
-    /// 小簇保护的最长单段下限(秒):短于此的段声纹不可信,不参与保护判定。
-    static let protectMinSegment: Double = 1.5
-
-    /// 质心取样:每簇取最长的至多 3 段(各 ≥1.0s),拼接总时长封顶 15s。
+    /// 质心取样:每簇取最长的至多 3 片(各 ≥1.0s),拼接总时长封顶 15s。
     static let centroidMaxSegments = 3
     static let centroidMinSegmentDuration: Double = 1.0
     static let centroidMaxTotalDuration: Double = 15.0
@@ -85,8 +84,10 @@ enum SpeakerCountEstimator {
         guard let bar else { return nil }
         let barPassed = clusters.filter { $0.value.longest >= bar }
 
-        // 一级:簇总时长地板(长录音防饱和;淘汰全部则忽略地板)
-        let floor = Swift.min(durationFloorCap, durationFloorShare * totalSpeech)
+        // 一级:簇总时长地板(长录音防饱和;短录音不启用;淘汰全部则忽略地板)
+        let floor = totalSpeech >= durationFloorActivation
+            ? Swift.min(durationFloorCap, durationFloorShare * totalSpeech)
+            : 0
         var kept = barPassed.filter { $0.value.total >= floor }
         if kept.isEmpty { kept = barPassed }
 
@@ -100,25 +101,37 @@ enum SpeakerCountEstimator {
         // 无嵌入注入:退化为纯时长判据
         guard let embeddingForRanges else { return kept.count }
 
-        // 质心提取(取最长几段拼接;失败的簇不参与合并,按独立计)
-        func centroid(of cluster: Cluster) -> [Float]? {
+        // 质心提取:先减去其他簇的时间区间(重叠语音是混合波形,会让不同真人质心趋同,
+        // codex review #2;sherpa 上游算聚类嵌入同样排除重叠帧),再取最长几片拼接,
+        // 按剩余预算截断(codex review #1)。全重叠/提取失败/非有限值 → 无质心:
+        // 该簇不参与合并按独立计,也不参与小簇保护(保守方向,codex review #3)。
+        func centroid(of id: Int, _ cluster: Cluster) -> [Float]? {
+            let others = mergeIntervals(segments.filter { $0.spk != id }.map { ($0.s, $0.e) })
+            var pieces: [(Double, Double)] = []
+            for range in cluster.segments {
+                pieces.append(contentsOf: subtract(range, others))
+            }
+            pieces.sort { ($0.1 - $0.0) > ($1.1 - $1.0) }
             var ranges: [(Double, Double)] = []
             var budget = centroidMaxTotalDuration
-            for range in cluster.segments.sorted(by: { ($0.1 - $0.0) > ($1.1 - $1.0) }) {
-                let duration = range.1 - range.0
+            for piece in pieces {
                 if ranges.count >= centroidMaxSegments || budget <= 0 { break }
+                let duration = piece.1 - piece.0
                 if duration < centroidMinSegmentDuration && !ranges.isEmpty { break }
-                ranges.append(range)
-                budget -= duration
+                ranges.append((piece.0, piece.0 + Swift.min(duration, budget)))
+                budget -= Swift.min(duration, budget)
             }
-            guard !ranges.isEmpty, let embedding = embeddingForRanges(ranges), !embedding.isEmpty else { return nil }
+            guard !ranges.isEmpty,
+                  let embedding = embeddingForRanges(ranges),
+                  !embedding.isEmpty,
+                  embedding.allSatisfy(\.isFinite) else { return nil }
             return embedding
         }
 
         let keptIDs = kept.keys.sorted()
         var centroids: [Int: [Float]] = [:]
         for id in keptIDs {
-            centroids[id] = centroid(of: kept[id]!)
+            centroids[id] = centroid(of: id, kept[id]!)
         }
 
         // 二级:保留簇质心 union-find 合并
@@ -140,27 +153,42 @@ enum SpeakerCountEstimator {
             }
         }
         let mergedRoots = Set(keptIDs.map(root))
-        var estimated = mergedRoots.count
+        let estimated = mergedRoots.count
         log?("merged: \(kept.count) kept -> \(estimated) speakers")
+        return estimated
+    }
 
-        // 三级:小簇保护——被过滤但有可信长段、且距所有保留簇质心都远的簇,计为独立真人。
-        // 保护簇之间也可能同人:彼此距离 ≤ 合并距离的只计一次。
-        let keptCentroids = keptIDs.compactMap { centroids[$0] }
-        var protectedCentroids: [[Float]] = []
-        for (id, cluster) in clusters.sorted(by: { $0.key < $1.key }) {
-            guard kept[id] == nil, cluster.longest >= protectMinSegment else { continue }
-            guard let c = centroid(of: cluster) else { continue }
-            let minDistance = keptCentroids.map { cosineDistance(c, $0) }.min() ?? 2
-            log?("protect? cluster \(id): minDistToKept=\(f2(minDistance)) \(minDistance > centroidProtectDistance ? "FAR" : "near, absorbed")")
-            guard minDistance > centroidProtectDistance else { continue }
-            let sameAsProtected = protectedCentroids.contains { cosineDistance(c, $0) <= centroidMergeDistance }
-            if !sameAsProtected {
-                protectedCentroids.append(c)
-                estimated += 1
-                log?("protect: cluster \(id) counted as independent speaker")
+    /// 区间归并:排序后合并重叠/相接区间。
+    static func mergeIntervals(_ intervals: [(Double, Double)]) -> [(Double, Double)] {
+        guard !intervals.isEmpty else { return [] }
+        let sorted = intervals.sorted { $0.0 < $1.0 }
+        var result: [(Double, Double)] = [sorted[0]]
+        for interval in sorted.dropFirst() {
+            if interval.0 <= result[result.count - 1].1 {
+                result[result.count - 1].1 = Swift.max(result[result.count - 1].1, interval.1)
+            } else {
+                result.append(interval)
             }
         }
-        return estimated
+        return result
+    }
+
+    /// 区间减法:从 range 中减去 others(须已归并排序),返回剩余子区间。
+    static func subtract(_ range: (Double, Double), _ others: [(Double, Double)]) -> [(Double, Double)] {
+        var result: [(Double, Double)] = []
+        var cursor = range.0
+        for other in others {
+            if other.1 <= cursor { continue }
+            if other.0 >= range.1 { break }
+            if other.0 > cursor {
+                result.append((cursor, other.0))
+            }
+            cursor = Swift.max(cursor, other.1)
+        }
+        if cursor < range.1 {
+            result.append((cursor, range.1))
+        }
+        return result
     }
 
     private static func f1(_ v: Double) -> String { String(format: "%.1f", v) }

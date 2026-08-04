@@ -193,4 +193,92 @@ final class AnalyzerAutoDictationTests: XCTestCase {
         XCTAssertEqual(result, "")
         XCTAssertTrue(harness.stickyUpdates.isEmpty)
     }
+
+    // MARK: - 低置信度回落（2026-08-04，阈值 p10<0.6）
+
+    /// 给 harness 注入带置信度的极速识别
+    private func setConfidence(_ harness: Harness, text: String?, p10: Double?) -> AnalyzerAutoDictationContext {
+        var context = harness.context()
+        context.recognizeWithConfidence = { _, _, _ in
+            guard let text else { return nil }
+            return (text, p10)
+        }
+        return context
+    }
+
+    private func recognizeWithConfidence(_ harness: Harness, text: String?, p10: Double?) async -> String? {
+        await AnalyzerAutoDictation.recognize(
+            samples: samples, sampleRate: 16000,
+            senseVoice: { await harness.senseVoice($0) },
+            context: setConfidence(harness, text: text, p10: p10)
+        )
+    }
+
+    func test11_lowConfidence_usesSenseVoiceText_inForeground() async {
+        let harness = Harness(sticky: "zh-CN")
+        harness.svResults = ["把日志级别调成调试模式就能看到完整的请求链路"]
+
+        let result = await recognizeWithConfidence(harness, text: "把日志几倍调成调试模式", p10: 0.35)
+        XCTAssertEqual(result, "把日志级别调成调试模式就能看到完整的请求链路")
+        XCTAssertEqual(harness.svCallCount, 1)
+        XCTAssertEqual(harness.detectionScheduledCount, 0, "前台已检测，不再走后台")
+        XCTAssertEqual(harness.sticky, "zh-CN", "路由照常更新")
+    }
+
+    func test12_highConfidence_keepsAnalyzerText_backgroundDetection() async {
+        let harness = Harness(sticky: "zh-CN")
+        harness.svResults = ["你好世界今天天气不错我们出去走走"]
+
+        let result = await recognizeWithConfidence(harness, text: "极速稿", p10: 0.95)
+        XCTAssertEqual(result, "极速稿")
+        XCTAssertEqual(harness.detectionScheduledCount, 1)
+        await harness.drainDetections()
+        XCTAssertEqual(harness.svCallCount, 1)
+    }
+
+    func test13_noConfidenceValue_neverFallsBack() async {
+        let harness = Harness(sticky: "zh-CN")
+        harness.svResults = ["你好世界今天天气不错我们出去走走"]
+
+        let result = await recognizeWithConfidence(harness, text: "极速稿", p10: nil)
+        XCTAssertEqual(result, "极速稿")
+        XCTAssertEqual(harness.detectionScheduledCount, 1, "无置信度＝老行为，只走后台检测")
+    }
+
+    func test14_lowConfidence_svFails_keepsAnalyzerText() async {
+        let harness = Harness(sticky: "zh-CN")
+        harness.svResults = [nil]
+
+        let result = await recognizeWithConfidence(harness, text: "极速稿", p10: 0.2)
+        XCTAssertEqual(result, "极速稿", "本地失败保底极速文本")
+        XCTAssertTrue(harness.stickyUpdates.isEmpty)
+    }
+
+    func test15_lowConfidence_svEmpty_keepsAnalyzerText() async {
+        let harness = Harness(sticky: "zh-CN")
+        harness.svResults = [""]
+
+        let result = await recognizeWithConfidence(harness, text: "极速稿", p10: 0.2)
+        XCTAssertEqual(result, "极速稿")
+    }
+
+    func test16_thresholdBoundary_atThreshold_noFallback() async {
+        let harness = Harness(sticky: "zh-CN")
+        harness.svResults = ["你好世界今天天气不错我们出去走走"]
+
+        let result = await recognizeWithConfidence(
+            harness, text: "极速稿", p10: AnalyzerAutoDictation.lowConfidenceP10Threshold
+        )
+        XCTAssertEqual(result, "极速稿", "恰好等于阈值不回落（严格小于才回落）")
+        XCTAssertEqual(harness.detectionScheduledCount, 1)
+    }
+
+    func test17_confidencePath_infraFailure_fallsBackToSenseVoice() async {
+        let harness = Harness(sticky: "zh-CN")
+        harness.svResults = ["今日は会議がありますのでよろしくお願いします"]
+
+        let result = await recognizeWithConfidence(harness, text: nil, p10: nil)
+        XCTAssertEqual(result, "今日は会議がありますのでよろしくお願いします")
+        XCTAssertEqual(harness.sticky, "ja-JP")
+    }
 }
