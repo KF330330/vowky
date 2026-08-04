@@ -121,9 +121,37 @@ enum DiarizeCLI {
         // 自动模式两遍策略:第一遍阈值聚类后数「可靠簇」得 N(见 SpeakerCountEstimator);
         // N 少于第一遍簇数时,强制 num_clusters=N 整体重跑归属(引擎无重聚类 API)。
         // N 与第一遍簇数一致时跳过第二遍,结果与单遍完全相同(四人基准即此路径)。
+        // 估计器的质心合并/小簇保护需要声纹嵌入:此处注入 CAM++ 提取
+        // (一次性子进程,双载 embedding 模型的内存瞬态可接受)。
         if isAuto {
+            var extractorConfig = sherpaOnnxSpeakerEmbeddingExtractorConfig(
+                model: modelPaths.embedding,
+                numThreads: numThreads
+            )
+            let extractor = SherpaOnnxSpeakerEmbeddingExtractorWrapper(config: &extractorConfig)
+            let embeddingForRanges: ([(Double, Double)]) -> [Float]? = { ranges in
+                guard extractor.impl != nil else { return nil }
+                var concatenated: [Float] = []
+                for (start, end) in ranges {
+                    let lower = max(0, Int(start * Double(sampleRate)))
+                    let upper = min(samples.count, Int(end * Double(sampleRate)))
+                    guard upper > lower else { continue }
+                    concatenated.append(contentsOf: samples[lower..<upper])
+                }
+                guard !concatenated.isEmpty else { return nil }
+                let stream = extractor.createStream()
+                stream.acceptWaveform(samples: concatenated, sampleRate: sampleRate)
+                stream.inputFinished()
+                let embedding = extractor.compute(stream: stream)
+                return embedding.isEmpty ? nil : embedding
+            }
             let pass1Clusters = Set(dtos.map(\.spk)).count
-            if let estimated = SpeakerCountEstimator.estimate(segments: dtos), estimated < pass1Clusters {
+            if let estimated = SpeakerCountEstimator.estimate(
+                   segments: dtos,
+                   embeddingForRanges: embeddingForRanges,
+                   log: { NSLog("[VowKy][DiarizeCLI][estimator] \($0)") }
+               ),
+               estimated < pass1Clusters {
                 NSLog("[VowKy][DiarizeCLI] two-pass: pass1 clusters=\(pass1Clusters), reliable=\(estimated), rerunning")
                 var pass2Config = sherpaOnnxOfflineSpeakerDiarizationConfig(
                     segmentation: segmentationConfig,
