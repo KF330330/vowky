@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import Sparkle
 @testable import VowKy
 
@@ -18,7 +19,8 @@ final class VowKyUpdaterUserDriverTests: XCTestCase {
         case extractStarted
         case extractProgress(Double)
         case readyToRelaunch
-        case installing
+        case installing(canRetry: Bool)
+        case focus
         case dismiss
     }
 
@@ -26,6 +28,7 @@ final class VowKyUpdaterUserDriverTests: XCTestCase {
     private var events: [EventKind]!
     private var capturedCancel: (() -> Void)?
     private var capturedReadyReply: ((SPUUserUpdateChoice) -> Void)?
+    private var capturedRetryTerminate: (() -> Void)?
 
     override func setUp() {
         super.setUp()
@@ -47,8 +50,11 @@ final class VowKyUpdaterUserDriverTests: XCTestCase {
             case .readyToRelaunch(let reply):
                 capturedReadyReply = reply
                 events.append(.readyToRelaunch)
-            case .installing:
-                events.append(.installing)
+            case .installing(let retryTerminate):
+                capturedRetryTerminate = retryTerminate
+                events.append(.installing(canRetry: retryTerminate != nil))
+            case .focus:
+                events.append(.focus)
             case .dismiss:
                 events.append(.dismiss)
             }
@@ -60,6 +66,7 @@ final class VowKyUpdaterUserDriverTests: XCTestCase {
         events = nil
         capturedCancel = nil
         capturedReadyReply = nil
+        capturedRetryTerminate = nil
         super.tearDown()
     }
 
@@ -101,20 +108,57 @@ final class VowKyUpdaterUserDriverTests: XCTestCase {
         XCTAssertEqual(received, .install)
     }
 
-    func testInstallingForwardsEventWithoutTouchingRetryHandler() {
+    func testInstallingKeepsRetryTerminateUsableWhenAppNotTerminated() {
         var retried = false
         driver.showInstallingUpdate(
             withApplicationTerminated: false,
             retryTerminatingApplication: { retried = true }
         )
 
-        XCTAssertEqual(events, [.installing])
-        XCTAssertFalse(retried)
+        XCTAssertEqual(events, [.installing(canRetry: true)])
+        XCTAssertFalse(retried) // 不立即调用……
+        capturedRetryTerminate?()
+        XCTAssertTrue(retried) // ……但闭包保留可用(app 拒退后用户可重试)
+    }
+
+    func testInstallingDropsRetryWhenAppAlreadyTerminated() {
+        driver.showInstallingUpdate(
+            withApplicationTerminated: true,
+            retryTerminatingApplication: {}
+        )
+
+        XCTAssertEqual(events, [.installing(canRetry: false)])
+        XCTAssertNil(capturedRetryTerminate)
+    }
+
+    func testShowUpdateInFocusForwardsFocus() {
+        driver.showUpdateInFocus()
+
+        XCTAssertEqual(events, [.focus])
     }
 
     func testDismissUpdateInstallationForwardsDismiss() {
         driver.dismissUpdateInstallation()
 
         XCTAssertEqual(events, [.dismiss])
+    }
+
+    /// 双窗回归护栏:sink 接管期间,任何被覆盖的进度回调都不得创建 Sparkle 原生窗口。
+    /// 若有人给覆盖方法补回 super 调用(或漏覆盖建窗方法),此断言会在单测层失败。
+    /// (showUpdateFound 关检查窗的部分因 SPUUserUpdateState 不可构造,仍只能真机验证。)
+    func testTakenOverCallbacksCreateNoNativeWindows() {
+        let windowsBefore = NSApp.windows.count
+
+        driver.showDownloadInitiated(cancellation: {})
+        driver.showDownloadDidReceiveExpectedContentLength(100)
+        driver.showDownloadDidReceiveData(ofLength: 50)
+        driver.showDownloadDidStartExtractingUpdate()
+        driver.showExtractionReceivedProgress(0.5)
+        driver.showReady(toInstallAndRelaunch: { _ in })
+        driver.showInstallingUpdate(withApplicationTerminated: false, retryTerminatingApplication: {})
+        driver.showUpdateInFocus()
+        driver.dismissUpdateInstallation()
+
+        XCTAssertEqual(NSApp.windows.count, windowsBefore, "接管路径不得创建任何原生窗口")
     }
 }

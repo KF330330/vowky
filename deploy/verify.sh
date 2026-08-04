@@ -68,19 +68,23 @@ if echo "$APPCAST_CONTENT" | grep -q "<sparkle:deltas>"; then
     DELTA_URL=$(echo "$APPCAST_CONTENT" | sed -n '/<sparkle:deltas>/,/<\/sparkle:deltas>/p' | grep -o 'url="[^"]*"' | head -1 | sed 's/^url="//;s/"$//')
     DELTA_LEN=$(echo "$APPCAST_CONTENT" | sed -n '/<sparkle:deltas>/,/<\/sparkle:deltas>/p' | grep -o 'length="[^"]*"' | head -1 | sed 's/^length="//;s/"$//')
     DELTA_FROM=$(echo "$APPCAST_CONTENT" | sed -n '/<sparkle:deltas>/,/<\/sparkle:deltas>/p' | grep -o 'sparkle:deltaFrom="[^"]*"' | head -1 | sed 's/^sparkle:deltaFrom="//;s/"$//')
-    if [ -z "${DELTA_URL}" ] || [ -z "${DELTA_FROM}" ]; then
-        check_fail "deltas 块格式异常(缺 url 或 deltaFrom)"
+    if [ -z "${DELTA_URL}" ] || [ -z "${DELTA_FROM}" ] || [ -z "${DELTA_LEN}" ]; then
+        check_fail "deltas 块格式异常(缺 url/deltaFrom/length)"
     else
-        REMOTE_LEN=$(curl -s -o /dev/null -w "%{http_code} %{size_download}" -I "${DELTA_URL}" 2>/dev/null || echo "000")
-        DELTA_HTTP="${REMOTE_LEN%% *}"
-        REMOTE_CONTENT_LEN=$(curl -sI "${DELTA_URL}" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | head -1)
-        if [ "${DELTA_HTTP}" != "200" ]; then
-            check_fail "delta 不可下载 (HTTP ${DELTA_HTTP}): ${DELTA_URL}"
-        elif [ -n "${REMOTE_CONTENT_LEN}" ] && [ "${REMOTE_CONTENT_LEN}" != "${DELTA_LEN}" ]; then
-            check_fail "delta length 不一致: appcast=${DELTA_LEN} 实际=${REMOTE_CONTENT_LEN}"
+        # 真实下载(delta 通常仅几 MB),按落盘字节数与 appcast length 严格比对;
+        # 只发 HEAD 会被「200 但缺 Content-Length / GET 下不完整」骗过。
+        DELTA_TMP="$(mktemp -t vowky-delta-verify)"
+        if curl -fsSL --connect-timeout 15 --max-time 300 -o "${DELTA_TMP}" "${DELTA_URL}" 2>/dev/null; then
+            ACTUAL_LEN=$(wc -c < "${DELTA_TMP}" | tr -d ' ')
+            if [ "${ACTUAL_LEN}" = "${DELTA_LEN}" ]; then
+                check_pass "delta 就绪 (deltaFrom=${DELTA_FROM}, ${DELTA_LEN}B 实下校验一致): ${DELTA_URL##*/}"
+            else
+                check_fail "delta length 不一致: appcast=${DELTA_LEN} 实下=${ACTUAL_LEN}"
+            fi
         else
-            check_pass "delta 就绪 (deltaFrom=${DELTA_FROM}, ${DELTA_LEN}B): ${DELTA_URL##*/}"
+            check_fail "delta 下载失败: ${DELTA_URL}"
         fi
+        rm -f "${DELTA_TMP}"
     fi
 else
     check_pass "appcast 无 deltas 块(本版走全量更新,允许)"

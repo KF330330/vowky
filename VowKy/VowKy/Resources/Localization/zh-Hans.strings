@@ -438,6 +438,8 @@
 "update.progress.ready" = "更新已就绪";
 "update.progress.readyHint" = "点按「安装并重启」完成更新。";
 "update.progress.installAndRelaunch" = "安装并重启";
+"update.progress.retryInstall" = "重试安装";
+"update.progress.retryHint" = "VowKy 需要退出才能完成安装，可点「重试安装」再次尝试。";
 "update.progress.cancel" = "取消";
 "update.progress.minimizeHint" = "可最小化本窗口，下载会在后台继续。";
 

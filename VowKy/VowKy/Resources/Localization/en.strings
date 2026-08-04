@@ -438,6 +438,8 @@
 "update.progress.ready" = "Update Ready";
 "update.progress.readyHint" = "Click \"Install and Relaunch\" to finish updating.";
 "update.progress.installAndRelaunch" = "Install and Relaunch";
+"update.progress.retryInstall" = "Retry Install";
+"update.progress.retryHint" = "VowKy needs to quit to finish updating. Click \"Retry Install\" to try again.";
 "update.progress.cancel" = "Cancel";
 "update.progress.minimizeHint" = "You can minimize this window — the download continues in the background.";
 

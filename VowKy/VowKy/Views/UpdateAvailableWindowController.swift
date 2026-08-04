@@ -24,6 +24,7 @@ final class UpdateAvailableWindowController {
     private var cancelDownload: (() -> Void)?
     private var readyReply: ((SPUUserUpdateChoice) -> Void)?
     private var didReplyReady = false
+    private var retryTerminate: (() -> Void)?
 
     func present(
         appcastItem: SUAppcastItem,
@@ -116,6 +117,13 @@ final class UpdateAvailableWindowController {
         case .downloadStarted(let cancel):
             cancelDownload = cancel
             ensureProgressWindow()
+            // 可能是 delta 失败回落全量后的第二次下载,进度必须从零重来
+            progressModel?.receivedBytes = 0
+            progressModel?.expectedBytes = 0
+            progressModel?.extractProgress = 0
+            progressModel?.canRetryInstall = false
+            readyReply = nil
+            retryTerminate = nil
             progressModel?.phase = .downloading
         case .downloadExpectedLength(let bytes):
             progressModel?.expectedBytes = bytes
@@ -124,6 +132,7 @@ final class UpdateAvailableWindowController {
         case .extractStarted:
             cancelDownload = nil // Sparkle 契约:解压开始后取消块失效
             ensureProgressWindow()
+            progressModel?.extractProgress = 0
             progressModel?.phase = .extracting
         case .extractProgress(let progress):
             progressModel?.extractProgress = progress
@@ -132,12 +141,25 @@ final class UpdateAvailableWindowController {
             didReplyReady = false
             ensureProgressWindow() // 用户可能中途收起了窗口,就绪需确认时重新展示
             progressModel?.phase = .ready
-        case .installing:
+            bringToFront() // 最小化中也要唤回:就绪需要用户动作
+        case .installing(let retry):
             cancelDownload = nil
+            retryTerminate = retry
+            progressModel?.canRetryInstall = (retry != nil)
             progressModel?.phase = .installing
+        case .focus:
+            bringToFront()
         case .dismiss:
             closeProgress()
         }
+    }
+
+    /// 把更新窗口(提示或进度模式)带回前台,已最小化则先还原。
+    private func bringToFront() {
+        guard let window else { return }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// 进入/确保进度窗在屏:提示窗还开着就原窗变身;已被关掉就新建一个进度窗。
@@ -154,7 +176,11 @@ final class UpdateAvailableWindowController {
             appIcon: Self.appIcon(),
             model: model,
             onCancel: { [weak self] in self?.cancelActiveDownload() },
-            onInstallAndRelaunch: { [weak self] in self?.deliverReady(.install) }
+            onInstallAndRelaunch: { [weak self] in self?.deliverReady(.install) },
+            onRetryInstall: { [weak self] in
+                UpdateLogger.log("用户点击「重试安装」(app 此前拒绝/推迟退出)")
+                self?.retryTerminate?()
+            }
         )
         let hosting = NSHostingController(rootView: view.environmentObject(LocalizationManager.shared))
 
@@ -384,6 +410,8 @@ final class UpdateProgressViewModel: ObservableObject {
     /// 服务器告知的总字节数,可能为 0(未知)或不准 —— 进度值须钳制。
     @Published var expectedBytes: UInt64 = 0
     @Published var extractProgress: Double = 0
+    /// 安装阶段 app 拒绝/推迟退出时为 true:显示「重试安装」按钮
+    @Published var canRetryInstall = false
 }
 
 private struct UpdateProgressView: View {
@@ -392,6 +420,7 @@ private struct UpdateProgressView: View {
     @ObservedObject var model: UpdateProgressViewModel
     let onCancel: () -> Void
     let onInstallAndRelaunch: () -> Void
+    let onRetryInstall: () -> Void
 
     /// VowKy 品牌绿(与 app 图标一致)
     private let brandGreen = Color(red: 0.478, green: 0.780, blue: 0.047)
@@ -438,7 +467,12 @@ private struct UpdateProgressView: View {
                         .tint(brandGreen)
                         .controlSize(.large)
                         .keyboardShortcut(.defaultAction)
-                case .extracting, .installing:
+                case .installing:
+                    if model.canRetryInstall {
+                        Button(loc.string("update.progress.retryInstall")) { onRetryInstall() }
+                            .controlSize(.large)
+                    }
+                case .extracting:
                     EmptyView()
                 }
             }
@@ -493,8 +527,12 @@ private struct UpdateProgressView: View {
                 return loc.string("update.progress.downloadedOfTotal", received, total)
             }
             return loc.string("update.progress.downloaded", received)
-        case .extracting, .installing:
+        case .extracting:
             return loc.string("update.progress.minimizeHint")
+        case .installing:
+            return model.canRetryInstall
+                ? loc.string("update.progress.retryHint")
+                : loc.string("update.progress.minimizeHint")
         case .ready:
             return loc.string("update.progress.readyHint")
         }

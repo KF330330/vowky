@@ -29,7 +29,7 @@ final class UpdateProgressScreenshotTests: XCTestCase {
         controller.handleProgressEvent(.readyToRelaunch(reply: { _ in }))
         try capture(named: "progress_3_ready", in: dir)
 
-        controller.handleProgressEvent(.installing)
+        controller.handleProgressEvent(.installing(retryTerminate: nil))
         try capture(named: "progress_4_installing", in: dir)
 
         controller.handleProgressEvent(.dismiss)

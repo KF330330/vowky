@@ -17,7 +17,11 @@ enum UpdateProgressEvent {
     /// 更新已就绪,等待用户确认。`reply` 必须恰好调用一次(.install=立即安装并重启,
     /// .dismiss=收起,退出 app 时仍会自动安装)。
     case readyToRelaunch(reply: (SPUUserUpdateChoice) -> Void)
-    case installing
+    /// 正在安装。app 尚未退出时 Sparkle 提供 `retryTerminate`(app 拒绝/推迟退出后
+    /// 可再次尝试退出安装,可多次调用);app 已退出则为 nil。
+    case installing(retryTerminate: (() -> Void)?)
+    /// 用户在会话进行中再次触发检查更新:把当前更新窗口带回前台(含取消最小化)。
+    case focus
     /// 更新会话结束(完成/取消/出错),关闭一切进度 UI。
     case dismiss
 }
@@ -107,7 +111,22 @@ final class VowKyUpdaterUserDriver: SPUStandardUserDriver {
             )
         }
         UpdateLogger.log("正在安装更新(自绘进度, appTerminated=\(applicationTerminated))")
-        progressSink(.installing)
+        // app 未退出时保留重试闭包:若 app 拒绝/推迟退出(如正在录音),用户可在窗口里重试
+        progressSink(.installing(retryTerminate: applicationTerminated ? nil : retryTerminatingApplication))
+    }
+
+    override func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        // Sparkle 先弹错误框、用户确认后才回调 dismissUpdateInstallation——
+        // 若不先收掉自绘进度窗,错误框期间它会残留在后面(双窗)。
+        // 只收自绘窗,错误 UI 本身仍走 super(不替换 no-update/error 原生窗,历史教训)。
+        progressSink?(.dismiss)
+        super.showUpdaterError(error, acknowledgement: acknowledgement)
+    }
+
+    override func showUpdateInFocus() {
+        guard let progressSink else { return super.showUpdateInFocus() }
+        // 会话进行中用户再点「检查更新」:super 只认得自己的窗口,须把自绘窗带回前台
+        progressSink(.focus)
     }
 
     override func dismissUpdateInstallation() {
