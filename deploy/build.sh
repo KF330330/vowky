@@ -399,11 +399,13 @@ mkdir -p "${DMG_STAGING}"
 cp -R "${APP_PATH}" "${DMG_STAGING}/VowKy.app"
 ln -s /Applications "${DMG_STAGING}/Applications"
 
+# ULMO(lzma):实测比 UDZO 默认档小 11%(239MB→213MB,2026-08-04 对 1.6.0 内容实测);
+# 挂载要求 macOS 10.15+,远低于 app 的 13.0 门槛,无兼容问题。
 hdiutil create \
     -volname "VowKy ${VERSION}" \
     -srcfolder "${DMG_STAGING}" \
     -ov \
-    -format UDZO \
+    -format ULMO \
     "${DMG_PATH}"
 
 rm -rf "${DMG_STAGING}"
