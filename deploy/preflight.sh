@@ -105,6 +105,12 @@ if command -v sign_update &>/dev/null || [ -x "/usr/local/bin/sign_update" ] || 
 else
     check_warn "sign_update 未找到，自动更新签名将跳过 (brew install sparkle)"
 fi
+# delta 是 best-effort:工具缺失只降级为全量更新,不阻塞发版
+if [ -x "${BINARY_DELTA_BIN}" ]; then
+    check_pass "BinaryDelta 可用 (${BINARY_DELTA_BIN})"
+else
+    check_warn "BinaryDelta 未找到 (${BINARY_DELTA_BIN})，本次发版将不生成 delta 增量包（老用户走全量更新）"
+fi
 
 # 汇总
 echo ""

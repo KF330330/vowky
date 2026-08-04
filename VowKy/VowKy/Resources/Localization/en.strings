@@ -430,6 +430,16 @@
 "update.skipVersion" = "Skip This Version";
 "update.remindLater" = "Remind Me Later";
 "update.install" = "Install Update";
+"update.progress.downloading" = "Downloading Update…";
+"update.progress.downloadedOfTotal" = "%@ of %@ downloaded";
+"update.progress.downloaded" = "%@ downloaded";
+"update.progress.extracting" = "Extracting Update…";
+"update.progress.installing" = "Installing Update…";
+"update.progress.ready" = "Update Ready";
+"update.progress.readyHint" = "Click \"Install and Relaunch\" to finish updating.";
+"update.progress.installAndRelaunch" = "Install and Relaunch";
+"update.progress.cancel" = "Cancel";
+"update.progress.minimizeHint" = "You can minimize this window — the download continues in the background.";
 
 
 /* Common (round3) */

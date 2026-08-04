@@ -47,6 +47,15 @@ DEV_IDENTITY="${DEV_IDENTITY:-Apple Development}"
 # PROD_IDENTITY, TEAM_ID, NOTARY_PROFILE 从 config.local.sh 加载
 
 # ============================================================
+# Sparkle 增量更新工具
+# ============================================================
+# BinaryDelta 来自 Sparkle 官方分发包,版本锁定与 app 内框架一致(2.8.1),
+# 消除 delta format 版本变量。存放在独立目录,绝不放 ~/Library/Developer/Sparkle/bin
+# ——避免连带引入 generate_appcast 被任何探测逻辑捡到、覆盖手写双语 appcast。
+SPARKLE_TOOLS_DIR="${SPARKLE_TOOLS_DIR:-${HOME}/Library/Developer/VowKy/sparkle-tools-2.8.1}"
+BINARY_DELTA_BIN="${SPARKLE_TOOLS_DIR}/bin/BinaryDelta"
+
+# ============================================================
 # 服务器
 # ============================================================
 # SERVER 从 config.local.sh 加载

@@ -50,7 +50,7 @@ fi
 
 # 4. appcast.xml
 echo ""
-echo "[4/4] 检查 appcast.xml..."
+echo "[4/5] 检查 appcast.xml..."
 APPCAST_CONTENT=$(curl -s "${BASE_URL}/appcast.xml" 2>/dev/null || echo "")
 if echo "$APPCAST_CONTENT" | grep -q "<sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>"; then
     check_pass "appcast.xml 包含当前版本 v${VERSION}"
@@ -59,6 +59,31 @@ elif echo "$APPCAST_CONTENT" | grep -q "sparkle:shortVersionString"; then
     check_fail "appcast.xml 版本不匹配: ${FOUND_VER} (期望 ${VERSION})"
 else
     check_fail "appcast.xml 无法访问或格式错误"
+fi
+
+# 5. delta 增量包(如 appcast 带 deltas 块则校验可下载且 length 一致;不带=全量更新,允许)
+echo ""
+echo "[5/5] 检查 delta 增量包..."
+if echo "$APPCAST_CONTENT" | grep -q "<sparkle:deltas>"; then
+    DELTA_URL=$(echo "$APPCAST_CONTENT" | sed -n '/<sparkle:deltas>/,/<\/sparkle:deltas>/p' | grep -o 'url="[^"]*"' | head -1 | sed 's/^url="//;s/"$//')
+    DELTA_LEN=$(echo "$APPCAST_CONTENT" | sed -n '/<sparkle:deltas>/,/<\/sparkle:deltas>/p' | grep -o 'length="[^"]*"' | head -1 | sed 's/^length="//;s/"$//')
+    DELTA_FROM=$(echo "$APPCAST_CONTENT" | sed -n '/<sparkle:deltas>/,/<\/sparkle:deltas>/p' | grep -o 'sparkle:deltaFrom="[^"]*"' | head -1 | sed 's/^sparkle:deltaFrom="//;s/"$//')
+    if [ -z "${DELTA_URL}" ] || [ -z "${DELTA_FROM}" ]; then
+        check_fail "deltas 块格式异常(缺 url 或 deltaFrom)"
+    else
+        REMOTE_LEN=$(curl -s -o /dev/null -w "%{http_code} %{size_download}" -I "${DELTA_URL}" 2>/dev/null || echo "000")
+        DELTA_HTTP="${REMOTE_LEN%% *}"
+        REMOTE_CONTENT_LEN=$(curl -sI "${DELTA_URL}" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | head -1)
+        if [ "${DELTA_HTTP}" != "200" ]; then
+            check_fail "delta 不可下载 (HTTP ${DELTA_HTTP}): ${DELTA_URL}"
+        elif [ -n "${REMOTE_CONTENT_LEN}" ] && [ "${REMOTE_CONTENT_LEN}" != "${DELTA_LEN}" ]; then
+            check_fail "delta length 不一致: appcast=${DELTA_LEN} 实际=${REMOTE_CONTENT_LEN}"
+        else
+            check_pass "delta 就绪 (deltaFrom=${DELTA_FROM}, ${DELTA_LEN}B): ${DELTA_URL##*/}"
+        fi
+    fi
+else
+    check_pass "appcast 无 deltas 块(本版走全量更新,允许)"
 fi
 
 # 汇总

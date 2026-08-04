@@ -126,6 +126,105 @@ if [ -n "$SPARKLE_SIGNATURE" ]; then
     EDDSA_ATTR=" ${EDDSA_SIG}"
 fi
 
+# ============================================================
+# 4.5 生成 delta 增量包(best-effort:任一环失败只降级为全量更新,绝不阻塞发版)
+# ============================================================
+# 老用户更新时模型(261M)跨版本字节不变,delta 只含真实变化(几十 MB 量级)。
+# before/after 两棵树都取自 DMG 挂载点:before=服务器上一版(用户实际拿到的字节),
+# after=本次待发 DMG —— 保证 delta 路径与全量路径装出的 app 逐字节一致,下一版才能接力。
+DELTAS_BLOCK=""
+DELTA_WORK_DIR="${BUILD_DIR}/delta"
+DELTA_MOUNT_OLD="${DELTA_WORK_DIR}/mnt-old"
+DELTA_MOUNT_NEW="${DELTA_WORK_DIR}/mnt-new"
+
+cleanup_delta_mounts() {
+    hdiutil detach "${DELTA_MOUNT_OLD}" -quiet 2>/dev/null || true
+    hdiutil detach "${DELTA_MOUNT_NEW}" -quiet 2>/dev/null || true
+}
+
+generate_delta() {
+    if [ ! -x "${BINARY_DELTA_BIN}" ]; then
+        log_warn "BinaryDelta 不在位(${BINARY_DELTA_BIN}),跳过 delta 生成"
+        return 1
+    fi
+    if [ -z "${SIGN_UPDATE_BIN}" ]; then
+        log_warn "sign_update 不在位,delta 无法签名,跳过 delta 生成"
+        return 1
+    fi
+
+    cleanup_delta_mounts
+    rm -rf "${DELTA_WORK_DIR}"
+    mkdir -p "${DELTA_MOUNT_OLD}" "${DELTA_MOUNT_NEW}"
+
+    # 找服务器上一版 DMG(严格版本号命名,排除当前版本与 latest 符号链接,版本排序取最高)
+    local prev_dmg_name
+    prev_dmg_name="$(ssh "${SERVER}" "ls ${WEB_ROOT}/downloads/" 2>/dev/null \
+        | grep -E '^VowKy-[0-9]+\.[0-9]+\.[0-9]+\.dmg$' \
+        | grep -v "^VowKy-${VERSION}\.dmg$" \
+        | sort -V | tail -1 || true)"
+    if [ -z "${prev_dmg_name}" ]; then
+        log_warn "服务器无上一版 DMG,跳过 delta 生成"
+        return 1
+    fi
+    log_info "delta 基线: ${prev_dmg_name}(从服务器拉取)"
+    rsync_retry -az "${SERVER}:${WEB_ROOT}/downloads/${prev_dmg_name}" "${DELTA_WORK_DIR}/" || return 1
+
+    hdiutil attach "${DELTA_WORK_DIR}/${prev_dmg_name}" -nobrowse -readonly -mountpoint "${DELTA_MOUNT_OLD}" -quiet || return 1
+    hdiutil attach "${DMG_PATH}" -nobrowse -readonly -mountpoint "${DELTA_MOUNT_NEW}" -quiet || { cleanup_delta_mounts; return 1; }
+
+    local old_app="${DELTA_MOUNT_OLD}/VowKy.app" new_app="${DELTA_MOUNT_NEW}/VowKy.app"
+    if [ ! -d "${old_app}" ] || [ ! -d "${new_app}" ]; then
+        log_warn "DMG 挂载点里找不到 VowKy.app,跳过 delta 生成"
+        cleanup_delta_mounts
+        return 1
+    fi
+
+    # deltaFrom 以老包 Info.plist 的 CFBundleVersion 为准(即用户已装版本的 build 号)
+    local old_build
+    old_build="$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${old_app}/Contents/Info.plist" 2>/dev/null || true)"
+    if [ -z "${old_build}" ]; then
+        log_warn "读不到老包 CFBundleVersion,跳过 delta 生成"
+        cleanup_delta_mounts
+        return 1
+    fi
+
+    DELTA_NAME="VowKy-${VERSION}-from-${old_build}.delta"
+    local delta_path="${DELTA_WORK_DIR}/${DELTA_NAME}"
+    log_info "生成 delta: build ${old_build} → ${BUILD} ..."
+    "${BINARY_DELTA_BIN}" create "${old_app}" "${new_app}" "${delta_path}" || { cleanup_delta_mounts; return 1; }
+    cleanup_delta_mounts
+
+    # 护栏:delta 接近全量(如模型本身更新的版本)就不值得发,自动退回全量
+    local delta_size
+    delta_size=$(wc -c < "${delta_path}" | tr -d ' ')
+    if [ "${delta_size}" -gt $((DMG_SIZE_BYTES * 70 / 100)) ]; then
+        log_warn "delta(${delta_size}B)超过全量 70%,放弃 delta,本版走全量更新"
+        return 1
+    fi
+
+    local delta_sig delta_sig_attr
+    delta_sig="$("${SIGN_UPDATE_BIN}" "${delta_path}" 2>/dev/null || true)"
+    delta_sig_attr="$(echo "${delta_sig}" | grep -o 'sparkle:edSignature="[^"]*"' || true)"
+    if [ -z "${delta_sig_attr}" ]; then
+        log_warn "delta EdDSA 签名失败,跳过 delta 生成"
+        return 1
+    fi
+
+    rsync_retry -az "${delta_path}" "${SERVER}:${WEB_ROOT}/downloads/" || return 1
+
+    # delta 走 vowky.com(阿里云香港):体积小带宽可忽略,国内用户比 GitHub 快;全量仍走 GitHub
+    DELTAS_BLOCK="      <sparkle:deltas>
+        <enclosure url=\"https://${DOMAIN}/downloads/${DELTA_NAME}\" sparkle:version=\"${BUILD}\" sparkle:shortVersionString=\"${VERSION}\" sparkle:deltaFrom=\"${old_build}\" length=\"${delta_size}\" type=\"application/octet-stream\" ${delta_sig_attr} />
+      </sparkle:deltas>"
+    log_ok "delta 就绪: ${DELTA_NAME} ($((delta_size / 1024 / 1024))MB, deltaFrom=${old_build})"
+    return 0
+}
+
+if ! generate_delta; then
+    DELTAS_BLOCK=""
+    log_warn "本次 appcast 不含 delta(老用户走全量更新,行为同以往)"
+fi
+
 # 把 release notes 渲染成「清晰、暗色适配、带『新版本可更新』框定」的 HTML，嵌入 appcast description。
 # Sparkle 更新弹窗的 WebView 直接渲染这段 HTML（弹窗标题栏/按钮是 Sparkle 自带，不可改）。
 # 不依赖 pandoc：内置 awk 转换器对 release notes 的 markdown 子集（标题/列表/段落/链接/加粗）
@@ -221,6 +320,7 @@ ${RELEASE_NOTES_CONTENT_EN}
 ${RELEASE_NOTES_CONTENT_ZH}
 ]]></description>
       <enclosure url="${DOWNLOAD_URL}" length="${DMG_SIZE_BYTES}" type="application/octet-stream"${EDDSA_ATTR} />
+${DELTAS_BLOCK}
     </item>
   </channel>
 </rss>
@@ -228,26 +328,8 @@ APPCAST_EOF
 
 log_ok "appcast.xml 已生成: ${APPCAST_PATH}"
 
-# 尝试用 Sparkle generate_appcast (如果有)
-GENERATE_APPCAST_BIN=""
-for candidate in \
-    "$(which generate_appcast 2>/dev/null || true)" \
-    "/usr/local/bin/generate_appcast" \
-    "${HOME}/Library/Developer/Sparkle/bin/generate_appcast" \
-    "$(find /Applications -name generate_appcast -maxdepth 5 2>/dev/null | head -1)" \
-    "$(find "${HOME}/Library/Developer" -name generate_appcast -maxdepth 5 2>/dev/null | head -1)"; do
-    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-        GENERATE_APPCAST_BIN="$candidate"
-        break
-    fi
-done
-
-if [ -n "$GENERATE_APPCAST_BIN" ]; then
-    log_info "使用 Sparkle generate_appcast 重新生成..."
-    "${GENERATE_APPCAST_BIN}" "${DMG_DIR}" -o "${APPCAST_PATH}" 2>/dev/null || {
-        log_warn "generate_appcast 失败，使用手动生成的 appcast.xml"
-    }
-fi
+# 注意:这里绝不要用 Sparkle generate_appcast「重新生成」appcast——它会整个覆盖上面
+# 手写的中英双语 <description> 模板(此坑曾以休眠分支形式存在,2026-08-04 移除)。
 
 # ============================================================
 # 5. 上传 appcast.xml

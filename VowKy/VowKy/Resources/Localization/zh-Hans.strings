@@ -430,6 +430,16 @@
 "update.skipVersion" = "跳过此版本";
 "update.remindLater" = "稍后提醒我";
 "update.install" = "安装更新";
+"update.progress.downloading" = "正在下载更新…";
+"update.progress.downloadedOfTotal" = "已下载 %@，共 %@";
+"update.progress.downloaded" = "已下载 %@";
+"update.progress.extracting" = "正在解压更新…";
+"update.progress.installing" = "正在安装更新…";
+"update.progress.ready" = "更新已就绪";
+"update.progress.readyHint" = "点按「安装并重启」完成更新。";
+"update.progress.installAndRelaunch" = "安装并重启";
+"update.progress.cancel" = "取消";
+"update.progress.minimizeHint" = "可最小化本窗口，下载会在后台继续。";
 
 
 /* Common (round3) */

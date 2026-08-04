@@ -32,8 +32,8 @@ struct VowKyApp: App {
 
         let coordinator = updateCoordinator
 
-        // 自定义 user driver:只替换「发现新版本」窗口为 VowKy 自绘弹窗,
-        // 下载/解压/安装/重启/错误等仍走 Sparkle 标准 UI(继承自 SPUStandardUserDriver)。
+        // 自定义 user driver:「发现新版本」弹窗与下载/解压/安装进度均为 VowKy 自绘
+        // (同一窗口变身,可最小化);检查中/无更新/错误/权限仍走 Sparkle 标准 UI。
         let driver = VowKyUpdaterUserDriver(hostBundle: .main, delegate: nil)
         let updater = SPUUpdater(
             hostBundle: .main,
@@ -51,6 +51,11 @@ struct VowKyApp: App {
                     updater: updater,
                     reply: reply
                 )
+            }
+        }
+        driver.progressSink = { event in
+            MainActor.assumeIsolated {
+                UpdateAvailableWindowController.shared.handleProgressEvent(event)
             }
         }
 

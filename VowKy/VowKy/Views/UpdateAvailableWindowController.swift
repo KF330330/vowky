@@ -5,9 +5,11 @@ import Sparkle
 
 // MARK: - Window Controller
 
-/// VowKy 自绘的「发现新版本」弹窗(替换 Sparkle 标准 found-window;下载/安装仍走标准 driver)。
+/// VowKy 自绘的更新窗口:「发现新版本」弹窗 + 点「安装更新」后同窗变身的下载/安装进度视图
+/// (进度事件由 `VowKyUpdaterUserDriver.progressSink` 送达,Sparkle 原生状态窗被成套接管)。
 /// 单例 + NSWindow + NSHostingController,模式与 `WhatsNewWindowController` 一致。
-/// `reply` 必须在用户做出选择后恰好调用一次;红灯关窗 == 「稍后提醒我」(.dismiss)。
+/// `reply` 必须在用户做出选择后恰好调用一次;提示模式红灯关窗 == 「稍后提醒我」(.dismiss);
+/// 进度模式红灯关窗 == 下载中取消 / 就绪时延后安装 / 解压安装中仅收起(更新继续)。
 @MainActor
 final class UpdateAvailableWindowController {
     static let shared = UpdateAvailableWindowController()
@@ -16,6 +18,12 @@ final class UpdateAvailableWindowController {
     private var reply: ((SPUUserUpdateChoice) -> Void)?
     private var didReply = false
     private var closeObserver: Any?
+
+    // 进度模式状态(progressModel 非 nil == 进度模式)
+    private var progressModel: UpdateProgressViewModel?
+    private var cancelDownload: (() -> Void)?
+    private var readyReply: ((SPUUserUpdateChoice) -> Void)?
+    private var didReplyReady = false
 
     func present(
         appcastItem: SUAppcastItem,
@@ -34,8 +42,7 @@ final class UpdateAvailableWindowController {
 
         UpdateLogger.log("展示「发现新版本」弹窗: 新版本=\(appcastItem.displayVersionString) 当前=\(currentVersion)")
 
-        let icon = NSImage(named: NSImage.applicationIconName)
-            ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+        let icon = Self.appIcon()
         let notesHTML = appcastItem.itemDescription ?? "<p>\(L("update.notesUnavailable"))</p>"
 
         let view = UpdateAvailableView(
@@ -45,7 +52,7 @@ final class UpdateAvailableWindowController {
             notesHTML: notesHTML,
             autoUpdate: updater.automaticallyDownloadsUpdates,
             onAutoUpdateChange: { updater.automaticallyDownloadsUpdates = $0 },
-            onInstall: { [weak self] in self?.finish(.install) },
+            onInstall: { [weak self] in self?.beginInstall() },
             onLater: { [weak self] in self?.finish(.dismiss) },
             onSkip: { [weak self] in self?.finish(.skip) }
         )
@@ -53,7 +60,7 @@ final class UpdateAvailableWindowController {
         let hosting = NSHostingController(rootView: view.environmentObject(LocalizationManager.shared))
         let window = NSWindow(contentViewController: hosting)
         window.title = L("window.update.title")
-        window.styleMask = [.titled, .closable]
+        window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 540, height: 480))
         window.center()
@@ -75,14 +82,133 @@ final class UpdateAvailableWindowController {
         window?.close()
     }
 
+    /// 用户点「安装更新」:回复 Sparkle 后不关窗,同窗变身进度视图(T3:可最小化,不再霸屏)。
+    private func beginInstall() {
+        deliver(.install)
+        switchToProgress()
+    }
+
     private func handleClose() {
-        // 红灯关窗、未做选择 → 视为「稍后提醒我」
-        deliver(.dismiss)
+        if let model = progressModel {
+            // 进度模式红灯关窗:下载中=取消;就绪=延后安装(退出 app 时仍会自动装);
+            // 解压/安装中已无可取消,仅收起 UI,更新在后台继续。
+            switch model.phase {
+            case .downloading: cancelActiveDownload()
+            case .ready: deliverReady(.dismiss)
+            case .extracting, .installing: break
+            }
+            progressModel = nil
+        } else {
+            // 提示模式红灯关窗、未做选择 → 视为「稍后提醒我」
+            deliver(.dismiss)
+        }
         if let observer = closeObserver {
             NotificationCenter.default.removeObserver(observer)
             closeObserver = nil
         }
         window = nil
+    }
+
+    // MARK: - 进度模式(事件来自 VowKyUpdaterUserDriver.progressSink)
+
+    func handleProgressEvent(_ event: UpdateProgressEvent) {
+        switch event {
+        case .downloadStarted(let cancel):
+            cancelDownload = cancel
+            ensureProgressWindow()
+            progressModel?.phase = .downloading
+        case .downloadExpectedLength(let bytes):
+            progressModel?.expectedBytes = bytes
+        case .downloadReceived(let bytes):
+            progressModel?.receivedBytes += bytes
+        case .extractStarted:
+            cancelDownload = nil // Sparkle 契约:解压开始后取消块失效
+            ensureProgressWindow()
+            progressModel?.phase = .extracting
+        case .extractProgress(let progress):
+            progressModel?.extractProgress = progress
+        case .readyToRelaunch(let reply):
+            readyReply = reply
+            didReplyReady = false
+            ensureProgressWindow() // 用户可能中途收起了窗口,就绪需确认时重新展示
+            progressModel?.phase = .ready
+        case .installing:
+            cancelDownload = nil
+            progressModel?.phase = .installing
+        case .dismiss:
+            closeProgress()
+        }
+    }
+
+    /// 进入/确保进度窗在屏:提示窗还开着就原窗变身;已被关掉就新建一个进度窗。
+    private func ensureProgressWindow() {
+        if progressModel != nil, window != nil { return }
+        switchToProgress()
+    }
+
+    private func switchToProgress() {
+        let model = progressModel ?? UpdateProgressViewModel()
+        progressModel = model
+
+        let view = UpdateProgressView(
+            appIcon: Self.appIcon(),
+            model: model,
+            onCancel: { [weak self] in self?.cancelActiveDownload() },
+            onInstallAndRelaunch: { [weak self] in self?.deliverReady(.install) }
+        )
+        let hosting = NSHostingController(rootView: view.environmentObject(LocalizationManager.shared))
+
+        if let window {
+            // 同窗变身:保留位置,只换内容与尺寸
+            window.contentViewController = hosting
+            window.setContentSize(NSSize(width: 460, height: 168))
+        } else {
+            let window = NSWindow(contentViewController: hosting)
+            window.title = L("window.update.title")
+            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.isReleasedWhenClosed = false
+            window.setContentSize(NSSize(width: 460, height: 168))
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.handleClose()
+            }
+            self.window = window
+        }
+    }
+
+    /// 会话结束(完成/取消/出错):关进度窗;非进度模式(如发现更新前的检查窗清理)则忽略。
+    private func closeProgress() {
+        guard progressModel != nil else { return }
+        progressModel = nil
+        cancelDownload = nil
+        readyReply = nil
+        window?.close()
+    }
+
+    private func cancelActiveDownload() {
+        guard let cancel = cancelDownload else { return }
+        cancelDownload = nil
+        UpdateLogger.log("用户取消更新下载")
+        cancel() // Sparkle 随后回调 dismissUpdateInstallation → .dismiss 关窗
+    }
+
+    private func deliverReady(_ choice: SPUUserUpdateChoice) {
+        guard !didReplyReady, let reply = readyReply else { return }
+        didReplyReady = true
+        UpdateLogger.log("用户在就绪窗选择: \(Self.choiceLabel(choice))")
+        reply(choice)
+        readyReply = nil
+    }
+
+    private static func appIcon() -> NSImage {
+        NSImage(named: NSImage.applicationIconName)
+            ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
     }
 
     private func deliver(_ choice: SPUUserUpdateChoice) {
@@ -239,5 +365,142 @@ private struct NotesWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript("window.scrollTo(0,0)", completionHandler: nil)
         }
+    }
+}
+
+// MARK: - 进度模式(下载/解压/安装/就绪)
+
+@MainActor
+final class UpdateProgressViewModel: ObservableObject {
+    enum Phase {
+        case downloading
+        case extracting
+        case installing
+        case ready
+    }
+
+    @Published var phase: Phase = .downloading
+    @Published var receivedBytes: UInt64 = 0
+    /// 服务器告知的总字节数,可能为 0(未知)或不准 —— 进度值须钳制。
+    @Published var expectedBytes: UInt64 = 0
+    @Published var extractProgress: Double = 0
+}
+
+private struct UpdateProgressView: View {
+    @EnvironmentObject private var loc: LocalizationManager
+    let appIcon: NSImage
+    @ObservedObject var model: UpdateProgressViewModel
+    let onCancel: () -> Void
+    let onInstallAndRelaunch: () -> Void
+
+    /// VowKy 品牌绿(与 app 图标一致)
+    private let brandGreen = Color(red: 0.478, green: 0.780, blue: 0.047)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 14) {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(titleText)
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(detailText)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+
+            progressBar
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+
+            HStack(spacing: 10) {
+                if model.phase == .downloading {
+                    Text(loc.string("update.progress.minimizeHint"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                Spacer(minLength: 0)
+                switch model.phase {
+                case .downloading:
+                    Button(loc.string("update.progress.cancel")) { onCancel() }
+                        .controlSize(.large)
+                case .ready:
+                    Button(loc.string("update.progress.installAndRelaunch")) { onInstallAndRelaunch() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(brandGreen)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                case .extracting, .installing:
+                    EmptyView()
+                }
+            }
+            .frame(height: 32)
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 14)
+        }
+        .frame(width: 460)
+    }
+
+    @ViewBuilder
+    private var progressBar: some View {
+        switch model.phase {
+        case .downloading:
+            if model.expectedBytes > 0 {
+                ProgressView(value: downloadFraction)
+            } else {
+                ProgressView() // 总长未知 → 不确定进度条
+                    .progressViewStyle(.linear)
+            }
+        case .extracting:
+            ProgressView(value: min(max(model.extractProgress, 0), 1))
+        case .installing:
+            ProgressView()
+                .progressViewStyle(.linear)
+        case .ready:
+            ProgressView(value: 1)
+        }
+    }
+
+    private var downloadFraction: Double {
+        guard model.expectedBytes > 0 else { return 0 }
+        return min(Double(model.receivedBytes) / Double(model.expectedBytes), 1)
+    }
+
+    private var titleText: String {
+        switch model.phase {
+        case .downloading: return loc.string("update.progress.downloading")
+        case .extracting: return loc.string("update.progress.extracting")
+        case .installing: return loc.string("update.progress.installing")
+        case .ready: return loc.string("update.progress.ready")
+        }
+    }
+
+    private var detailText: String {
+        switch model.phase {
+        case .downloading:
+            let received = Self.formatBytes(model.receivedBytes)
+            if model.expectedBytes > 0 {
+                let total = Self.formatBytes(max(model.expectedBytes, model.receivedBytes))
+                return loc.string("update.progress.downloadedOfTotal", received, total)
+            }
+            return loc.string("update.progress.downloaded", received)
+        case .extracting, .installing:
+            return loc.string("update.progress.minimizeHint")
+        case .ready:
+            return loc.string("update.progress.readyHint")
+        }
+    }
+
+    private static func formatBytes(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file)
     }
 }
