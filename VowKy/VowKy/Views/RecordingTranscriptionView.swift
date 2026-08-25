@@ -137,8 +137,43 @@ struct RecordingTranscriptionView: View {
         #endif
     }
 
+    /// 音频来源选择。系统声音走 macOS 14.4+ 的 process tap,低版本整个控件不渲染。
+    /// 录音中置灰(会话按 start 快照定格),改法=取消 → 改 → 重新录音。
+    @ViewBuilder
+    private var audioSourceControls: some View {
+        if #available(macOS 14.4, *) {
+            Menu {
+                ForEach(RecordingAudioSource.allCases, id: \.self) { source in
+                    Button {
+                        viewModel.setAudioSource(source)
+                    } label: {
+                        if source == viewModel.audioSource {
+                            Label(loc.string(source.localizationKey), systemImage: "checkmark")
+                        } else {
+                            Text(loc.string(source.localizationKey))
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: viewModel.audioSource.symbolName)
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(loc.string(viewModel.audioSource.localizationKey))
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundColor(TranscriptionTheme.accentDark)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(viewModel.isActivelyRecording)
+            .help(loc.string("recording.audioSource.help"))
+        }
+    }
+
     private var translationControls: some View {
         HStack(spacing: 8) {
+            audioSourceControls
+
             Toggle(isOn: Binding(
                 get: { viewModel.translationConfig.enabled },
                 set: { viewModel.setTranslationEnabled($0) }
@@ -471,6 +506,22 @@ struct RecordingTranscriptionView: View {
                 }
             }
 
+            // 系统声音路连续 ≥10s 全零的非阻断告警:混合模式下麦克风会照常出字,
+            // 没有这条黄条用户看不出系统声一路已失效(会原样复现「只录到自己」的故障)。
+            if viewModel.systemAudioSilenceWarning {
+                Label(loc.string("recording.systemAudio.silenceWarning"), systemImage: "speaker.slash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(TranscriptionTheme.warning)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(TranscriptionTheme.warning.opacity(0.14))
+                    )
+                    .transition(.opacity)
+            }
+
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(TranscriptionTheme.secondaryBackground.opacity(0.72))
@@ -523,6 +574,7 @@ struct RecordingTranscriptionView: View {
         }
         .padding(12)
         .frame(maxHeight: .infinity)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: viewModel.systemAudioSilenceWarning)
         .transcriptionCardStyle()
     }
 

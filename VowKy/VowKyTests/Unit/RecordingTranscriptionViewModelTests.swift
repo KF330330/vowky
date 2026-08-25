@@ -718,17 +718,96 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(diarizer.diarizeCallCount, 0)
     }
 
+    // MARK: - 音频来源（麦克风 / 系统声音 / 混合）
+
+    func testStartUsesRecorderFromFactoryForSelectedSource() async throws {
+        let systemRecorder = MockAudioRecorder()
+        let micRecorder = mockRecorder!
+        var requestedSources: [RecordingAudioSource] = []
+        let viewModel = makeViewModel(recorderFactory: { source in
+            requestedSources.append(source)
+            return source == .microphone ? micRecorder : systemRecorder
+        })
+
+        viewModel.setAudioSource(.system, persist: false)
+        XCTAssertEqual(viewModel.audioSource, .system)
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        XCTAssertEqual(requestedSources, [.system], "start() 必须按当前来源向工厂要本次会话的 recorder")
+        XCTAssertEqual(systemRecorder.startCallCount, 1)
+        XCTAssertEqual(micRecorder.startCallCount, 0, "选了系统声音就不该启动麦克风实例")
+
+        viewModel.cancel()
+        XCTAssertEqual(systemRecorder.stopCallCount, 1, "会话内的 stop/cancel 操作的是工厂产物")
+    }
+
+    func testSetAudioSourceIgnoredWhileRecording() async throws {
+        let viewModel = makeViewModel()
+        viewModel.setAudioSource(.microphone, persist: false)
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        viewModel.setAudioSource(.mixed, persist: false)
+        XCTAssertEqual(viewModel.audioSource, .microphone, "录音中改来源必须被忽略（取消→改→重录）")
+
+        viewModel.cancel()
+    }
+
+    func testInjectedRecorderDisablesSourceFactory() async throws {
+        // DI 红线：注入了具体 recorder（未注入工厂）时来源选择失效，既有 VM 测试因此保持密闭
+        let viewModel = makeViewModel()
+        viewModel.setAudioSource(.system, persist: false)
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        XCTAssertEqual(mockRecorder.startCallCount, 1, "注入具体 recorder 时恒用该实例，不建真的 tap")
+        viewModel.cancel()
+    }
+
+    func testSystemAudioSilenceWarningWiredAndResetOnStop() async throws {
+        let systemRecorder = MockAudioRecorder()
+        systemRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "系统声音终稿"
+        let viewModel = makeViewModel(recorderFactory: { _ in systemRecorder })
+
+        viewModel.setAudioSource(.system, persist: false)
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        XCTAssertNotNil(systemRecorder.onSystemAudioSilenceChange, "start() 必须把静音上报接到 VM")
+        XCTAssertFalse(viewModel.systemAudioSilenceWarning)
+
+        systemRecorder.onSystemAudioSilenceChange?(true)
+        try await waitUntil("silence warning appears") { viewModel.systemAudioSilenceWarning }
+
+        systemRecorder.onSystemAudioSilenceChange?(false)
+        try await waitUntil("silence warning clears") { !viewModel.systemAudioSilenceWarning }
+
+        systemRecorder.onSystemAudioSilenceChange?(true)
+        try await waitUntil("silence warning appears again") { viewModel.systemAudioSilenceWarning }
+
+        viewModel.stop()
+        XCTAssertFalse(viewModel.systemAudioSilenceWarning, "stop 收尾必须把告警置回")
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+    }
+
     private func makeViewModel(
         resultRecorder: ((String) -> Void)? = nil,
         metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
         diarizer: SpeakerDiarizing? = nil,
         diarizationEnabled: Bool = false,
+        recorderFactory: ((RecordingAudioSource) -> AudioRecorderProtocol)? = nil,
         analyzerFinalPassFactory: (() -> FileTranscribing?)? = nil,
         analyzerAutoFinalPassProvider: (() -> AnalyzerAutoFinalPassContext?)? = nil
     ) -> RecordingTranscriptionViewModel {
         RecordingTranscriptionViewModel(
             appState: appState,
             audioRecorder: mockRecorder,
+            recorderFactory: recorderFactory,
             finalRecognizer: mockFinalRecognizer,
             outputStore: RecordingTranscriptionOutputStore(outputDirectory: tempDir),
             resultRecorder: resultRecorder,

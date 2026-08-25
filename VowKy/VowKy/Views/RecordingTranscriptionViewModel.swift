@@ -58,6 +58,18 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     /// internal 供单测断言同源不变量。
     private(set) var lastFinalSegments: [TranslationCoordinator.FinalSegment] = []
 
+    // MARK: 音频来源
+
+    /// 录音来源选择（麦克风 / 系统声音 / 两者混合）。macOS<14.4 恒为麦克风。
+    @Published private(set) var audioSource: RecordingAudioSource = RecordingAudioSourceStore.load()
+    /// 本次会话的来源快照（start 时定格，埋点用；录音中改来源无效）。
+    private var activeAudioSource: RecordingAudioSource = .microphone
+    /// 按来源产出本次会话的 recorder。测试注入具体 recorder 时工厂恒返该实例（DI 红线）。
+    private let recorderFactory: (RecordingAudioSource) -> AudioRecorderProtocol
+    /// 系统声音路连续 ≥10s 全零时为 true，收到非零样本自动消退。
+    /// 混合模式下麦克风会照常驱动波形和转写，不给可见告警用户看不出系统声一路已失效。
+    @Published private(set) var systemAudioSilenceWarning = false
+
     // MARK: 字幕浮窗
 
     @Published private(set) var subtitleEnabled: Bool =
@@ -154,6 +166,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     init(
         appState: AppState,
         audioRecorder: AudioRecorderProtocol? = nil,
+        recorderFactory: ((RecordingAudioSource) -> AudioRecorderProtocol)? = nil,
         finalRecognizer: SpeechRecognizerProtocol? = nil,
         outputStore: RecordingTranscriptionOutputStore = RecordingTranscriptionOutputStore(),
         resultRecorder: ((String) -> Void)? = nil,
@@ -164,7 +177,33 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         analyzerAutoFinalPassProvider: (() -> AnalyzerAutoFinalPassContext?)? = nil
     ) {
         self.appState = appState
-        self.audioRecorder = audioRecorder ?? appState.audioRecorder
+        let micRecorder = audioRecorder ?? appState.audioRecorder
+        self.audioRecorder = micRecorder
+        if let recorderFactory {
+            self.recorderFactory = recorderFactory
+        } else if audioRecorder != nil {
+            // DI 红线：测试注入了具体 recorder 就恒用它,来源选择在测试里不生效,
+            // 既有 VM 测试因此保持密闭（不会因为偏好里存着「系统声音」而去建真的 tap）。
+            self.recorderFactory = { _ in micRecorder }
+        } else {
+            self.recorderFactory = { source in
+                if #available(macOS 14.4, *) {
+                    switch source {
+                    case .system:
+                        return SystemAudioTapRecorder()
+                    case .mixed:
+                        // 麦克风一路用新建实例:共享单例是热键听写在用的,绝不能挂到组合 recorder 上
+                        return CompositeAudioRecorder(
+                            micRecorder: AudioRecorder(),
+                            systemRecorder: SystemAudioTapRecorder()
+                        )
+                    case .microphone:
+                        break
+                    }
+                }
+                return micRecorder
+            }
+        }
         self.finalRecognizer = finalRecognizer ?? appState.finalSpeechRecognizerForRecordingTranscription()
         self.outputStore = outputStore
         self.resultRecorder = resultRecorder ?? { text in
@@ -322,6 +361,17 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             return
         }
 
+        // 本次会话的音频来源在此定格,并据此产出本次要用的 recorder
+        // （麦克风模式 = 共享单例原路径,行为与改动前完全一致）。
+        activeAudioSource = audioSource
+        audioRecorder = recorderFactory(activeAudioSource)
+        systemAudioSilenceWarning = false
+        if let reporter = audioRecorder as? SystemAudioSilenceReporting {
+            reporter.onSystemAudioSilenceChange = { [weak self] silent in
+                Task { @MainActor in self?.systemAudioSilenceWarning = silent }
+            }
+        }
+
         let operationID = UUID()
         activeOperationID = operationID
         statusMessage = nil
@@ -370,6 +420,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         audioRecorder.onSamplesCaptured = nil
         sampleContinuation?.finish()
         sampleContinuation = nil
+        systemAudioSilenceWarning = false
     }
 
     func cancel() {
@@ -389,6 +440,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         audioRecorder.onSamplesCaptured = nil
         sampleContinuation?.finish()
         sampleContinuation = nil
+        systemAudioSilenceWarning = false
         stopTimer()
         resetFinalizationState()
         deletePreparedOutput(preparedOutput)
@@ -570,6 +622,18 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     func setDiarizationSpeakerCount(_ count: Int) {
         diarizationSpeakerCount = count
         DiarizationConfigStore.setRecordingSpeakerCount(count)
+    }
+
+    // MARK: - 音频来源
+
+    /// 录音中不允许换来源（会话按 start 快照定格）；改法与改分离人数一致：取消 → 改 → 重新录音。
+    /// persist=false：仅会话内生效不写盘（测试用，避免污染用户的「记住上次选择」）。
+    func setAudioSource(_ source: RecordingAudioSource, persist: Bool = true) {
+        guard !isActivelyRecording else { return }
+        audioSource = source
+        if persist {
+            RecordingAudioSourceStore.save(source)
+        }
     }
 
     /// 分离后处理产物：labeled 全文（落盘/历史）+ 同一批逐段重识别结果的显示段落
@@ -975,6 +1039,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                 "diar": (diarizer != nil && diarizationEnabledProvider()) ? 1 : 0,
                 "speakers": lastDiarizationSpeakerCount,
                 "engine": analyzerText?.isEmpty == false ? "sa" : "sv",
+                "src": activeAudioSource.rawValue,
             ]
             if diarizationNote != nil {
                 doneData["diar_fallback"] = 1
@@ -1034,6 +1099,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         audioRecorder.onSamplesCaptured = nil
         sampleContinuation?.finish()
         sampleContinuation = nil
+        systemAudioSilenceWarning = false
         // 失败时保留音频，仅清理空的 txt；引擎的 defer 已经 finalize 过 wav header。
         let prepared = activePreparedOutput
         if let prepared {
