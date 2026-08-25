@@ -311,6 +311,17 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         output != nil || recoveredAudioURL != nil
     }
 
+    /// 静音告警只在「采集器还活着」的窗口内接受上报。stop() 之后已是 .finishing、
+    /// 录音早已停掉,此时再让迟到的回调点亮黄条就再也没有样本能让它消退(会一直挂着)。
+    private var acceptsSystemAudioSilenceReports: Bool {
+        switch state {
+        case .loadingModel, .recording, .paused:
+            return true
+        case .idle, .finishing, .completed, .cancelled, .failed:
+            return false
+        }
+    }
+
     /// 是否处于「正在录音 / 已暂停 / 加载模型 / 生成最终稿」的状态，退出拦截时据此判断。
     var isActivelyRecording: Bool {
         switch state {
@@ -365,15 +376,23 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         // （麦克风模式 = 共享单例原路径,行为与改动前完全一致）。
         activeAudioSource = audioSource
         audioRecorder = recorderFactory(activeAudioSource)
-        systemAudioSilenceWarning = false
-        if let reporter = audioRecorder as? SystemAudioSilenceReporting {
-            reporter.onSystemAudioSilenceChange = { [weak self] silent in
-                Task { @MainActor in self?.systemAudioSilenceWarning = silent }
-            }
-        }
 
         let operationID = UUID()
         activeOperationID = operationID
+
+        // 静音上报接线必须在会话 ID 就位之后:回调要跨队列 hop 回主线程,
+        // 迟到的那一发得能认出自己属于哪一场,否则会在收尾之后把黄条重新点亮。
+        systemAudioSilenceWarning = false
+        if let reporter = audioRecorder as? SystemAudioSilenceReporting {
+            reporter.onSystemAudioSilenceChange = { [weak self] silent in
+                Task { @MainActor in
+                    guard let self,
+                          self.activeOperationID == operationID,
+                          self.acceptsSystemAudioSilenceReports else { return }
+                    self.systemAudioSilenceWarning = silent
+                }
+            }
+        }
         statusMessage = nil
         transcriptText = ""
         output = nil
@@ -418,6 +437,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         startFinalizationTimer()
         _ = audioRecorder.stopRecording()
         audioRecorder.onSamplesCaptured = nil
+        (audioRecorder as? SystemAudioSilenceReporting)?.onSystemAudioSilenceChange = nil
         sampleContinuation?.finish()
         sampleContinuation = nil
         systemAudioSilenceWarning = false
@@ -438,6 +458,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             _ = audioRecorder.stopRecording()
         }
         audioRecorder.onSamplesCaptured = nil
+        (audioRecorder as? SystemAudioSilenceReporting)?.onSystemAudioSilenceChange = nil
         sampleContinuation?.finish()
         sampleContinuation = nil
         systemAudioSilenceWarning = false
@@ -1097,6 +1118,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             _ = audioRecorder.stopRecording()
         }
         audioRecorder.onSamplesCaptured = nil
+        (audioRecorder as? SystemAudioSilenceReporting)?.onSystemAudioSilenceChange = nil
         sampleContinuation?.finish()
         sampleContinuation = nil
         systemAudioSilenceWarning = false

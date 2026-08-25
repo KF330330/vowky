@@ -795,6 +795,49 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         try await waitUntil("recording transcription completes") { viewModel.state == .completed }
     }
 
+    func testLateSilenceReportAfterStopIsIgnored() async throws {
+        // 回调要跨队列 hop 回主线程，可能在 stop() 清零之后才落地；
+        // 若不挡住，黄条会被重新点亮且再没有样本能让它消退（下一场麦克风模式整场误报）。
+        let systemRecorder = MockAudioRecorder()
+        systemRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "系统声音终稿"
+        let viewModel = makeViewModel(recorderFactory: { _ in systemRecorder })
+
+        viewModel.setAudioSource(.system, persist: false)
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        // 抓住接线时的闭包，模拟「已在飞行中、stop 之后才落地」的那一发
+        let lateReport = try XCTUnwrap(systemRecorder.onSystemAudioSilenceChange)
+
+        viewModel.stop()
+        XCTAssertNil(systemRecorder.onSystemAudioSilenceChange, "stop 必须解除旧 recorder 的静音上报接线")
+
+        lateReport(true)
+        try await Task.sleep(nanoseconds: 120_000_000)
+        XCTAssertFalse(viewModel.systemAudioSilenceWarning, "stop 之后迟到的上报不得把黄条重新点亮")
+
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+        XCTAssertFalse(viewModel.systemAudioSilenceWarning)
+    }
+
+    func testSilenceReportingDetachedOnCancel() async throws {
+        let systemRecorder = MockAudioRecorder()
+        let viewModel = makeViewModel(recorderFactory: { _ in systemRecorder })
+
+        viewModel.setAudioSource(.system, persist: false)
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+
+        let lateReport = try XCTUnwrap(systemRecorder.onSystemAudioSilenceChange)
+        viewModel.cancel()
+        XCTAssertNil(systemRecorder.onSystemAudioSilenceChange, "cancel 也要解除接线")
+
+        lateReport(true)
+        try await Task.sleep(nanoseconds: 120_000_000)
+        XCTAssertFalse(viewModel.systemAudioSilenceWarning, "取消后迟到的上报同样要被挡住")
+    }
+
     private func makeViewModel(
         resultRecorder: ((String) -> Void)? = nil,
         metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
