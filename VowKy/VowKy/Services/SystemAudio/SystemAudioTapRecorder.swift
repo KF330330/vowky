@@ -377,8 +377,11 @@ final class SystemAudioTapRecorder: AudioRecorderProtocol, SystemAudioSilenceRep
             }
         }
 
+        // 容量必须向上取整再留 2 帧余量:48k→16k 每周期理论产出 170.67 帧,向下取整会把零头
+        // 永久留在转换器内部(每秒欠约 4ms),长会话累积到超出混音 FIFO 的 2s 容限、打穿两路对齐。
+        // 多给的余量让上一周期的残帧在下一周期被一并吐出,平均产出率与理论值持平。
         let ratio = targetSampleRate / monoFormat.sampleRate
-        let capacity = AVAudioFrameCount(max(1, Int(Double(mono.count) * ratio)))
+        let capacity = AVAudioFrameCount(ceil(Double(mono.count) * ratio)) + 2
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
 
         var error: NSError?

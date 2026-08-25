@@ -111,14 +111,46 @@ final class SystemAudioMixerTests: XCTestCase {
         XCTAssertTrue(mixer.drainMixed().isEmpty)
     }
 
-    func test15_drainMixed_overflow_releasesWithSilencePadding() {
-        // 一路停摆(tap 死掉/设备拔出)时不能把另一路无限拖住:超过 maxDepth 直接按静音补齐放行
+    func test15_drainMixed_stalledStream_releasesWithSilencePadding() {
+        // 一路真的停摆(tap 死掉/设备拔出,FIFO 为空)时不能把另一路无限拖住:
+        // 另一条堆积超过 maxDepth 就按静音补齐放行
         let mixer = StreamFIFOMixer(streamCount: 2, maxDepth: 10)
         mixer.push(streamIndex: 0, samples: Array(repeating: 0.5, count: 11))
         let released = mixer.drainMixed()
         XCTAssertEqual(released.count, 11)
         XCTAssertEqual(released[0], 0.5, accuracy: 1e-6)
         XCTAssertEqual(released[10], 0.5, accuracy: 1e-6)
+        XCTAssertTrue(mixer.drainMixed().isEmpty)
+    }
+
+    func test15b_drainMixed_bothStreamsAlive_neverReleasesAhead() {
+        // 对端还在供数、只是暂时偏差:只出共同长度,领先流的余量必须留着,
+        // 提前放行会让时间轴永久错位(混合模式两路对不上)
+        let mixer = StreamFIFOMixer(streamCount: 2, maxDepth: 10)
+        mixer.push(streamIndex: 0, samples: Array(repeating: 0.5, count: 30))
+        mixer.push(streamIndex: 1, samples: Array(repeating: 0.25, count: 2))
+
+        let released = mixer.drainMixed()
+        XCTAssertEqual(released.count, 2, "深度 30 > maxDepth,但对端非空,只能出 common=2")
+        XCTAssertEqual(released[0], 0.75, accuracy: 1e-6)
+
+        // 对端补上后余量照常按对齐出段,不丢样本
+        mixer.push(streamIndex: 1, samples: Array(repeating: 0.25, count: 28))
+        let rest = mixer.drainMixed()
+        XCTAssertEqual(rest.count, 28)
+        XCTAssertEqual(rest[0], 0.75, accuracy: 1e-6)
+    }
+
+    func test15c_drainMixed_hardLimit_forceDrains() {
+        // 病态场景硬兜底:堆到 maxDepth 的 10 倍无条件放行,防内存无界增长
+        let mixer = StreamFIFOMixer(streamCount: 2, maxDepth: 10)
+        mixer.push(streamIndex: 0, samples: Array(repeating: 0.5, count: 101))
+        mixer.push(streamIndex: 1, samples: [0.25])
+
+        let released = mixer.drainMixed()
+        XCTAssertEqual(released.count, 101)
+        XCTAssertEqual(released[0], 0.75, accuracy: 1e-6)
+        XCTAssertEqual(released[1], 0.5, accuracy: 1e-6, "对端只有 1 个样本,其余按静音补齐")
         XCTAssertTrue(mixer.drainMixed().isEmpty)
     }
 

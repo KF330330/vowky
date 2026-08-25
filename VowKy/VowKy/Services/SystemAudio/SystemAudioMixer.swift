@@ -77,12 +77,18 @@ final class StreamFIFOMixer {
         fifos[streamIndex].append(contentsOf: samples)
     }
 
-    /// 正常情况按各流共同长度出段;某条流停摆(为空或严重滞后)导致另一条堆积超过 maxDepth 时,
-    /// 缺失部分按静音补齐直接放行,避免一路失效把整条录音拖停。
+    /// 正常情况按各流共同长度出段,余量留存等下一批(时间轴不错位)。
+    /// 只有某条流**真的停摆**(为空)且另一条已堆积超过 maxDepth 时,才把缺失部分按静音补齐放行——
+    /// 两路都还在供数、只是暂时偏差时不提前放行,否则领先流被放出去后时间轴会永久错位。
+    /// 硬兜底:堆积到 maxDepth 的 10 倍时无条件放行,防病态场景内存无界增长。
     func drainMixed() -> [Float] {
         let depths = fifos.map(\.count)
         guard let common = depths.min(), let deepest = depths.max() else { return [] }
-        let count = deepest > maxDepth ? deepest : common
+        if deepest > 10 * maxDepth {
+            NSLog("[VowKy][Mixer] FIFO depth \(deepest) exceeded hard limit \(10 * maxDepth) — force draining (streams badly out of sync)")
+            return take(deepest)
+        }
+        let count = (common == 0 && deepest > maxDepth) ? deepest : common
         return take(count)
     }
 
