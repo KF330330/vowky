@@ -64,6 +64,7 @@ targets:
       - sdk: Accelerate.framework
       - sdk: Foundation.framework
       - sdk: AVFoundation.framework
+      - sdk: CoreAudio.framework
       - sdk: libsqlite3.tbd
       - package: Sparkle
 
