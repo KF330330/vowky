@@ -25,8 +25,6 @@
 	<string>29</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSAudioCaptureUsageDescription</key>
-	<string>VowKy 需要录制系统音频，用于转录线上会议中对方的声音</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VowKy 需要麦克风权限用于语音输入</string>
 	<key>NSUpdateSecurityPolicy</key>

@@ -91,12 +91,9 @@ final class MockDiarizer: SpeakerDiarizing {
     }
 }
 
-final class MockAudioRecorder: AudioRecorderProtocol, SystemAudioSilenceReporting {
+final class MockAudioRecorder: AudioRecorderProtocol {
     var audioLevel: Float = 0.5
     var onSamplesCaptured: (([Float]) -> Void)?
-    /// CompositeAudioRecorder 会对系统声音一路 `as? SystemAudioSilenceReporting` 接线,
-    /// 测试直接调用它模拟「系统声音全零 / 恢复」上报。
-    var onSystemAudioSilenceChange: ((Bool) -> Void)?
     var shouldThrowOnStart = false
     var startError: Error = NSError(domain: "MockAudioRecorder", code: 1, userInfo: [NSLocalizedDescriptionKey: "录音启动失败"])
     var startCallCount = 0

@@ -318,15 +318,6 @@
 "recording.subtitle.toggle" = "Subtitles";
 "recording.subtitle.help" = "Show a draggable floating subtitle on screen, so you can see the transcript even while viewing a shared screen in a meeting";
 
-/* Audio source */
-"recording.audioSource.microphone" = "Microphone";
-"recording.audioSource.system" = "System Audio";
-"recording.audioSource.mixed" = "Mic + System Audio";
-"recording.audioSource.help" = "Choose the audio source. For online meetings pick \"Mic + System Audio\": the mic captures you, system audio captures the other side. Headphones give the best result; speakers also work.";
-"recording.error.systemAudioPermissionDenied" = "Cannot record system audio: allow VowKy in System Settings → Privacy & Security → Screen & System Audio Recording, then start again";
-"recording.error.systemAudioTapFailed" = "System audio capture failed to initialize (error %lld). If the recording permission was denied, allow VowKy in System Settings → Privacy & Security → Screen & System Audio Recording and start again, or use the Microphone source";
-"recording.systemAudio.silenceWarning" = "No system audio detected: it may not be authorized, or nothing is playing. If never authorized, allow VowKy in System Settings → Privacy & Security → Screen & System Audio Recording";
-
 /* Quit overlay */
 "recording.quitOverlay.title" = "VowKy is saving the recording and finishing transcription...";
 "recording.quitOverlay.subtitle" = "Please don't force quit; the final transcript is being generated";
