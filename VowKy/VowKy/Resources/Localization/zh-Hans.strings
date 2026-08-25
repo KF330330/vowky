@@ -318,6 +318,15 @@
 "recording.subtitle.toggle" = "字幕";
 "recording.subtitle.help" = "在屏幕上显示可拖动的浮动字幕，开会看共享画面时也能看转写";
 
+/* Audio source */
+"recording.audioSource.microphone" = "麦克风";
+"recording.audioSource.system" = "系统声音";
+"recording.audioSource.mixed" = "麦克风＋系统声音";
+"recording.audioSource.help" = "选择录音来源：线上会议请选「麦克风＋系统声音」，麦克风收自己的声音，系统声音收对方的声音；建议戴耳机效果最佳，外放亦可用";
+"recording.error.systemAudioPermissionDenied" = "无法录制系统声音：请在「系统设置 → 隐私与安全性 → 屏幕与系统录音」中允许 VowKy，然后重新开始录音";
+"recording.error.systemAudioTapFailed" = "系统声音采集初始化失败（错误码 %lld）。若系统曾询问录音权限且被拒绝，请到「系统设置 → 隐私与安全性 → 屏幕与系统录音」允许 VowKy 后重新开始；也可改用「麦克风」来源";
+"recording.systemAudio.silenceWarning" = "未检测到系统声音：可能未授权或当前没有音频在播放。若从未授权，请到「系统设置 → 隐私与安全性 → 屏幕与系统录音」允许 VowKy";
+
 /* Quit overlay */
 "recording.quitOverlay.title" = "VowKy 正在保存录音并完成转录...";
 "recording.quitOverlay.subtitle" = "请勿强制退出，正在生成最终稿";
