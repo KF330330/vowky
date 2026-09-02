@@ -120,12 +120,14 @@ final class AudioRecorderWatchdogTests: XCTestCase {
     /// AVCaptureDevice.authorizationStatus 会先回 .notDetermined，实测会把注入假后端的用例也挡掉）。
     private func makeRecorder(
         status: AVAuthorizationStatus = .authorized,
+        accessRequester: @escaping (@escaping (Bool) -> Void) -> Void = { $0(true) },
         _ factory: @escaping AudioRecorder.BackendFactory
     ) -> AudioRecorder {
         AudioRecorder(
             backendFactory: factory,
             timeouts: .init(start: 0.3, stop: 0.3),
-            authorizationStatusProvider: { status }
+            authorizationStatusProvider: { status },
+            accessRequester: accessRequester
         )
     }
 
@@ -269,7 +271,7 @@ final class AudioRecorderWatchdogTests: XCTestCase {
 
     func test07_notDeterminedAuthorization_proceedsToStart() throws {
         let factoryCalls = NSCounter()
-        let recorder = makeRecorder(status: .notDetermined) {
+        let recorder = makeRecorder(status: .notDetermined, accessRequester: { $0(true) }) {
             factoryCalls.increment()
             return SyntheticMicBackend()
         }
@@ -285,6 +287,46 @@ final class AudioRecorderWatchdogTests: XCTestCase {
         let samples = recorder.stopRecording()
         XCTAssertGreaterThanOrEqual(samples.count, 15_000, "实际 \(samples.count)")
         XCTAssertLessThanOrEqual(samples.count, 17_000, "实际 \(samples.count)")
+    }
+
+    // MARK: - #08 权限未决且用户不理弹窗：0.5 s 后有界报错，不带未授权设备去采集
+
+    func test08_notDetermined_noAnswerWithin500ms_throwsPermissionPending() {
+        let factoryCalls = NSCounter()
+        // 永不回调 = 系统授权弹窗挂在那儿等用户操作
+        let recorder = makeRecorder(status: .notDetermined, accessRequester: { _ in }) {
+            factoryCalls.increment()
+            return SyntheticMicBackend()
+        }
+
+        let started = Date()
+        var caught: Error?
+        XCTAssertThrowsError(try recorder.startRecording()) { caught = $0 }
+        let elapsed = Date().timeIntervalSince(started)
+
+        guard case .microphonePermissionPending? = caught as? AudioRecorderError else {
+            return XCTFail("应抛 microphonePermissionPending，实际 \(String(describing: caught))")
+        }
+        XCTAssertGreaterThan(elapsed, 0.4, "应等满 0.5 s 再报错，实际 \(elapsed)s")
+        XCTAssertLessThan(elapsed, 1.5, "等待必须有界，实际 \(elapsed)s")
+        XCTAssertEqual(factoryCalls.value, 0, "没拿到授权就不该创建采集后端")
+    }
+
+    // MARK: - #09 权限未决且用户在弹窗里拒绝
+
+    func test09_notDetermined_deniedInPrompt_throwsAccessDenied() {
+        let factoryCalls = NSCounter()
+        let recorder = makeRecorder(status: .notDetermined, accessRequester: { $0(false) }) {
+            factoryCalls.increment()
+            return SyntheticMicBackend()
+        }
+
+        var caught: Error?
+        XCTAssertThrowsError(try recorder.startRecording()) { caught = $0 }
+        guard case .microphoneAccessDenied? = caught as? AudioRecorderError else {
+            return XCTFail("应抛 microphoneAccessDenied，实际 \(String(describing: caught))")
+        }
+        XCTAssertEqual(factoryCalls.value, 0, "被拒时不该创建采集后端")
     }
 
     // MARK: - #06 未启动时的并发 stop（镜像 ThreadSafetyTests #45）
