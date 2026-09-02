@@ -18,7 +18,7 @@ final class AppState: ObservableObject {
     // MARK: - Published Properties
 
     @Published var state: State = .idle {
-        didSet { releaseVoiceInputWaitersIfIdle() }
+        didSet { releaseVoiceInputWaitersIfIdle(); attemptSelfHealIfIdle() }
     }
     @Published var errorMessage: String?
     @Published var lastResult: String?
@@ -51,6 +51,18 @@ final class AppState: ObservableObject {
     private var recordingStartTime: Date?
     private var workspaceActivationObserver: NSObjectProtocol?
     private var lastTextInsertionTarget: NSRunningApplication?
+
+    // MARK: - 音频卡死自愈
+
+    /// 已决定重启、但还在等空闲窗口（录音/识别中不能重启，否则用户说的话直接没了）。
+    private(set) var pendingSelfHeal = false
+    private var selfHealTask: Task<Void, Never>?
+    /// 单测缝：默认真重启。
+    var selfHealRelaunch: () -> Void = { AppRelauncher.relaunch() }
+    /// 单测缝：默认真 UserDefaults（节流时间戳要跨进程存活）。
+    var selfHealDefaults: UserDefaults = .standard
+    /// 单测缝：默认真时钟。
+    var selfHealNow: () -> Date = Date.init
 
     // MARK: - Init
 
@@ -192,6 +204,9 @@ final class AppState: ObservableObject {
         // 2. Wire backup service to audio recorder
         if let recorder = audioRecorder as? AudioRecorder {
             recorder.backupService = backupService
+            recorder.onWedged = { [weak self] phase in
+                Task { @MainActor in self?.handleAudioWedged(phase: phase) }
+            }
         }
 
         // 3. Create recording panel
@@ -676,6 +691,46 @@ final class AppState: ObservableObject {
     }
 
     /// 回到 .idle 时一次性放行所有等待者。先快照清空再 resume，杜绝重复 resume（会 fatalError）。
+    // MARK: - 音频卡死自愈
+
+    /// 音频采集层卡死的上报入口（`AudioRecorder.onWedged` → 主队列）。
+    /// 看门狗已经保证 UI 不会被拖死，这里负责把进程恢复到干净状态：节流内提示手动重启，否则排队自动重启。
+    func handleAudioWedged(phase: String) {
+        CrashLogger.log("[AppState] audio wedged phase=\(phase) pending=\(pendingSelfHeal)")
+        guard !pendingSelfHeal else { return }
+
+        switch AudioSelfHealPolicy.decide(
+            now: selfHealNow(),
+            lastRelaunchAt: AudioSelfHealStore.loadLastRelaunchAt(defaults: selfHealDefaults)
+        ) {
+        case .throttled:
+            errorMessage = L("appState.error.audioWedgedManualRestart")
+            CrashLogger.log("[AppState] self-heal throttled — user must restart manually")
+        case .relaunch:
+            pendingSelfHeal = true
+            errorMessage = L("appState.error.audioWedgedRelaunching")
+            attemptSelfHealIfIdle()
+        }
+    }
+
+    /// 只在空闲窗口重启：录音/识别/录音转写进行中一律推迟，
+    /// 等 `state` 的 didSet 或 `endRecordingTranscription()` 回到空闲时再来一次。
+    private func attemptSelfHealIfIdle() {
+        guard pendingSelfHeal, selfHealTask == nil, state == .idle, !isRecordingTranscriptionInProgress else { return }
+        selfHealTask = Task { @MainActor in
+            // 缓冲一下，让「即将自动重启」的提示先被用户看见
+            try? await Task.sleep(nanoseconds: UInt64(AudioSelfHealPolicy.relaunchDelay * 1_000_000_000))
+            selfHealTask = nil
+            // 缓冲期内又开始干活了就先不重启；回到空闲时上面两个入口会再触发
+            guard state == .idle, !isRecordingTranscriptionInProgress else { return }
+            // 时间戳必须在真正重启之前落盘，否则重启后读不到、节流失效 → 有崩溃环风险
+            AudioSelfHealStore.saveLastRelaunchAt(selfHealNow(), defaults: selfHealDefaults)
+            pendingSelfHeal = false
+            CrashLogger.log("[AppState] self-heal relaunch")
+            selfHealRelaunch()
+        }
+    }
+
     private func releaseVoiceInputWaitersIfIdle() {
         guard state == .idle else { return }
         resumeAllVoiceInputWaiters()
@@ -709,6 +764,7 @@ final class AppState: ObservableObject {
 
     func endRecordingTranscription() {
         isRecordingTranscriptionInProgress = false
+        attemptSelfHealIfIdle()
     }
 
     func finalSpeechRecognizerForRecordingTranscription() -> SpeechRecognizerProtocol {

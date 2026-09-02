@@ -478,6 +478,8 @@
 "audioRecorder.error.microphonePermissionPending" = "Please allow VowKy to use the microphone in the system dialog, then try again";
 "audioRecorder.error.microphoneAccessDenied" = "Microphone access denied — allow VowKy in System Settings → Privacy & Security → Microphone";
 "audioRecorder.error.startTimedOut" = "Microphone start timed out — the system audio service is not responding";
+"appState.error.audioWedgedRelaunching" = "The audio system stopped responding — VowKy will restart shortly to recover";
+"appState.error.audioWedgedManualRestart" = "The audio system stopped responding — please quit and reopen VowKy";
 
 /* AppDelegate alerts */
 "alert.recovery.title" = "Unfinished recording detected";

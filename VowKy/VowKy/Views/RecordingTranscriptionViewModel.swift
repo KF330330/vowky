@@ -193,8 +193,13 @@ final class RecordingTranscriptionViewModel: ObservableObject {
                         return SystemAudioTapRecorder()
                     case .mixed:
                         // 麦克风一路用新建实例:共享单例是热键听写在用的,绝不能挂到组合 recorder 上
+                        let mic = AudioRecorder()
+                        // 这条实例不经 AppState.setup() 接线,自愈上报要在这里单独挂
+                        mic.onWedged = { [weak appState] phase in
+                            Task { @MainActor in appState?.handleAudioWedged(phase: phase) }
+                        }
                         return CompositeAudioRecorder(
-                            micRecorder: AudioRecorder(),
+                            micRecorder: mic,
                             systemRecorder: SystemAudioTapRecorder()
                         )
                     case .microphone:

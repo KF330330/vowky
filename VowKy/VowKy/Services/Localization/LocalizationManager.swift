@@ -30,19 +30,7 @@ final class LocalizationManager: ObservableObject {
         LanguagePreferenceStore.save(lang)
         UserDefaults.standard.set([lang.rawValue], forKey: "AppleLanguages")
         UserDefaults.standard.synchronize()
-        Self.relaunch()
-    }
-
-    /// 干净重启：detached shell 先等当前进程退出、再 `open -n`，避免新旧实例重叠
-    /// （重叠会让全局热键 tap、常驻语音 helper 端口冲突）。
-    private static func relaunch() {
-        let bundlePath = Bundle.main.bundlePath
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "while /bin/kill -0 \(pid) >/dev/null 2>&1; do sleep 0.1; done; /usr/bin/open -n \"\(bundlePath)\""]
-        try? task.run()
-        NSApp.terminate(nil)
+        AppRelauncher.relaunch()
     }
 
     /// 查表取本地化串；命中后用 String(format:) 处理 %@ / %lld 等占位符。查不到回退 key 本身（保证不空白、不崩）。
