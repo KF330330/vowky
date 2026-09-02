@@ -87,6 +87,8 @@ final class AudioRecorder: AudioRecorderProtocol {
     private let timeouts: Timeouts
     /// 麦克风授权状态提供者。可注入，好让单测在不碰宿主真实 TCC 状态的前提下跑权限门。
     private let authorizationStatusProvider: () -> AVAuthorizationStatus
+    /// 麦克风授权请求器。同样可注入，单测据此模拟「立刻允许 / 立刻拒绝 / 用户不理弹窗」三种结果。
+    private let accessRequester: (@escaping (Bool) -> Void) -> Void
 
     /// lock 保护；活动后端，空闲时 nil
     private var backend: MicCaptureBackend?
@@ -119,11 +121,15 @@ final class AudioRecorder: AudioRecorderProtocol {
         timeouts: Timeouts = Timeouts(),
         authorizationStatusProvider: @escaping () -> AVAuthorizationStatus = {
             AVCaptureDevice.authorizationStatus(for: .audio)
+        },
+        accessRequester: @escaping (@escaping (Bool) -> Void) -> Void = {
+            AVCaptureDevice.requestAccess(for: .audio, completionHandler: $0)
         }
     ) {
         self.backendFactory = backendFactory
         self.timeouts = timeouts
         self.authorizationStatusProvider = authorizationStatusProvider
+        self.accessRequester = accessRequester
     }
 
     func startRecording() throws {
@@ -145,7 +151,7 @@ final class AudioRecorder: AudioRecorderProtocol {
             // requestAccess 的回调不在主队列，故主线程上这段有界等待不会自锁。
             let sem = DispatchSemaphore(value: 0)
             let grantedBox = AuthorizationResultBox()
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
+            accessRequester { granted in
                 grantedBox.value = granted
                 CrashLogger.log("[Audio] mic permission result: \(granted)")
                 sem.signal()
