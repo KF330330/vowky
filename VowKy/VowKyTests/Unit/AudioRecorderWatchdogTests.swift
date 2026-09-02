@@ -116,22 +116,17 @@ private final class SampleCollector {
 
 final class AudioRecorderWatchdogTests: XCTestCase {
 
-    override func setUp() {
-        super.setUp()
-        // AudioRecorder.startRecording() 有麦克风权限门。实测：测试宿主刚启动的头几十毫秒里，
-        // AVCaptureDevice.authorizationStatus 会先回 .notDetermined（TCC 状态还没解析出来），
-        // 单独跑本类时正好撞上，注入的假后端也会被权限门挡掉。这里等状态稳定再开跑。
-        let deadline = Date().addingTimeInterval(5)
-        var status = AVCaptureDevice.authorizationStatus(for: .audio)
-        while status == .notDetermined && Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-            status = AVCaptureDevice.authorizationStatus(for: .audio)
-        }
-        NSLog("[WatchdogTests] mic authorization status settled: \(status.rawValue)")
-    }
-
-    private func makeRecorder(_ factory: @escaping AudioRecorder.BackendFactory) -> AudioRecorder {
-        AudioRecorder(backendFactory: factory, timeouts: .init(start: 0.3, stop: 0.3))
+    /// 权限状态一律注入，本类不碰宿主真实 TCC 状态（宿主刚启动的头几十毫秒
+    /// AVCaptureDevice.authorizationStatus 会先回 .notDetermined，实测会把注入假后端的用例也挡掉）。
+    private func makeRecorder(
+        status: AVAuthorizationStatus = .authorized,
+        _ factory: @escaping AudioRecorder.BackendFactory
+    ) -> AudioRecorder {
+        AudioRecorder(
+            backendFactory: factory,
+            timeouts: .init(start: 0.3, stop: 0.3),
+            authorizationStatusProvider: { status }
+        )
     }
 
     /// 等待收集器累计到指定样本数（轮询，避免依赖回调时序）。
@@ -252,9 +247,27 @@ final class AudioRecorderWatchdogTests: XCTestCase {
         XCTAssertFalse(collector.sawMainThreadCallback, "onSamplesCaptured 不应在主线程触发")
     }
 
-    // MARK: - #05 未启动时的并发 stop（镜像 ThreadSafetyTests #45）
+    // MARK: - #05 麦克风权限被拒：可读错误，不碰后端
 
-    func test05_stopWithoutStart_10Concurrent_returnsEmptyFast() {
+    func test05_deniedAuthorization_throwsMicrophoneAccessDenied() {
+        let factoryCalls = NSCounter()
+        let recorder = makeRecorder(status: .denied) {
+            factoryCalls.increment()
+            return SyntheticMicBackend()
+        }
+
+        var caught: Error?
+        XCTAssertThrowsError(try recorder.startRecording()) { caught = $0 }
+        guard case .microphoneAccessDenied? = caught as? AudioRecorderError else {
+            return XCTFail("应抛 microphoneAccessDenied，实际 \(String(describing: caught))")
+        }
+        XCTAssertEqual(factoryCalls.value, 0, "权限被拒时不应创建采集后端")
+        XCTAssertEqual(recorder.stopRecording(), [], "权限被拒后 stop 应返回空")
+    }
+
+    // MARK: - #06 未启动时的并发 stop（镜像 ThreadSafetyTests #45）
+
+    func test06_stopWithoutStart_10Concurrent_returnsEmptyFast() {
         let recorder = makeRecorder { SyntheticMicBackend() }
 
         let started = Date()
@@ -275,13 +288,15 @@ final class AudioRecorderWatchdogTests: XCTestCase {
 
 private final class NSCounter {
     private let lock = NSLock()
-    private var value = 0
+    private var _value = 0
+
+    var value: Int { lock.lock(); defer { lock.unlock() }; return _value }
 
     @discardableResult
     func increment() -> Int {
         lock.lock(); defer { lock.unlock() }
-        value += 1
-        return value
+        _value += 1
+        return _value
     }
 }
 

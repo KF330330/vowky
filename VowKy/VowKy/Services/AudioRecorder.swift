@@ -134,10 +134,11 @@ final class AudioRecorder: AudioRecorderProtocol {
         case .authorized:
             break
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
-                CrashLogger.log("[Audio] mic permission result: \(granted)")
-            }
-            throw AudioRecorderError.microphonePermissionPending
+            // 不拦截：真未决时系统会弹授权框、授权前采集只出静音（与旧 AVAudioEngine 行为一致，
+            // 落到既有「未检测到声音」提示）；已授权但 TCC 状态短暂未解析（宿主/冷启动竞态，
+            // 2026-09-02 实测）时绝不能误报权限错误。
+            CrashLogger.log("[Audio] mic permission notDetermined — requesting access, proceeding")
+            AVCaptureDevice.requestAccess(for: .audio) { CrashLogger.log("[Audio] mic permission result: \($0)") }
         case .denied, .restricted:
             throw AudioRecorderError.microphoneAccessDenied
         @unknown default:
@@ -449,6 +450,7 @@ enum AudioRecorderError: Error, LocalizedError {
     case captureStartFailed(Error?)
     case testAudioNotFound(String)
     case noInputDevice
+    // 保留：当前不再抛出，权限未决时改为照常启动
     case microphonePermissionPending
     case microphoneAccessDenied
     case startTimedOut
