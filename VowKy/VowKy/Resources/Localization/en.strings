@@ -469,6 +469,16 @@
 "appState.error.recognitionFailed" = "Recognition failed — please try again";
 "appState.backup.unrecognizedFilename" = "VowKy Unrecognized";
 
+/* AudioRecorder errors */
+"audioRecorder.error.formatCreationFailed" = "Failed to initialize the audio format — please try again";
+"audioRecorder.error.converterCreationFailed" = "Cannot convert the microphone format (%lld Hz, %lld ch) — check your system input device";
+"audioRecorder.error.captureStartFailed" = "Microphone failed to start: %@";
+"audioRecorder.error.testAudioNotFound" = "Test audio not found: %@";
+"audioRecorder.error.noInputDevice" = "No microphone found — check your system sound input settings";
+"audioRecorder.error.microphonePermissionPending" = "Please allow VowKy to use the microphone in the system dialog, then try again";
+"audioRecorder.error.microphoneAccessDenied" = "Microphone access denied — allow VowKy in System Settings → Privacy & Security → Microphone";
+"audioRecorder.error.startTimedOut" = "Microphone start timed out — the system audio service is not responding";
+
 /* AppDelegate alerts */
 "alert.recovery.title" = "Unfinished recording detected";
 "alert.recovery.extra" = " and %lld more";

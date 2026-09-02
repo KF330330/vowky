@@ -469,6 +469,16 @@
 "appState.error.recognitionFailed" = "识别失败，请重试";
 "appState.backup.unrecognizedFilename" = "VowKy 未识别";
 
+/* AudioRecorder errors */
+"audioRecorder.error.formatCreationFailed" = "音频格式初始化失败，请重试";
+"audioRecorder.error.converterCreationFailed" = "无法转换麦克风音频格式（%lld Hz，%lld 声道），请检查系统输入设备";
+"audioRecorder.error.captureStartFailed" = "麦克风启动失败：%@";
+"audioRecorder.error.testAudioNotFound" = "未找到测试音频：%@";
+"audioRecorder.error.noInputDevice" = "未找到麦克风设备，请检查系统声音输入设置";
+"audioRecorder.error.microphonePermissionPending" = "请在弹出的系统对话框中允许 VowKy 使用麦克风，然后再试一次";
+"audioRecorder.error.microphoneAccessDenied" = "麦克风权限被拒绝：请在「系统设置 → 隐私与安全性 → 麦克风」中允许 VowKy";
+"audioRecorder.error.startTimedOut" = "麦克风启动超时，系统音频服务无响应";
+
 /* AppDelegate alerts */
 "alert.recovery.title" = "检测到未完成的录音";
 "alert.recovery.extra" = " 等 %lld 个";
