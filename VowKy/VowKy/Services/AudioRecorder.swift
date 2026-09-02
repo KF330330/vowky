@@ -109,6 +109,11 @@ final class AudioRecorder: AudioRecorderProtocol {
         var error: Error?
     }
 
+    /// 跨 requestAccess 闭包回传授权结果（nil = 回调还没来）
+    private final class AuthorizationResultBox {
+        var value: Bool?
+    }
+
     init(
         backendFactory: @escaping BackendFactory = AudioRecorder.defaultBackendFactory,
         timeouts: Timeouts = Timeouts(),
@@ -129,16 +134,29 @@ final class AudioRecorder: AudioRecorderProtocol {
             return
         }
 
-        // 权限门放在调用线程、看门狗之外：requestAccess 是异步的，这里只做状态判定不阻塞。
+        // 权限门在调用线程上、看门狗之外：只有 .notDetermined 分支会做一次 0.5 s 的有界等待。
         switch authorizationStatusProvider() {
         case .authorized:
             break
         case .notDetermined:
-            // 不拦截：真未决时系统会弹授权框、授权前采集只出静音（与旧 AVAudioEngine 行为一致，
-            // 落到既有「未检测到声音」提示）；已授权但 TCC 状态短暂未解析（宿主/冷启动竞态，
-            // 2026-09-02 实测）时绝不能误报权限错误。
-            CrashLogger.log("[Audio] mic permission notDetermined — requesting access, proceeding")
-            AVCaptureDevice.requestAccess(for: .audio) { CrashLogger.log("[Audio] mic permission result: \($0)") }
+            // 已授权但 TCC 状态短暂未解析（宿主/冷启动竞态，2026-09-02 实测）时，requestAccess 会立刻
+            // 回 true（不弹窗）；真未决时会弹系统授权框，回调要等用户操作——只等 0.5 s，等不到就报
+            // 「请在弹窗中允许后重试」，绝不带着未授权的设备去启动采集（否则只录到静音）。
+            // requestAccess 的回调不在主队列，故主线程上这段有界等待不会自锁。
+            let sem = DispatchSemaphore(value: 0)
+            let grantedBox = AuthorizationResultBox()
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                grantedBox.value = granted
+                CrashLogger.log("[Audio] mic permission result: \(granted)")
+                sem.signal()
+            }
+            if sem.wait(timeout: .now() + 0.5) == .timedOut {
+                CrashLogger.log("[Audio] mic permission still pending after 0.5s — prompt likely showing")
+                throw AudioRecorderError.microphonePermissionPending
+            }
+            if grantedBox.value != true {
+                throw AudioRecorderError.microphoneAccessDenied
+            }
         case .denied, .restricted:
             throw AudioRecorderError.microphoneAccessDenied
         @unknown default:
@@ -450,7 +468,6 @@ enum AudioRecorderError: Error, LocalizedError {
     case captureStartFailed(Error?)
     case testAudioNotFound(String)
     case noInputDevice
-    // 保留：当前不再抛出，权限未决时改为照常启动
     case microphonePermissionPending
     case microphoneAccessDenied
     case startTimedOut

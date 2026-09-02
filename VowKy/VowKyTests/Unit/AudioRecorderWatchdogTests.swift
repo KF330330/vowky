@@ -265,6 +265,28 @@ final class AudioRecorderWatchdogTests: XCTestCase {
         XCTAssertEqual(recorder.stopRecording(), [], "权限被拒后 stop 应返回空")
     }
 
+    // MARK: - #07 权限未决：不拦截，照常启动
+
+    func test07_notDeterminedAuthorization_proceedsToStart() throws {
+        let factoryCalls = NSCounter()
+        let recorder = makeRecorder(status: .notDetermined) {
+            factoryCalls.increment()
+            return SyntheticMicBackend()
+        }
+
+        let collector = SampleCollector()
+        recorder.onSamplesCaptured = { collector.record($0) }
+
+        XCTAssertNoThrow(try recorder.startRecording(), "TCC 状态未解析时不能误报权限错误")
+        XCTAssertEqual(factoryCalls.value, 1, "权限未决也应照常创建采集后端")
+
+        XCTAssertTrue(waitForSamples(collector, atLeast: 15_000, timeout: 5.0),
+                      "实际 \(collector.count)")
+        let samples = recorder.stopRecording()
+        XCTAssertGreaterThanOrEqual(samples.count, 15_000, "实际 \(samples.count)")
+        XCTAssertLessThanOrEqual(samples.count, 17_000, "实际 \(samples.count)")
+    }
+
     // MARK: - #06 未启动时的并发 stop（镜像 ThreadSafetyTests #45）
 
     func test06_stopWithoutStart_10Concurrent_returnsEmptyFast() {
