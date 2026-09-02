@@ -122,29 +122,30 @@ final class MicCaptureSession: NSObject, MicCaptureBackend, AVCaptureAudioDataOu
         guard frames > 0 else { return }
 
         if lastASBD == nil || !MicCaptureSession.isSameFormat(lastASBD!, asbd) {
-            guard let src = AVAudioFormat(streamDescription: asbdPtr),
-                  let flt = AVAudioFormat(
-                    commonFormat: .pcmFormatFloat32,
-                    sampleRate: asbd.mSampleRate,
-                    channels: asbd.mChannelsPerFrame,
-                    interleaved: false
-                  ) else {
-                logFormatFailureOnce("cannot build AVAudioFormat for rate=\(asbd.mSampleRate) ch=\(asbd.mChannelsPerFrame)")
+            let layout = MicCaptureSession.channelLayout(from: formatDescription, channels: asbd.mChannelsPerFrame)
+            guard let src = MicCaptureSession.makeFormat(from: asbdPtr, layout: layout) else {
+                logFormatFailureOnce("cannot build source AVAudioFormat for rate=\(asbd.mSampleRate) ch=\(asbd.mChannelsPerFrame)")
                 return
             }
             sourceFormat = src
-            floatFormat = flt
             if src.commonFormat == .pcmFormatFloat32 && !src.isInterleaved {
+                // 已经是下游要的格式，直接透传，省一次拷贝
+                floatFormat = nil
                 floatConverter = nil
             } else {
+                guard let flt = MicCaptureSession.makeFloatFormat(like: asbd, layout: layout ?? src.channelLayout) else {
+                    logFormatFailureOnce("cannot build float AVAudioFormat for rate=\(asbd.mSampleRate) ch=\(asbd.mChannelsPerFrame)")
+                    return
+                }
                 guard let conv = AVAudioConverter(from: src, to: flt) else {
                     logFormatFailureOnce("cannot build float converter for rate=\(asbd.mSampleRate) ch=\(asbd.mChannelsPerFrame)")
                     return
                 }
+                floatFormat = flt
                 floatConverter = conv
             }
             lastASBD = asbd
-            lock.lock(); _nativeFormat = flt; lock.unlock()
+            lock.lock(); _nativeFormat = floatFormat ?? src; lock.unlock()
             CrashLogger.log("[Audio] Input: rate=\(asbd.mSampleRate) ch=\(asbd.mChannelsPerFrame) bits=\(asbd.mBitsPerChannel) flags=0x\(String(asbd.mFormatFlags, radix: 16))")
         }
 
@@ -177,6 +178,60 @@ final class MicCaptureSession: NSObject, MicCaptureBackend, AVCaptureAudioDataOu
     }
 
     // MARK: - Private
+
+    /// 取 sample buffer 的声道布局。AVAudioFormat 对「声道数 ≠ 1/2」的 ASBD 必须带布局才能构造
+    /// （实测本机 MacBook Pro 内置三麦阵列，AVCaptureSession 报 3 声道，裸 ASBD 构造直接返回 nil）。
+    private static func channelLayout(from formatDescription: CMAudioFormatDescription,
+                                      channels: UInt32) -> AVAudioChannelLayout? {
+        var size = 0
+        if let aclPtr = CMAudioFormatDescriptionGetChannelLayout(formatDescription, sizeOut: &size), size > 0 {
+            return AVAudioChannelLayout(layout: aclPtr)
+        }
+        // 设备没给布局时按「离散顺序」兜底，只为让 AVAudioFormat 能建起来；
+        // 下游 processBuffer 本来就是按声道求平均做 downmix，不依赖具体布局语义。
+        return AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | channels)
+    }
+
+    private static func makeFormat(from asbdPtr: UnsafePointer<AudioStreamBasicDescription>,
+                                   layout: AVAudioChannelLayout?) -> AVAudioFormat? {
+        if let format = AVAudioFormat(streamDescription: asbdPtr) {
+            return format
+        }
+        guard let layout else { return nil }
+        return AVAudioFormat(streamDescription: asbdPtr, channelLayout: layout)
+    }
+
+    /// 构造「同采样率、同声道数、Float32 非交织」的目标格式。
+    ///
+    /// 先走 commonFormat 便捷构造；它在非标准声道数上会返回 nil
+    /// （实测本机内置麦克风 AVCaptureSession 报 3 声道，commonFormat 直接失败），
+    /// 此时回落到显式 ASBD + 源格式的声道布局。
+    private static func makeFloatFormat(like asbd: AudioStreamBasicDescription,
+                                        layout: AVAudioChannelLayout?) -> AVAudioFormat? {
+        if let standard = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: asbd.mSampleRate,
+            channels: asbd.mChannelsPerFrame,
+            interleaved: false
+        ) {
+            return standard
+        }
+        var description = AudioStreamBasicDescription(
+            mSampleRate: asbd.mSampleRate,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved,
+            mBytesPerPacket: 4,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 4,
+            mChannelsPerFrame: asbd.mChannelsPerFrame,
+            mBitsPerChannel: 32,
+            mReserved: 0
+        )
+        if let layout {
+            return AVAudioFormat(streamDescription: &description, channelLayout: layout)
+        }
+        return AVAudioFormat(streamDescription: &description)
+    }
 
     private static func isSameFormat(_ a: AudioStreamBasicDescription, _ b: AudioStreamBasicDescription) -> Bool {
         a.mSampleRate == b.mSampleRate
