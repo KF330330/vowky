@@ -1,10 +1,14 @@
 import Foundation
 import AVFoundation
 
+/// 麦克风录音器。
+///
+/// 采集后端走 `MicCaptureBackend`（默认 AVCaptureSession），**不再触碰 AVAudioEngine**：
+/// 2026-09-02 实锤 AVAudioEngine 的 inputNode 首次绑定存在框架内部锁序反转，会把整个 App 卡死。
+/// 另加看门狗：后端 start/stop 都在控制队列上执行、主线程只做有界等待，超时即放弃该后端
+/// （generation 自增让迟到 buffer 全丢）、换新控制队列，并通过 onWedged 上报。
 final class AudioRecorder: AudioRecorderProtocol {
 
-    private var engine: AVAudioEngine?
-    private var converter: AVAudioConverter?
     private var recordedSamples: [Float] = []
     private let lock = NSLock()
     /// tap 回调只做 downmix/重采样后立刻把样本切到这条串行队列；
@@ -55,6 +59,62 @@ final class AudioRecorder: AudioRecorderProtocol {
         )
     }()
 
+    // MARK: - 采集后端与看门狗
+
+    typealias BackendFactory = () -> MicCaptureBackend
+
+    struct Timeouts {
+        var start: TimeInterval = 4
+        var stop: TimeInterval = 4
+    }
+
+    /// 看门狗超时后在主队列回调一次；phase ∈ {"start","stop"}。
+    var onWedged: ((String) -> Void)?
+
+    /// 默认后端工厂。DEBUG 下 VOWKY_DEBUG_WEDGE=start|stop 返回故意卡死的后端，供端到端验证看门狗。
+    static let defaultBackendFactory: BackendFactory = {
+        let session = MicCaptureSession()
+        #if DEBUG
+        if let wedge = ProcessInfo.processInfo.environment["VOWKY_DEBUG_WEDGE"],
+           wedge == "start" || wedge == "stop" {
+            return DebugHangingMicBackend(wrapping: session, hangOn: wedge)
+        }
+        #endif
+        return session
+    }
+
+    private let backendFactory: BackendFactory
+    private let timeouts: Timeouts
+
+    /// lock 保护；活动后端，空闲时 nil
+    private var backend: MicCaptureBackend?
+    /// lock 保护；每次 start 与每次 wedge 各 +1。迟到/卡死后端送来的 buffer 靠它甄别丢弃。
+    private var generation: UInt64 = 0
+    /// lock 保护；wedge 时整条换新——旧队列上还压着一个永不返回的调用
+    private var controlQueue = DispatchQueue(label: "com.vowky.audio.control.0")
+    /// lock 保护；卡死对象故意持有不释放（卡死 AVCaptureSession 的 dealloc 可能再阻塞）
+    private var abandoned: [MicCaptureBackend] = []
+
+    /// 每次 start 一份，仅在后端 capture 队列上访问
+    private final class ConversionState {
+        var converter: AVAudioConverter?
+        var monoInputFormat: AVAudioFormat?
+        var sampleRate: Double = 0
+        var didLogFailure = false
+    }
+
+    private final class ErrorBox {
+        var error: Error?
+    }
+
+    init(
+        backendFactory: @escaping BackendFactory = AudioRecorder.defaultBackendFactory,
+        timeouts: Timeouts = Timeouts()
+    ) {
+        self.backendFactory = backendFactory
+        self.timeouts = timeouts
+    }
+
     func startRecording() throws {
         NSLog("[VowKy][Audio] startRecording() called")
         // Support VOWKY_TEST_AUDIO env var for testing
@@ -63,69 +123,103 @@ final class AudioRecorder: AudioRecorderProtocol {
             return
         }
 
-        let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        NSLog("[VowKy][Audio] Input format: sampleRate=\(inputFormat.sampleRate) channels=\(inputFormat.channelCount) bitsPerChannel=\(inputFormat.streamDescription.pointee.mBitsPerChannel)")
-        NSLog("[VowKy][Audio] Target format: sampleRate=\(targetSampleRate) channels=1 Float32")
-        CrashLogger.log("[Audio] Input: rate=\(inputFormat.sampleRate) ch=\(inputFormat.channelCount) bits=\(inputFormat.streamDescription.pointee.mBitsPerChannel)")
+        // 权限门放在调用线程、看门狗之外：requestAccess 是异步的，这里只做状态判定不阻塞。
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            break
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                CrashLogger.log("[Audio] mic permission result: \(granted)")
+            }
+            throw AudioRecorderError.microphonePermissionPending
+        case .denied, .restricted:
+            throw AudioRecorderError.microphoneAccessDenied
+        @unknown default:
+            break
+        }
 
         guard let targetFmt = targetFormat else {
             throw AudioRecorderError.formatCreationFailed
         }
 
-        // 手动 downmix 多声道到单声道，再交给 AVAudioConverter 重采样。
-        // 原因：某些虚拟音频驱动（腾讯会议 / Omi / Loopback / BlackHole 等）会把默认麦克风的
-        // 声道数改成 3 或更多。AVAudioConverter 对这种非标准声道布局的自动 downmix 会输出全 0，
-        // 导致录音静音、识别出乱码。先手动求平均到 mono，转换器只做 mono→mono 重采样最稳定。
-        guard let monoInputFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: inputFormat.sampleRate,
-            channels: 1,
-            interleaved: false
-        ) else {
-            throw AudioRecorderError.formatCreationFailed
+        // 重复 start：先把上一个后端收掉（stopRecording 自带超时保护，不会在这里卡住）
+        lock.lock()
+        let hasActiveBackend = backend != nil
+        lock.unlock()
+        if hasActiveBackend {
+            _ = stopRecording()
         }
-
-        guard let conv = AVAudioConverter(from: monoInputFormat, to: targetFmt) else {
-            throw AudioRecorderError.converterCreationFailed(
-                sourceSampleRate: inputFormat.sampleRate,
-                sourceChannels: inputFormat.channelCount
-            )
-        }
-
-        self.converter = conv
 
         lock.lock()
         recordedSamples = []
         _audioLevel = 0
         _isPaused = false
+        generation += 1
+        let gen = generation
+        let queue = controlQueue
+        let newBackend = backendFactory()
+        backend = newBackend
         lock.unlock()
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            self?.processBuffer(buffer, converter: conv, monoInputFormat: monoInputFormat, targetFormat: targetFmt)
+        let conversion = ConversionState()
+        let box = ErrorBox()
+        let sem = DispatchSemaphore(value: 0)
+
+        queue.async { [weak self] in
+            do {
+                try newBackend.start(onBuffer: { [weak self] buffer in
+                    self?.handleCaptured(buffer, generation: gen, state: conversion, targetFormat: targetFmt)
+                })
+            } catch {
+                box.error = error
+            }
+            sem.signal()
+            // 已被看门狗放弃的 start 迟到完成时，在这条废弃队列上尽力收尾，绝不回主线程
+            if self?.isCurrentGeneration(gen) == false {
+                newBackend.stop()
+            }
         }
 
-        do {
-            try engine.start()
-        } catch {
-            throw AudioRecorderError.engineStartFailed(error)
+        if sem.wait(timeout: .now() + timeouts.start) == .timedOut {
+            wedge(phase: "start", generation: gen, backend: newBackend)
+            throw AudioRecorderError.startTimedOut
         }
 
-        self.engine = engine
+        if let startError = box.error {
+            lock.lock()
+            if backend === newBackend { backend = nil }
+            lock.unlock()
+            throw (startError as? AudioRecorderError) ?? AudioRecorderError.captureStartFailed(startError)
+        }
+
+        let nativeDesc = newBackend.nativeFormat.map { "\($0.sampleRate)Hz/\($0.channelCount)ch" } ?? "pending"
+        CrashLogger.log("[Audio] capture started gen=\(gen) native=\(nativeDesc)")
     }
 
     func stopRecording() -> [Float] {
         NSLog("[VowKy][Audio] stopRecording() called")
-        guard let engine = self.engine else {
-            NSLog("[VowKy][Audio] No engine — returning empty samples")
+
+        lock.lock()
+        let activeBackend = backend
+        let gen = generation
+        let queue = controlQueue
+        backend = nil
+        lock.unlock()
+
+        guard let activeBackend else {
+            NSLog("[VowKy][Audio] No backend — returning empty samples")
             return []
         }
 
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
-        self.engine = nil
-        self.converter = nil
+        let sem = DispatchSemaphore(value: 0)
+        queue.async {
+            activeBackend.stop()
+            sem.signal()
+        }
+        if sem.wait(timeout: .now() + timeouts.stop) == .timedOut {
+            // 不提前返回：仍要走排空屏障，把已捕获的样本收割回去（用户说的话不能丢）
+            wedge(phase: "stop", generation: gen, backend: activeBackend)
+        }
 
         // 排空处理队列：确保所有已捕获的 buffer 都完成聚合与备份写盘，避免截尾
         processingQueue.sync {}
@@ -150,6 +244,70 @@ final class AudioRecorder: AudioRecorderProtocol {
         NSLog("[VowKy][Audio] Returning \(samples.count) samples (duration=\(String(format: "%.1f", duration))s, maxAmp=\(String(format: "%.4f", maxVal)), avgAmp=\(String(format: "%.6f", avgVal)))")
         CrashLogger.log("[Audio] samples=\(samples.count) duration=\(String(format: "%.1f", duration))s maxAmp=\(String(format: "%.4f", maxVal)) avgAmp=\(String(format: "%.6f", avgVal))")
         return samples
+    }
+
+    // MARK: - 看门狗
+
+    private func isCurrentGeneration(_ gen: UInt64) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return generation == gen
+    }
+
+    /// 后端 capture 队列上的入口：甄别代际 → 按采样率惰性建/重建转换器 → 交给原有 processBuffer。
+    private func handleCaptured(
+        _ buffer: AVAudioPCMBuffer,
+        generation gen: UInt64,
+        state: ConversionState,
+        targetFormat: AVAudioFormat
+    ) {
+        // 卡死或迟到后端送来的 buffer 一律丢弃
+        guard isCurrentGeneration(gen) else { return }
+
+        guard buffer.format.commonFormat == .pcmFormatFloat32, !buffer.format.isInterleaved else {
+            if !state.didLogFailure {
+                state.didLogFailure = true
+                CrashLogger.log("[Audio] backend delivered unsupported buffer format: \(buffer.format)")
+            }
+            return
+        }
+
+        if state.converter == nil || state.sampleRate != buffer.format.sampleRate {
+            guard let monoFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: buffer.format.sampleRate,
+                channels: 1,
+                interleaved: false
+            ), let conv = AVAudioConverter(from: monoFormat, to: targetFormat) else {
+                if !state.didLogFailure {
+                    state.didLogFailure = true
+                    CrashLogger.log("[Audio] converter build failed for \(buffer.format.sampleRate) Hz")
+                }
+                return
+            }
+            state.monoInputFormat = monoFormat
+            state.converter = conv
+            state.sampleRate = buffer.format.sampleRate
+            CrashLogger.log("[Audio] converter (re)built for \(buffer.format.sampleRate) Hz")
+        }
+
+        guard let converter = state.converter, let monoInputFormat = state.monoInputFormat else { return }
+        processBuffer(buffer, converter: converter, monoInputFormat: monoInputFormat, targetFormat: targetFormat)
+    }
+
+    /// 后端调用超时：放弃它（不再等、不再收它的样本），换新控制队列，上报主队列。
+    private func wedge(phase: String, generation gen: UInt64, backend wedgedBackend: MicCaptureBackend) {
+        let timeout = phase == "start" ? timeouts.start : timeouts.stop
+        CrashLogger.log("[Audio] WATCHDOG: \(phase) timed out after \(timeout)s gen=\(gen) — abandoning backend")
+
+        lock.lock()
+        generation += 1
+        abandoned.append(wedgedBackend)
+        if backend === wedgedBackend { backend = nil }
+        controlQueue = DispatchQueue(label: "com.vowky.audio.control.\(generation)")
+        lock.unlock()
+
+        let callback = onWedged
+        DispatchQueue.main.async { callback?(phase) }
     }
 
     // MARK: - Private
@@ -279,9 +437,34 @@ final class AudioRecorder: AudioRecorderProtocol {
     }
 }
 
-enum AudioRecorderError: Error {
+enum AudioRecorderError: Error, LocalizedError {
     case formatCreationFailed
     case converterCreationFailed(sourceSampleRate: Double, sourceChannels: UInt32)
-    case engineStartFailed(Error)
+    case captureStartFailed(Error?)
     case testAudioNotFound(String)
+    case noInputDevice
+    case microphonePermissionPending
+    case microphoneAccessDenied
+    case startTimedOut
+
+    var errorDescription: String? {
+        switch self {
+        case .formatCreationFailed:
+            return LL("audioRecorder.error.formatCreationFailed")
+        case .converterCreationFailed(let rate, let channels):
+            return LL("audioRecorder.error.converterCreationFailed", Int(rate), Int(channels))
+        case .captureStartFailed(let underlying):
+            return LL("audioRecorder.error.captureStartFailed", underlying?.localizedDescription ?? "-")
+        case .testAudioNotFound(let path):
+            return LL("audioRecorder.error.testAudioNotFound", path)
+        case .noInputDevice:
+            return LL("audioRecorder.error.noInputDevice")
+        case .microphonePermissionPending:
+            return LL("audioRecorder.error.microphonePermissionPending")
+        case .microphoneAccessDenied:
+            return LL("audioRecorder.error.microphoneAccessDenied")
+        case .startTimedOut:
+            return LL("audioRecorder.error.startTimedOut")
+        }
+    }
 }
