@@ -607,6 +607,7 @@ final class AppState: ObservableObject {
 
     func endFileTranscription() {
         isFileTranscriptionInProgress = false
+        attemptSelfHealIfIdle()
     }
 
     func makeFileTranscriptionService() -> FileTranscribing {
@@ -713,16 +714,18 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// 只在空闲窗口重启：录音/识别/录音转写进行中一律推迟，
-    /// 等 `state` 的 didSet 或 `endRecordingTranscription()` 回到空闲时再来一次。
+    /// 只在空闲窗口重启：录音/识别/录音转写/文件转录进行中一律推迟，
+    /// 等 `state` 的 didSet、`endRecordingTranscription()` 或 `endFileTranscription()` 回到空闲时再来一次。
     private func attemptSelfHealIfIdle() {
-        guard pendingSelfHeal, selfHealTask == nil, state == .idle, !isRecordingTranscriptionInProgress else { return }
+        guard pendingSelfHeal, selfHealTask == nil, state == .idle,
+              !isRecordingTranscriptionInProgress, !isFileTranscriptionInProgress else { return }
         selfHealTask = Task { @MainActor in
             // 缓冲一下，让「即将自动重启」的提示先被用户看见
             try? await Task.sleep(nanoseconds: UInt64(AudioSelfHealPolicy.relaunchDelay * 1_000_000_000))
             selfHealTask = nil
-            // 缓冲期内又开始干活了就先不重启；回到空闲时上面两个入口会再触发
-            guard state == .idle, !isRecordingTranscriptionInProgress else { return }
+            // 缓冲期内又开始干活了就先不重启；回到空闲时上面几个入口会再触发
+            guard state == .idle,
+                  !isRecordingTranscriptionInProgress, !isFileTranscriptionInProgress else { return }
             // 时间戳必须在真正重启之前落盘，否则重启后读不到、节流失效 → 有崩溃环风险
             AudioSelfHealStore.saveLastRelaunchAt(selfHealNow(), defaults: selfHealDefaults)
             pendingSelfHeal = false

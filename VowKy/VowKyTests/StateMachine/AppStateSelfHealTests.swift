@@ -114,6 +114,27 @@ final class AppStateSelfHealTests: XCTestCase {
         wait(for: [relaunched], timeout: 3.0)
     }
 
+    // MARK: - (d2) 后台文件转录进行中同样推迟，结束后补上
+
+    func test06_fileTranscriptionInProgress_defersRelaunchUntilEnd() {
+        XCTAssertNil(appState.beginFileTranscription())
+
+        let mustNotRelaunchYet = expectation(description: "no relaunch during file transcription")
+        mustNotRelaunchYet.isInverted = true
+        appState.selfHealRelaunch = { mustNotRelaunchYet.fulfill() }
+
+        appState.handleAudioWedged(phase: "start")
+        XCTAssertTrue(appState.pendingSelfHeal)
+        wait(for: [mustNotRelaunchYet], timeout: 2.5)
+
+        let relaunched = expectation(description: "relaunch after file transcription ends")
+        relaunched.expectedFulfillmentCount = 1
+        relaunched.assertForOverFulfill = true
+        appState.selfHealRelaunch = { relaunched.fulfill() }
+        appState.endFileTranscription()
+        wait(for: [relaunched], timeout: 3.0)
+    }
+
     // MARK: - (e) 同一次卡死重复上报只重启一次
 
     func test05_repeatedWedgeReports_relaunchOnlyOnce() {
