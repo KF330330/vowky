@@ -50,6 +50,96 @@ private final class MockFileTranscribing: FileTranscribing {
     }
 }
 
+
+/// 链接下载器 mock：绝不联网、绝不 spawn 进程。
+/// `hold = true` 时 `download` 发完事件后挂起，测试可用 `emit(_:)` 手动喂进度、断言下载中的中间状态。
+private final class MockURLDownloader: URLMediaDownloading, @unchecked Sendable {
+    enum Behavior {
+        /// 依次发出给定进度事件，最后返回字幕文字。
+        case progressThenTranscript([DownloadProgress], String)
+        /// 一直挂着直到外部取消（`Task.sleep` 抛 CancellationError）。
+        case waitForCancellation
+        /// 立即抛「工具准备失败」。
+        case failToolSetup(String)
+    }
+
+    private let behavior: Behavior
+    private let hold: Bool
+    private let lock = NSLock()
+    private var released = false
+    private var progressSink: (@MainActor (DownloadProgress) -> Void)?
+    private var calls: [String] = []
+
+    init(_ behavior: Behavior, hold: Bool = false) {
+        self.behavior = behavior
+        self.hold = hold
+    }
+
+    var callCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return calls.count
+    }
+
+    var receivedURLs: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return calls
+    }
+
+    func release() {
+        lock.lock(); released = true; lock.unlock()
+    }
+
+    private var isReleased: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return released
+    }
+
+    /// 在 `hold` 挂起期间手动喂一条进度事件（同步执行，返回后即可断言）。
+    @MainActor
+    func emit(_ update: DownloadProgress) {
+        lock.lock()
+        let sink = progressSink
+        lock.unlock()
+        sink?(update)
+    }
+
+    private func recordCall(_ urlString: String, _ progress: @escaping @MainActor (DownloadProgress) -> Void) {
+        lock.lock()
+        calls.append(urlString)
+        progressSink = progress
+        lock.unlock()
+    }
+
+    func download(
+        urlString: String,
+        into workDir: URL,
+        cookies: CookieSource,
+        subtitlePriority: SubtitlePriority,
+        progress: @escaping @MainActor (DownloadProgress) -> Void
+    ) async throws -> DownloadResult {
+        // 加锁写状态放在同步方法里：async 函数里直接 NSLock.lock() 会触发
+        // 「unavailable from asynchronous contexts」告警。
+        recordCall(urlString, progress)
+
+        switch behavior {
+        case .progressThenTranscript(let events, let text):
+            for event in events {
+                await progress(event)
+            }
+            while hold, !isReleased {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            return .transcript(text: text, source: .manualSubtitle(language: "en"), title: "mock")
+        case .waitForCancellation:
+            while true {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+        case .failToolSetup(let reason):
+            throw URLDownloadError.toolSetupFailed(reason)
+        }
+    }
+}
+
 @MainActor
 final class FileTranscriptionViewModelTests: XCTestCase {
     private var appState: AppState!
@@ -546,6 +636,197 @@ final class FileTranscriptionViewModelTests: XCTestCase {
 
         viewModel.updateSelectedResultText("取消后的草稿编辑")
         XCTAssertEqual(viewModel.resultText, "取消后的草稿编辑")
+    }
+
+    // MARK: - 链接任务：准备下载工具的进度 / 文案 / 取消 / 拒收
+
+    private func makeURLViewModel(_ mock: MockURLDownloader) -> FileTranscriptionViewModel {
+        FileTranscriptionViewModel(
+            appState: appState,
+            fileTranscriptionServiceFactory: { MockFileTranscribing(.success("x")) },
+            urlDownloadServiceFactory: { mock },
+            cookieSourceProvider: { .none },
+            subtitlePriorityProvider: { .all },
+            yieldToVoiceInput: {},
+            resultRecorder: { _ in }
+        )
+    }
+
+    private func toolEvent(_ toolProgress: ToolProvisionProgress) -> DownloadProgress {
+        DownloadProgress(
+            phase: .provisioningTools,
+            fractionCompleted: toolProgress.phase == .ready ? -1 : toolProgress.fractionCompleted,
+            toolName: toolProgress.tool.isEmpty ? nil : toolProgress.tool,
+            toolProgress: toolProgress
+        )
+    }
+
+    func test_provisioningProgress_updatesJobFields() async throws {
+        let mock = MockURLDownloader(.progressThenTranscript([], "字幕文字"), hold: true)
+        let viewModel = makeURLViewModel(mock)
+        viewModel.appendURLJobs(rawText: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        viewModel.startTranscription()
+        try await waitUntil("downloader called") { mock.callCount == 1 }
+
+        // 第 1 个工具下载到一半：整体进度 = (1-1 + 0.5) / 2 = 0.25
+        mock.emit(toolEvent(ToolProvisionProgress(
+            phase: .downloading, tool: "yt-dlp", fractionCompleted: 0.5,
+            bytesReceived: 18 * 1024 * 1024, totalBytes: 36 * 1024 * 1024,
+            bytesPerSecond: 2 * 1024 * 1024, toolIndex: 1, toolCount: 2
+        )))
+
+        let job = try XCTUnwrap(viewModel.jobs.first)
+        XCTAssertEqual(job.progress, 0.25, accuracy: 0.001)
+        let statusText = viewModel.jobStatusText(job)
+        XCTAssertTrue(statusText.contains("yt-dlp"), "状态文案应含工具名: \(statusText)")
+        XCTAssertTrue(statusText.contains("1/2"), "状态文案应含序号: \(statusText)")
+        let rowText = viewModel.queueRowStatusText(for: job)
+        XCTAssertTrue(rowText.hasPrefix(L("file.phase.provisioningTools")), "队列行文案: \(rowText)")
+        XCTAssertTrue(rowText.contains("25%"), "队列行应含百分比: \(rowText)")
+
+        // 第 2 个工具刚开始：整体进度 = (2-1 + 0) / 2 = 0.5
+        mock.emit(toolEvent(ToolProvisionProgress(
+            phase: .downloading, tool: "ffmpeg", fractionCompleted: 0,
+            bytesReceived: 0, totalBytes: 63 * 1024 * 1024,
+            bytesPerSecond: 1024 * 1024, toolIndex: 2, toolCount: 2
+        )))
+        XCTAssertEqual(try XCTUnwrap(viewModel.jobs.first).progress, 0.5, accuracy: 0.001)
+
+        mock.release()
+        try await waitUntil("job completes") { !viewModel.isRunning }
+    }
+
+    func test_refreshChecking_showsRefreshText() async throws {
+        let mock = MockURLDownloader(.progressThenTranscript([], "字幕文字"), hold: true)
+        let viewModel = makeURLViewModel(mock)
+        viewModel.appendURLJobs(rawText: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        viewModel.startTranscription()
+        try await waitUntil("downloader called") { mock.callCount == 1 }
+
+        mock.emit(toolEvent(ToolProvisionProgress(
+            phase: .checking, tool: "", fractionCompleted: -1, isRefresh: true
+        )))
+
+        let job = try XCTUnwrap(viewModel.jobs.first)
+        XCTAssertEqual(viewModel.jobStatusText(job), L("file.status.refreshingTools"))
+
+        mock.release()
+        try await waitUntil("job completes") { !viewModel.isRunning }
+    }
+
+    func test_readyThenSubtitlePhase_progressResets() async throws {
+        let mock = MockURLDownloader(.progressThenTranscript([], "字幕文字"), hold: true)
+        let viewModel = makeURLViewModel(mock)
+        viewModel.appendURLJobs(rawText: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        viewModel.startTranscription()
+        try await waitUntil("downloader called") { mock.callCount == 1 }
+
+        // `.ready` 不再带 fraction 1（旧行为会把进度条打满，后续阶段又不刷新 → 「下载中但已满格」）。
+        mock.emit(toolEvent(ToolProvisionProgress(
+            phase: .ready, tool: "", fractionCompleted: -1, toolCount: 2
+        )))
+        XCTAssertEqual(try XCTUnwrap(viewModel.jobs.first).progress, 0, accuracy: 0.001)
+
+        mock.emit(DownloadProgress(phase: .fetchingSubtitles, fractionCompleted: -1))
+        XCTAssertEqual(try XCTUnwrap(viewModel.jobs.first).progress, 0, accuracy: 0.001)
+
+        mock.emit(DownloadProgress(phase: .downloading, fractionCompleted: 0.4))
+        XCTAssertEqual(try XCTUnwrap(viewModel.jobs.first).progress, 0.4, accuracy: 0.001)
+
+        // 回归「进度条满」本体：工具阶段涨到 1 后切阶段必须归零。
+        mock.emit(toolEvent(ToolProvisionProgress(
+            phase: .downloading, tool: "ffmpeg", fractionCompleted: 1,
+            bytesReceived: 63 * 1024 * 1024, totalBytes: 63 * 1024 * 1024,
+            bytesPerSecond: -1, toolIndex: 1, toolCount: 1
+        )))
+        XCTAssertEqual(try XCTUnwrap(viewModel.jobs.first).progress, 1, accuracy: 0.001)
+        // 收尾的 .ready 与前一条同属 .provisioningTools，外层阶段没变 → 必须由 .ready 自己清零。
+        mock.emit(toolEvent(ToolProvisionProgress(
+            phase: .ready, tool: "", fractionCompleted: -1, toolCount: 1
+        )))
+        XCTAssertEqual(try XCTUnwrap(viewModel.jobs.first).progress, 0, accuracy: 0.001)
+        mock.emit(DownloadProgress(phase: .fetchingSubtitles, fractionCompleted: -1))
+        XCTAssertEqual(try XCTUnwrap(viewModel.jobs.first).progress, 0, accuracy: 0.001)
+
+        mock.release()
+        try await waitUntil("job completes") { !viewModel.isRunning }
+    }
+
+    func test_cancelDuringProvisioning_marksCancelledNotFailed() async throws {
+        let mock = MockURLDownloader(.waitForCancellation)
+        let viewModel = makeURLViewModel(mock)
+        viewModel.appendURLJobs(rawText: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        viewModel.startTranscription()
+        try await waitUntil("downloader called") { mock.callCount == 1 }
+
+        viewModel.cancel()
+        try await waitUntil("cancel completes") { !viewModel.isRunning }
+
+        XCTAssertEqual(viewModel.jobs.first?.state, .cancelled)
+    }
+
+    func test_toolSetupFailure_marksFailedWithLogHint() async throws {
+        let logURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("VowKyToolsLogTest-\(UUID().uuidString).log")
+        ToolLogger.overrideLogURL = logURL
+        defer { ToolLogger.overrideLogURL = nil }
+
+        let mock = MockURLDownloader(.failToolSetup("下载 yt-dlp 失败：x"))
+        let viewModel = makeURLViewModel(mock)
+        viewModel.appendURLJobs(rawText: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        viewModel.startTranscription()
+        try await waitUntil("failure settles") { !viewModel.isRunning }
+
+        guard case .failed(let message) = try XCTUnwrap(viewModel.jobs.first).state else {
+            return XCTFail("应为失败态: \(String(describing: viewModel.jobs.first?.state))")
+        }
+        XCTAssertTrue(message.contains("下载 yt-dlp 失败：x"), "应保留原始原因: \(message)")
+        XCTAssertTrue(message.contains(ToolLogger.logFilePath), "应带日志路径: \(message)")
+    }
+
+    func test_appendURLJobs_playlistMarkedFailed() async throws {
+        let mock = MockURLDownloader(.progressThenTranscript([], "字幕文字"))
+        let viewModel = makeURLViewModel(mock)
+        viewModel.appendURLJobs(rawText: "https://www.youtube.com/@x/videos https://youtu.be/abc")
+
+        XCTAssertEqual(viewModel.jobs.count, 2)
+        XCTAssertEqual(viewModel.jobs[0].state, .failed(L("file.url.error.playlist")))
+        XCTAssertEqual(viewModel.jobs[1].state, .queued)
+
+        viewModel.startTranscription()
+        try await waitUntil("second job completes") { !viewModel.isRunning }
+
+        XCTAssertEqual(mock.callCount, 1, "只应下载被放行的那一条")
+        XCTAssertEqual(mock.receivedURLs, ["https://youtu.be/abc"])
+    }
+
+    func test_provisioningStatusText_pureFunction() {
+        XCTAssertEqual(
+            FileTranscriptionViewModel.provisioningStatusText(nil),
+            L("file.status.provisioningTools")
+        )
+
+        let withTotal = FileTranscriptionViewModel.provisioningStatusText(ToolProvisionProgress(
+            phase: .downloading, tool: "yt-dlp", fractionCompleted: 0.5,
+            bytesReceived: 18 * 1024 * 1024, totalBytes: 36 * 1024 * 1024,
+            bytesPerSecond: 2 * 1024 * 1024, toolIndex: 1, toolCount: 2
+        ))
+        XCTAssertTrue(withTotal.contains(" / "), "已知总量应显示「已下载 / 总量」: \(withTotal)")
+
+        let unknownTotal = FileTranscriptionViewModel.provisioningStatusText(ToolProvisionProgress(
+            phase: .downloading, tool: "yt-dlp", fractionCompleted: -1,
+            bytesReceived: 18 * 1024 * 1024, totalBytes: -1,
+            bytesPerSecond: 2 * 1024 * 1024, toolIndex: 1, toolCount: 2
+        ))
+        XCTAssertFalse(unknownTotal.contains(" / "), "总量未知不应显示分母: \(unknownTotal)")
+
+        let unknownSpeed = FileTranscriptionViewModel.provisioningStatusText(ToolProvisionProgress(
+            phase: .downloading, tool: "yt-dlp", fractionCompleted: -1,
+            bytesReceived: 18 * 1024 * 1024, totalBytes: -1,
+            bytesPerSecond: -1, toolIndex: 1, toolCount: 2
+        ))
+        XCTAssertFalse(unknownSpeed.contains("/秒"), "速度未知不应显示速率: \(unknownSpeed)")
+        XCTAssertFalse(unknownSpeed.contains("/s"), "速度未知不应显示速率: \(unknownSpeed)")
     }
 
     private func waitUntil(

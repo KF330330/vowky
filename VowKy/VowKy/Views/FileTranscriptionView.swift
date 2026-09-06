@@ -826,6 +826,9 @@ struct FileTranscriptionView: View {
         case .cancelled:
             return viewModel.resultText.isEmpty ? loc.string("file.badge.noResult") : loc.string("file.badge.editableDraft")
         case .downloading:
+            if job.downloadPhase == .provisioningTools {
+                return loc.string("file.phase.provisioningTools")
+            }
             return job.downloadPhase == .fetchingSubtitles
                 ? loc.string("file.phase.fetchingSubtitle")
                 : loc.string("file.badge.downloading")
@@ -848,7 +851,8 @@ struct FileTranscriptionView: View {
         case .downloading:
             // 按子阶段显示，避免「拉字幕」时误显示「正在下载视频」。
             switch job.downloadPhase {
-            case .provisioningTools: return loc.string("file.status.provisioningTools")
+            case .provisioningTools:
+                return FileTranscriptionViewModel.provisioningStatusText(job.toolProgress)
             case .resolving:         return loc.string("file.status.resolving")
             case .fetchingSubtitles: return loc.string("file.status.fetchingSubtitles")
             case .extractingAudio:   return loc.string("file.status.extractingAudio")

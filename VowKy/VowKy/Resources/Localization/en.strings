@@ -237,13 +237,19 @@
 "file.drop.orPasteURL" = "or paste a video link";
 
 "file.row.downloading" = "Downloading";
-"file.status.provisioningTools" = "Setting up downloader (first time only)…";
+"file.status.provisioningTools" = "Setting up downloader (first time only, ~100 MB)…";
+"file.status.refreshingTools" = "Updating downloader (new yt-dlp version)…";
+"file.status.tool.downloading" = "Downloading %@ (%@) · %@";
+"file.status.tool.perSecond" = "%@/s";
+"file.status.tool.verifying" = "Verifying %@…";
+"file.status.tool.installing" = "Installing %@…";
 "file.status.resolving" = "Fetching video info…";
 "file.status.downloading" = "Downloading video…";
 "file.status.extractingAudio" = "Extracting audio…";
 "file.status.fetchingSubtitles" = "Fetching subtitles…";
 "file.badge.downloading" = "Downloading";
 "file.phase.fetchingSubtitle" = "Fetching subtitles";
+"file.phase.provisioningTools" = "Setting up";
 "file.badge.fromSubtitle" = "Subtitle";
 "file.badge.fromAutoSubtitle" = "Auto captions";
 "file.badge.fromLocalASR" = "Local transcription";
@@ -259,11 +265,13 @@
 "file.url.error.ytDlpMissing" = "The downloader could not be started.";
 "file.url.error.generic" = "Download failed: %@";
 "file.url.error.genericFallback" = "Download failed.";
+"file.url.error.playlist" = "This is a channel or playlist link, which isn't supported yet. Paste a link to a single video.";
 
 "file.tool.error.download" = "Failed to download %@: %@. Check your network or proxy and try again.";
 "file.tool.error.checksum" = "Downloaded %@ failed verification. Please try again.";
 "file.tool.error.unpack" = "Failed to unpack %@.";
 "file.tool.error.notExecutable" = "%@ could not be prepared for use.";
+"file.tool.error.logHint" = "Log: %@";
 
 /* Settings → URL download cookies */
 "settings.section.urlDownload" = "URL Download";

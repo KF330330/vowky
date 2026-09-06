@@ -112,6 +112,43 @@ else
     check_warn "BinaryDelta 未找到 (${BINARY_DELTA_BIN})，本次发版将不生成 delta 增量包（老用户走全量更新）"
 fi
 
+# 附加. 工具镜像（链接转写用的 yt-dlp / ffmpeg）——警告级，不阻断发版
+# App 优先从 vowky.com 镜像取工具、失败才回退上游；镜像缺失或过旧只影响首次下载速度。
+check_tools_mirror() {
+    local manifest_json generated_at age_days
+    echo ""
+    echo "[附加] 检查工具镜像 (yt-dlp / ffmpeg)..."
+
+    if ! manifest_json="$("${SCRIPT_DIR}/mirror-verify.sh" --url "https://${DOMAIN}/downloads/tools/manifest.signed.json" 2>/dev/null)"; then
+        check_warn "工具镜像过旧/不完整（签名清单拉取或验签失败），建议 make mirror-tools"
+        return 0
+    fi
+
+    generated_at="$(printf '%s' "$manifest_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("generatedAt",""))' 2>/dev/null || true)"
+    if [ -z "${generated_at}" ]; then
+        check_warn "工具镜像过旧/不完整（清单缺少 generatedAt），建议 make mirror-tools"
+        return 0
+    fi
+
+    age_days="$(GENERATED_AT="${generated_at}" python3 -c '
+import datetime, os, sys
+try:
+    ts = datetime.datetime.strptime(os.environ["GENERATED_AT"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+except ValueError:
+    sys.exit(1)
+print(int((datetime.datetime.now(datetime.timezone.utc) - ts).total_seconds() // 86400))
+' 2>/dev/null || true)"
+
+    if [ -z "${age_days}" ]; then
+        check_warn "工具镜像过旧/不完整（generatedAt 格式无法解析: ${generated_at}），建议 make mirror-tools"
+    elif [ "${age_days}" -gt 30 ]; then
+        check_warn "工具镜像过旧/不完整（清单已 ${age_days} 天未更新），建议 make mirror-tools"
+    else
+        check_pass "工具镜像可用且新鲜（清单 ${age_days} 天前生成: ${generated_at}）"
+    fi
+}
+check_tools_mirror
+
 # 汇总
 echo ""
 echo "============================================"

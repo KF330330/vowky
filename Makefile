@@ -1,4 +1,4 @@
-.PHONY: build deploy deploy-resume deploy-skip-notarize bump-patch bump-minor bump-major preflight verify help dev run
+.PHONY: build deploy deploy-resume deploy-skip-notarize bump-patch bump-minor bump-major preflight verify help dev run mirror-tools
 
 help: ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -29,6 +29,9 @@ preflight: ## 部署前环境预检
 
 verify: ## 验证部署结果
 	./deploy/verify.sh
+
+mirror-tools: ## 同步 yt-dlp/ffmpeg（含 GPL 合规材料）到 vowky.com 工具镜像并发布签名清单
+	./deploy/mirror-tools.sh
 
 # 开发构建工具链：Xcode-26.app 存在则钉住（SpeechAnalyzer 需 macOS 26 SDK），
 # 缺失则警告后回落系统默认（其他机器仍可构建，但不含需求 C 功能）。

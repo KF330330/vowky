@@ -95,6 +95,8 @@ enum URLDownloadError: LocalizedError, Equatable {
     case network
     case noAudioProduced
     case toolLaunchFailed
+    /// 频道 / 播放列表链接：yt-dlp 会遍历整个列表，永不结束，必须前置拒收。
+    case playlistNotSupported
     case generic(String)
 
     var errorDescription: String? {
@@ -108,6 +110,7 @@ enum URLDownloadError: LocalizedError, Equatable {
         case .network:                     return LL("file.url.error.network")
         case .noAudioProduced:             return LL("file.url.error.noAudio")
         case .toolLaunchFailed:            return LL("file.url.error.ytDlpMissing")
+        case .playlistNotSupported:        return LL("file.url.error.playlist")
         case .generic(let message):        return LL("file.url.error.generic", message)
         }
     }
@@ -134,6 +137,9 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
     /// stdout 静默看门狗：无新行超过此时长判为卡死/网络中断（长视频下载本身合法，不设硬墙钟超时）。
     private static let stallTimeout: TimeInterval = 120
     private static let titleTimeout: TimeInterval = 45
+    /// 探针类调用（取标题/列字幕/取元信息）的墙钟上限：这些调用本该几秒完成，
+    /// 静默超时挡不住「一直有输出但永不结束」（频道遍历），必须再加硬上限。
+    static let titlePassWallClock: TimeInterval = 90
 
     /// MediaAudioDecoder 接受的扩展名（保持一致，产物必须落在其中）。
     private static let decodableExtensions: Set<String> = [
@@ -153,10 +159,13 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
     static func platform(for urlString: String) -> Platform {
         let s = urlString.lowercased()
         if s.contains("youtube.com/watch") || s.contains("youtu.be/")
-            || s.contains("youtube.com/shorts") || s.contains("youtube.com/embed") {
+            || s.contains("youtube.com/shorts") || s.contains("youtube.com/embed")
+            || s.contains("youtube.com/live/") {
             return .youtube
         }
-        if s.contains("bilibili.com/video") || s.contains("b23.tv/") || s.contains("bilibili.com/s/video") {
+        // `/festival/...?bvid=BV...` 是哔哩哔哩活动页里的**单个视频**入口，按 .bilibili 处理（无 bvid 的活动页由 rejectionReason 拒收）。
+        if s.contains("bilibili.com/video") || s.contains("b23.tv/") || s.contains("bilibili.com/s/video")
+            || (s.contains("bilibili.com/festival/") && s.contains("bvid=")) {
             return .bilibili
         }
         if s.contains("learn.deeplearning.ai/courses")
@@ -164,6 +173,55 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
             return .deeplearningAI
         }
         return .generic
+    }
+
+    // MARK: 频道 / 播放列表前置拒收
+
+    /// 入队与 `download()` 的前置校验：频道页、播放列表、搜索结果等「多视频入口」一律拒收。
+    /// 理由：yt-dlp 对频道页 `--no-playlist` 无效，会不停遍历整个频道并持续输出，把静默看门狗喂活，
+    /// 表现为「一直下载中、进度条不动」永不结束。返回 nil 表示放行。
+    static func rejectionReason(for urlString: String) -> URLDownloadError? {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let comps = URLComponents(string: trimmed), var host = comps.host?.lowercased() else {
+            return nil
+        }
+        if host.hasPrefix("www.") {
+            host = String(host.dropFirst("www.".count))
+        } else if host.hasPrefix("m.") {
+            host = String(host.dropFirst("m.".count))
+        }
+        let path = comps.path.lowercased()
+        let query = (comps.query ?? "").lowercased()
+
+        if host == "youtube.com" {
+            // 站点首页 / 频道 / 播放列表 / 订阅流 / 搜索结果 → 拒；/watch、/shorts、/embed、/live 放行
+            //（`watch?v=...&list=...` 也放行：有明确的单视频 id，`--no-playlist` 对它有效）。
+            if path.isEmpty || path == "/" {
+                return .playlistNotSupported
+            }
+            let rejectedPrefixes = ["/@", "/channel/", "/c/", "/user/", "/playlist", "/feed/", "/results"]
+            if rejectedPrefixes.contains(where: { path.hasPrefix($0) }) {
+                return .playlistNotSupported
+            }
+            return nil
+        }
+        if host == "youtu.be" {
+            return nil
+        }
+        if host == "space.bilibili.com" {
+            return .playlistNotSupported
+        }
+        if host == "bilibili.com" {
+            if path.hasPrefix("/list/") || path.hasPrefix("/medialist/") {
+                return .playlistNotSupported
+            }
+            if path.hasPrefix("/festival/") {
+                // 活动页带 bvid= 时指向单个视频，放行；不带则是聚合页，拒收。
+                return query.contains("bvid=") ? nil : .playlistNotSupported
+            }
+            return nil
+        }
+        return nil
     }
 
     private func extraArgs(for platform: Platform) -> [String] {
@@ -195,6 +253,10 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let _ = URL(string: trimmed), trimmed.hasPrefix("http") else {
             throw URLDownloadError.invalidURL
+        }
+        // 频道 / 播放列表链接在任何联网动作（含首次下载工具）之前就拒收。
+        if let reason = Self.rejectionReason(for: trimmed) {
+            throw reason
         }
 
         // 1) 确保工具就绪（首次会联网下载 yt-dlp/ffmpeg）。
@@ -286,6 +348,7 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         let result = try await run(
             executable: tools.ytDlp,
             arguments: arguments,
+            abortIfLine: Self.isPlaylistLine,
             onStdoutLine: { line in
                 if let update = Self.parseProgress(line) {
                     Task { @MainActor in progress(update) }
@@ -305,6 +368,10 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         )
 
         try Task.checkCancellation()
+        // 频道 / 播放列表兜底：进程是被「Downloading playlist:」判据掐掉的，报准确原因而非通用下载失败。
+        if result.abort == .matchedLine {
+            throw URLDownloadError.playlistNotSupported
+        }
         if result.exit != 0 {
             let mapped = Self.mapError(stdout: result.stdout, stderr: result.stderr)
             // 哔哩哔哩无 cookie 被 412 拦 → 用 lux（独立二进制，无需登录）下视频再抽音频。
@@ -430,7 +497,10 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         metaArgs += cookies
         metaArgs.append(url)
 
-        let meta = try await run(executable: tools.ytDlp, arguments: metaArgs, isTitlePass: true)
+        let meta = try await run(
+            executable: tools.ytDlp, arguments: metaArgs, isTitlePass: true,
+            wallClockLimit: Self.titlePassWallClock, abortIfLine: Self.isPlaylistLine
+        )
         guard meta.exit == 0 else { return .noSubtitle(title: nil) }   // B站无 cookie 412 等 → 退音频
         guard let dataLine = meta.stdout
             .split(whereSeparator: \.isNewline)
@@ -523,7 +593,7 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         args += cookies
         args.append(url)
 
-        let r = try await run(executable: tools.ytDlp, arguments: args)
+        let r = try await run(executable: tools.ytDlp, arguments: args, abortIfLine: Self.isPlaylistLine)
         try Task.checkCancellation()
         let title = r.stdout
             .split(whereSeparator: \.isNewline)
@@ -544,7 +614,10 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         args += extras
         args += cookies
         args.append(url)
-        let r = try await run(executable: tools.ytDlp, arguments: args, isTitlePass: true)
+        let r = try await run(
+            executable: tools.ytDlp, arguments: args, isTitlePass: true,
+            wallClockLimit: Self.titlePassWallClock, abortIfLine: Self.isPlaylistLine
+        )
         guard r.exit == 0 else { return (manual: [], auto: []) }
         return Self.parseListSubs(r.stdout)
     }
@@ -587,7 +660,7 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         args += cookies
         args.append(url)
 
-        let r = try await run(executable: tools.ytDlp, arguments: args)
+        let r = try await run(executable: tools.ytDlp, arguments: args, abortIfLine: Self.isPlaylistLine)
         try Task.checkCancellation()
         guard r.exit == 0, let vtt = locateSubtitleFile(in: workDir) else { return nil }
         let raw = (try? String(contentsOf: vtt, encoding: .utf8)) ?? ""
@@ -606,7 +679,10 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         jArgs += extras
         jArgs += cookies
         jArgs.append(url)
-        let j = try await run(executable: tools.ytDlp, arguments: jArgs, isTitlePass: true)
+        let j = try await run(
+            executable: tools.ytDlp, arguments: jArgs, isTitlePass: true,
+            wallClockLimit: Self.titlePassWallClock, abortIfLine: Self.isPlaylistLine
+        )
         guard j.exit == 0 else { return .noSubtitle(title: nil) }
 
         let jsonLine = j.stdout.split(whereSeparator: \.isNewline).first(where: { $0.hasPrefix("{") })
@@ -734,7 +810,10 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         arguments += cookies
         arguments.append(url)
 
-        let result = try await run(executable: ytDlp, arguments: arguments, isTitlePass: true)
+        let result = try await run(
+            executable: ytDlp, arguments: arguments, isTitlePass: true,
+            wallClockLimit: Self.titlePassWallClock, abortIfLine: Self.isPlaylistLine
+        )
         if result.exit != 0 {
             throw Self.mapError(stdout: result.stdout, stderr: result.stderr)
         }
@@ -783,6 +862,11 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
             fractionCompleted: min(1, max(0, percent / 100)),
             etaText: etaText
         )
+    }
+
+    /// yt-dlp 开始遍历播放列表 / 频道的标志行。命中即中止：`--no-playlist` 对频道页无效。
+    static func isPlaylistLine(_ line: String) -> Bool {
+        line.hasPrefix("[download] Downloading playlist:")
     }
 
     static func isExtractingLine(_ line: String) -> Bool {
@@ -836,13 +920,31 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
 
     // MARK: 进程运行（合并行回调 + 看门狗 + 取消）
 
-    struct RunResult { let exit: Int32; let stdout: String; let stderr: String }
+    /// 进程被我们主动终止的原因（区别于进程自己退出）。
+    enum AbortReason: Equatable {
+        /// stdout/stderr 静默超过 `stallTimeout`/`titleTimeout`。
+        case stalled
+        /// 达到 `wallClockLimit` 墙钟上限（与是否有输出无关）。
+        case wallClock
+        /// 输出里出现了 `abortIfLine` 判定要中止的行。
+        case matchedLine
+    }
 
-    private func run(
+    struct RunResult {
+        let exit: Int32
+        let stdout: String
+        let stderr: String
+        /// 非 nil 表示进程是被主动终止的；调用方据此区分「命令自己失败」与「我们掐掉了」。
+        let abort: AbortReason?
+    }
+
+    func run(
         executable: URL,
         arguments: [String],
         isTitlePass: Bool = false,
         additionalPath: String? = nil,
+        wallClockLimit: TimeInterval? = nil,
+        abortIfLine: ((String) -> Bool)? = nil,
         onStdoutLine: @escaping (String) -> Void = { _ in },
         onStderrLine: @escaping (String) -> Void = { _ in }
     ) async throws -> RunResult {
@@ -863,8 +965,19 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         process.standardError = stderrPipe
 
         let lastOutput = AtomicTimestamp()
-        let stdoutReader = LineCollector(onLine: onStdoutLine)
-        let stderrReader = LineCollector(onLine: onStderrLine)
+        let abortState = AbortState()
+        // 命中中止行就立刻终止进程：yt-dlp 遍历频道时会持续输出，静默看门狗永远不会触发，
+        // 只能靠「输出内容」这条判据兜底。
+        let wrapLineHandler: (@escaping (String) -> Void) -> (String) -> Void = { downstream in
+            { line in
+                if let abortIfLine, abortIfLine(line), abortState.set(.matchedLine), process.isRunning {
+                    process.terminate()
+                }
+                downstream(line)
+            }
+        }
+        let stdoutReader = LineCollector(onLine: wrapLineHandler(onStdoutLine))
+        let stderrReader = LineCollector(onLine: wrapLineHandler(onStderrLine))
 
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -891,13 +1004,18 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         }
 
         let timeout = isTitlePass ? Self.titleTimeout : Self.stallTimeout
+        let startedAt = Date()
         let watchdog = Task.detached {
             while true {
-                try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 if Task.isCancelled { return }
                 guard process.isRunning else { return }
                 if lastOutput.secondsSinceLast() > timeout {
-                    process.terminate()
+                    if abortState.set(.stalled) { process.terminate() }
+                    return
+                }
+                if let wallClockLimit, Date().timeIntervalSince(startedAt) > wallClockLimit {
+                    if abortState.set(.wallClock) { process.terminate() }
                     return
                 }
             }
@@ -920,7 +1038,8 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         return RunResult(
             exit: process.terminationStatus,
             stdout: stdoutReader.recentText,
-            stderr: stderrReader.recentText
+            stderr: stderrReader.recentText,
+            abort: abortState.current
         )
     }
 }
@@ -964,6 +1083,26 @@ private final class LineCollector: @unchecked Sendable {
     }
 
     var recentText: String { lines.joined(separator: "\n") }
+}
+
+/// 线程安全的「主动终止原因」holder：只记录第一个原因，`set` 返回 true 表示本次是首次设置。
+/// 行回调（readabilityHandler 线程）与看门狗（detached task）都会写，故加锁。
+private final class AbortState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reason: URLDownloadService.AbortReason?
+
+    @discardableResult
+    func set(_ newReason: URLDownloadService.AbortReason) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard reason == nil else { return false }
+        reason = newReason
+        return true
+    }
+
+    var current: URLDownloadService.AbortReason? {
+        lock.lock(); defer { lock.unlock() }
+        return reason
+    }
 }
 
 /// 线程安全的「最后一次输出时间」holder（readabilityHandler 与看门狗跨线程访问）。

@@ -40,6 +40,8 @@ struct FileTranscriptionJob: Identifiable, Equatable {
     var workDir: URL?
     /// 下载子阶段（准备工具 / 解析 / 下载 / 提取音频），用于显示更准确的状态文案。
     var downloadPhase: DownloadProgress.Phase?
+    /// 「准备下载工具」阶段的细节（第几个/共几个、字节、速度）；离开该阶段即置 nil。
+    var toolProgress: ToolProvisionProgress?
     /// 文字来源：直接拉到平台字幕时记录人工/自动，nil 表示走本地 ASR 转写。
     var transcriptSource: TranscriptSource?
 
@@ -277,6 +279,16 @@ final class FileTranscriptionViewModel: ObservableObject {
         case .queued:
             return L("file.row.waiting")
         case .downloading:
+            // 准备工具子阶段单列：有确定进度时带百分比，避免队列行长时间只显示「下载中」。
+            if job.downloadPhase == .provisioningTools {
+                if let toolProgress = job.toolProgress,
+                   toolProgress.phase == .downloading,
+                   toolProgress.fractionCompleted >= 0 {
+                    return L("file.phase.provisioningTools")
+                        + " \(Int(clampedProgress(job.progress) * 100))%"
+                }
+                return L("file.phase.provisioningTools")
+            }
             // 真正下载阶段显示百分比；拉字幕子阶段显示「获取字幕」；其余子阶段显示短词。
             if job.downloadPhase == .downloading, job.progress > 0 {
                 return "\(Int(clampedProgress(job.progress) * 100))%"
@@ -460,6 +472,10 @@ final class FileTranscriptionViewModel: ObservableObject {
             )
             job.kind = .remoteURL
             job.remoteURLString = urlString
+            // 频道 / 播放列表链接入队即判失败：不占用队列、不启动任何下载。
+            if let reason = URLDownloadService.rejectionReason(for: urlString) {
+                job.state = .failed(reason.errorDescription ?? L("file.url.error.unsupported"))
+            }
             return job
         }
         let shouldSelectFirstNewJob = !isRunning || selectedJobID == nil || jobs.isEmpty
@@ -539,6 +555,7 @@ final class FileTranscriptionViewModel: ObservableObject {
                     updateJob(id: jobID) { item in
                         item.state = .downloading
                         item.downloadPhase = .provisioningTools
+                        item.toolProgress = nil
                         item.progress = 0
                         item.resultText = ""
                         item.currentSegment = 0
@@ -616,7 +633,19 @@ final class FileTranscriptionViewModel: ObservableObject {
                         markUnfinishedJobsCancelled(targetJobIDs: targetJobIDs)
                         return
                     } catch {
-                        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        // 取消可能被下游包成别的错误（如 URLSession 取消 → toolSetupFailed），
+                        // 先按取消处理，避免把「用户点了取消」显示成「下载失败」。
+                        guard !Task.isCancelled else {
+                            updateJob(id: jobID) { $0.state = .cancelled }
+                            cleanupWorkDir(for: jobID)
+                            markUnfinishedJobsCancelled(targetJobIDs: targetJobIDs)
+                            return
+                        }
+                        var message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        if case URLDownloadError.toolSetupFailed = error {
+                            // 工具准备失败：把日志路径给出去，用户/支持能一眼定位是哪一段网络卡住。
+                            message += "\n" + L("file.tool.error.logHint", ToolLogger.logFilePath)
+                        }
                         updateJob(id: jobID) { $0.state = .failed(message) }
                         cleanupWorkDir(for: jobID)
                         AnalyticsService.shared.track("file_transcribe_fail", data: [
@@ -885,8 +914,27 @@ final class FileTranscriptionViewModel: ObservableObject {
     private func applyDownload(_ update: DownloadProgress, to jobID: UUID) {
         updateJob(id: jobID) { job in
             job.state = .downloading
+            // 阶段切换即归零：否则「准备工具」阶段涨到的进度会带进下一阶段，
+            // 表现为「显示下载中但进度条已满」（工具准备完成后到第一条真实进度之间的空窗）。
+            if job.downloadPhase != update.phase {
+                job.progress = 0
+            }
             job.downloadPhase = update.phase
-            if update.fractionCompleted >= 0 {
+            job.toolProgress = update.phase == .provisioningTools ? update.toolProgress : nil
+            // 工具准备收尾（.ready）：外层 phase 没变，不会触发上面的阶段切换归零，
+            // 而最后一个工具刚跑到 100% 时进度已是满格 —— 必须显式清零等下一阶段，
+            // 否则又回到「显示下载中但进度条已满」。
+            if update.phase == .provisioningTools, update.toolProgress?.phase == .ready {
+                job.progress = 0
+            }
+            if let toolProgress = update.toolProgress,
+               toolProgress.toolCount > 0,
+               toolProgress.phase == .downloading,
+               toolProgress.fractionCompleted >= 0 {
+                // 多个工具串行下载：把「第 i 个的百分比」摊进整体 0...1。
+                job.progress = (Double(toolProgress.toolIndex - 1) + toolProgress.fractionCompleted)
+                    / Double(toolProgress.toolCount)
+            } else if update.phase != .provisioningTools, update.fractionCompleted >= 0 {
                 job.progress = min(1, max(0, update.fractionCompleted))
             }
         }
@@ -918,6 +966,7 @@ final class FileTranscriptionViewModel: ObservableObject {
         jobs[index].workDir = nil
         jobs[index].mediaURL = nil
         jobs[index].downloadPhase = nil
+        jobs[index].toolProgress = nil
     }
 
     private func apply(progressUpdate: FileTranscriptionProgress, to jobID: UUID) {
@@ -979,13 +1028,46 @@ final class FileTranscriptionViewModel: ObservableObject {
         }
     }
 
-    private func jobStatusText(_ job: FileTranscriptionJob) -> String {
+    /// 「准备下载工具」阶段的状态文案（纯函数，便于单测）。
+    /// 下载中形如「正在下载 yt-dlp（1/2）· 18.2 MB / 36.4 MB · 2.1 MB/秒」。
+    static func provisioningStatusText(_ toolProgress: ToolProvisionProgress?) -> String {
+        guard let toolProgress else { return L("file.status.provisioningTools") }
+        switch toolProgress.phase {
+        case .checking, .ready:
+            return toolProgress.isRefresh
+                ? L("file.status.refreshingTools")
+                : L("file.status.provisioningTools")
+        case .downloading:
+            var detail = toolProgress.totalBytes > 0
+                ? "\(Self.formatBytes(toolProgress.bytesReceived)) / \(Self.formatBytes(toolProgress.totalBytes))"
+                : Self.formatBytes(toolProgress.bytesReceived)
+            if toolProgress.bytesPerSecond >= 0 {
+                detail += " · " + L("file.status.tool.perSecond",
+                                    Self.formatBytes(Int64(toolProgress.bytesPerSecond)))
+            }
+            return L("file.status.tool.downloading",
+                     toolProgress.tool,
+                     "\(toolProgress.toolIndex)/\(toolProgress.toolCount)",
+                     detail)
+        case .verifying:
+            return L("file.status.tool.verifying", toolProgress.tool)
+        case .installing:
+            return L("file.status.tool.installing", toolProgress.tool)
+        }
+    }
+
+    private static func formatBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    /// internal（非 private）：单测要直接断言各阶段的状态文案。
+    func jobStatusText(_ job: FileTranscriptionJob) -> String {
         switch job.state {
         case .queued:
             return L("file.row.waiting")
         case .downloading:
             switch job.downloadPhase {
-            case .provisioningTools: return L("file.status.provisioningTools")
+            case .provisioningTools: return Self.provisioningStatusText(job.toolProgress)
             case .resolving:         return L("file.status.resolving")
             case .fetchingSubtitles: return L("file.status.fetchingSubtitles")
             case .extractingAudio:   return L("file.status.extractingAudio")
