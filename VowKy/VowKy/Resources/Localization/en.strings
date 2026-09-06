@@ -260,7 +260,7 @@
 "file.url.error.generic" = "Download failed: %@";
 "file.url.error.genericFallback" = "Download failed.";
 
-"file.tool.error.download" = "Failed to download %@. Check your internet connection and try again.";
+"file.tool.error.download" = "Failed to download %@: %@. Check your network or proxy and try again.";
 "file.tool.error.checksum" = "Downloaded %@ failed verification. Please try again.";
 "file.tool.error.unpack" = "Failed to unpack %@.";
 "file.tool.error.notExecutable" = "%@ could not be prepared for use.";

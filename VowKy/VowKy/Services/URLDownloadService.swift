@@ -38,12 +38,21 @@ struct DownloadProgress: Sendable {
     let etaText: String?
     /// provisioningTools 阶段正在下载哪个工具（"yt-dlp"/"ffmpeg"/...）。
     let toolName: String?
+    /// 只在 `phase == .provisioningTools` 时非 nil：工具准备的完整进度（第几个/共几个、字节、速度）。
+    let toolProgress: ToolProvisionProgress?
 
-    init(phase: Phase, fractionCompleted: Double, etaText: String? = nil, toolName: String? = nil) {
+    init(
+        phase: Phase,
+        fractionCompleted: Double,
+        etaText: String? = nil,
+        toolName: String? = nil,
+        toolProgress: ToolProvisionProgress? = nil
+    ) {
         self.phase = phase
         self.fractionCompleted = fractionCompleted
         self.etaText = etaText
         self.toolName = toolName
+        self.toolProgress = toolProgress
     }
 }
 
@@ -188,7 +197,7 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
             throw URLDownloadError.invalidURL
         }
 
-        // 1) 确保工具就绪（首次会联网下载 yt-dlp/ffmpeg/ffprobe）。
+        // 1) 确保工具就绪（首次会联网下载 yt-dlp/ffmpeg）。
         await progress(DownloadProgress(phase: .provisioningTools, fractionCompleted: -1))
         let tools: ProvisionedTools
         do {
@@ -196,11 +205,15 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
                 Task { @MainActor in
                     progress(DownloadProgress(
                         phase: .provisioningTools,
-                        fractionCompleted: update.fractionCompleted,
-                        toolName: update.tool.isEmpty ? nil : update.tool
+                        // `.ready` 不再传 1：否则进度条在后续阶段到来前一直满格（「下载中但进度条已满」）。
+                        fractionCompleted: update.phase == .ready ? -1 : update.fractionCompleted,
+                        toolName: update.tool.isEmpty ? nil : update.tool,
+                        toolProgress: update
                     ))
                 }
             }
+        } catch let error as CancellationError {
+            throw error
         } catch {
             let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             throw URLDownloadError.toolSetupFailed(reason)
@@ -315,10 +328,16 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         do {
             lux = try await provisioner.ensureLux { update in
                 Task { @MainActor in
-                    progress(DownloadProgress(phase: .provisioningTools, fractionCompleted: update.fractionCompleted,
-                                              toolName: update.tool.isEmpty ? nil : update.tool))
+                    progress(DownloadProgress(
+                        phase: .provisioningTools,
+                        fractionCompleted: update.phase == .ready ? -1 : update.fractionCompleted,
+                        toolName: update.tool.isEmpty ? nil : update.tool,
+                        toolProgress: update
+                    ))
                 }
             }
+        } catch let error as CancellationError {
+            throw error
         } catch {
             let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             throw URLDownloadError.toolSetupFailed(reason)

@@ -260,7 +260,7 @@
 "file.url.error.generic" = "下载失败：%@";
 "file.url.error.genericFallback" = "下载失败。";
 
-"file.tool.error.download" = "下载 %@ 失败。请检查网络后重试。";
+"file.tool.error.download" = "下载 %@ 失败：%@。请检查网络或代理后重试。";
 "file.tool.error.checksum" = "下载的 %@ 校验失败。请重试。";
 "file.tool.error.unpack" = "解压 %@ 失败。";
 "file.tool.error.notExecutable" = "%@ 无法准备就绪。";
