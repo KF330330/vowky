@@ -41,6 +41,7 @@ final class URLDownloadServiceTests: XCTestCase {
             ytDlpLatestAPI: URL(string: "https://api.test/latest")!,
             ytDlpReleaseBase: URL(string: "https://gh.test/download/")!,
             ffmpegRedirectBase: URL(string: "https://mr.test/redirect/latest/macos/")!,
+            denoReleaseBase: URL(string: "https://gh-deno.test/download/")!,
             manifestPublicKey: nil
         )
         let provisioner = ToolProvisioner(

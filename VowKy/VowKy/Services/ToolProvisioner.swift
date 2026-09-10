@@ -1,7 +1,8 @@
 import CryptoKit
 import Foundation
 
-/// 「从链接转文字」功能依赖两个外部二进制：`yt-dlp`（下载/解析视频）与 `ffmpeg`（抽音频、合成 HLS）。
+/// 「从链接转文字」功能依赖三个外部二进制：`yt-dlp`（下载/解析视频）、`ffmpeg`（抽音频、合成 HLS）
+/// 与 `deno`（yt-dlp 的 JavaScript 运行时，YouTube 挑战求解必需）。
 /// 它们**不打包进 .app**（PyInstaller 的 yt-dlp 在 hardened runtime 下签名/公证极易出问题，且 yt-dlp 随 YouTube 改版很快过时），
 /// 而是**首次用到该功能时联网下载**到 `~/Library/Application Support/VowKy/bin/`，之后缓存复用。
 ///
@@ -16,8 +17,9 @@ import Foundation
 ///   **取不到校验文件同样中止安装**，绝不无校验落盘。
 /// - **等待上限**：大文件走 `ProgressDownloader`（进度 + 低速闸 + 墙钟）；小请求（信封 / 最新版本 API / 校验文件）
 ///   一律走 `fetchSmall` 的墙钟竞速，避免涓流把用户拖在「准备下载工具」界面上。
-/// - **快路径**：两个工具都已装且 yt-dlp 不过期 → 零网络立即返回。
-/// - 不再下载 `ffprobe`（yt-dlp 缺 ffprobe 会自动用 `ffmpeg -i` 探测；首次下载量 163 MB → 100 MB）。
+/// - **快路径**：三个工具都已装（deno 版本达标）且 yt-dlp 不过期 → 零网络立即返回。
+/// - 不再下载 `ffprobe`（yt-dlp 缺 ffprobe 会自动用 `ffmpeg -i` 探测；
+///   首次下载量 163 MB → 约 140 MB（yt-dlp 37 + ffmpeg 28 + deno 38，arm64））。
 ///   已装 ffprobe 的老机器不删文件；`Manifest.ffprobeFetchedAt` 保留只为兼容旧 manifest.json。
 /// - App 未沙盒（project.yml `ENABLE_APP_SANDBOX: NO`）+ URLSession 自写文件不带 `com.apple.quarantine`，
 ///   故下载的二进制无 Gatekeeper 拦截、无需公证即可作为子进程执行。
@@ -60,7 +62,7 @@ struct ToolProvisionProgress: Sendable, Equatable {
     let toolIndex: Int
     /// 本次要做的动作总数（安装 + 刷新都计；0 = 无动作）。
     let toolCount: Int
-    /// 本动作是「已装但刷新」；`.checking` 阶段表示两个工具都已装。
+    /// 本动作是「已装但刷新」；`.checking` 阶段表示三个工具都已装。
     let isRefresh: Bool
 
     init(
@@ -91,6 +93,7 @@ struct ProvisionedTools: Sendable {
     let binDir: URL
     let ytDlp: URL
     let ffmpeg: URL
+    let deno: URL
 }
 
 // MARK: - 端点
@@ -101,6 +104,7 @@ struct ToolEndpoints: Sendable {
     var ytDlpLatestAPI: URL
     var ytDlpReleaseBase: URL
     var ffmpegRedirectBase: URL
+    var denoReleaseBase: URL
     /// Ed25519 raw 32 字节；nil → 镜像整体禁用。
     var manifestPublicKey: Data?
 
@@ -111,6 +115,7 @@ struct ToolEndpoints: Sendable {
             ytDlpLatestAPI: URL(string: "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")!,
             ytDlpReleaseBase: URL(string: "https://github.com/yt-dlp/yt-dlp/releases/download/")!,
             ffmpegRedirectBase: URL(string: "https://ffmpeg.martin-riedl.de/redirect/latest/macos/")!,
+            denoReleaseBase: URL(string: "https://github.com/denoland/deno/releases/download/")!,
             manifestPublicKey: raw?.count == 32 ? raw : nil
         )
     }
@@ -119,6 +124,7 @@ struct ToolEndpoints: Sendable {
 // MARK: - 镜像清单
 
 /// 镜像清单（schema 1）。只经由 `decodeSignedEnvelope` 产生——即：**验签通过才可能存在**。
+/// `deno` 为可选键（2026-09 加入），缺失=镜像无 deno → 上游。
 struct ToolMirrorManifest: Decodable, Sendable, Equatable {
     struct Asset: Decodable, Sendable, Equatable {
         let buildId: String?
@@ -137,11 +143,17 @@ struct ToolMirrorManifest: Decodable, Sendable, Equatable {
         let sha256: String
         let size: Int64
     }
+    struct Deno: Decodable, Sendable, Equatable {
+        let tag: String
+        let arm64: Asset
+        let amd64: Asset
+    }
 
     let schema: Int
     let generatedAt: String
     let ytDlp: YtDlp
     let ffmpeg: FFmpeg
+    let deno: Deno?
 
     private struct Envelope: Decodable {
         let schema: Int
@@ -161,11 +173,16 @@ struct ToolMirrorManifest: Decodable, Sendable, Equatable {
               manifest.schema == 1 else {
             return nil
         }
-        let assets = [
+        var assets = [
             (manifest.ytDlp.asset, manifest.ytDlp.sha256),
             (manifest.ffmpeg.arm64.asset, manifest.ffmpeg.arm64.sha256),
             (manifest.ffmpeg.amd64.asset, manifest.ffmpeg.amd64.sha256),
         ]
+        if let deno = manifest.deno {
+            guard !deno.tag.isEmpty else { return nil }
+            assets.append((deno.arm64.asset, deno.arm64.sha256))
+            assets.append((deno.amd64.asset, deno.amd64.sha256))
+        }
         for (asset, sha) in assets {
             guard isValidSHA256(sha), isSafeRelativeAsset(asset) else { return nil }
         }
@@ -174,6 +191,12 @@ struct ToolMirrorManifest: Decodable, Sendable, Equatable {
 
     func ffmpegAsset(archPath: String) -> Asset {
         archPath == "arm64" ? ffmpeg.arm64 : ffmpeg.amd64
+    }
+
+    /// 镜像没有 deno 键（旧信封）→ nil，调用方回退上游。
+    func denoAsset(archPath: String) -> Asset? {
+        guard let deno else { return nil }
+        return archPath == "arm64" ? deno.arm64 : deno.amd64
     }
 
     static func assetURL(base: URL, asset: String) -> URL {
@@ -228,12 +251,39 @@ actor ToolProvisioner {
     #endif
     private static let fallbackLuxTag = "v0.24.1"
 
+    // MARK: deno 常量
+
+    /// deno：yt-dlp 的默认 JS 运行时（YouTube 挑战求解必需）。既是上游钉住版本，也是本机/镜像可接受的最低版本。
+    private static let denoTag = "v2.9.6"
+    #if arch(arm64)
+    private static let denoArchTriple = "aarch64"
+    #else
+    private static let denoArchTriple = "x86_64"
+    #endif
+    private static var denoAssetName: String { "deno-\(denoArchTriple)-apple-darwin.zip" }
+
+    /// 已装/镜像 tag 是否满足最低版本：去掉前缀 "v" 后用 `compareYtDlpTags` 逐段比较，nil/空 → false。
+    static func denoTagSatisfies(_ tag: String?) -> Bool {
+        guard let tag, !tag.isEmpty else { return false }
+        func stripV(_ value: String) -> String { value.hasPrefix("v") ? String(value.dropFirst()) : value }
+        return compareYtDlpTags(stripV(tag), stripV(denoTag)) != .orderedAscending
+    }
+
+    // MARK: 默认下载策略
+
+    static let defaultMirrorPolicy = DownloadPolicy(maxDuration: 240)
+    /// 上游是最后一道：GitHub 链路有停顿（09-06 实测 30 s 窗 <100 KB/s 但整体 238 KB/s 被误判 too_slow），
+    /// 放宽到 50 KB/s · 60 s 窗。
+    static let defaultUpstreamPolicy = DownloadPolicy(
+        minBytesPerSecond: 50 * 1024, throughputWindow: 60, graceSeconds: 20, maxDuration: 900
+    )
+
     init(
         binDirOverride: URL? = nil,
         sessionConfiguration: URLSessionConfiguration? = nil,
         endpoints: ToolEndpoints? = nil,
-        mirrorPolicy: DownloadPolicy = DownloadPolicy(maxDuration: 240),
-        upstreamPolicy: DownloadPolicy = DownloadPolicy(maxDuration: 900),
+        mirrorPolicy: DownloadPolicy = ToolProvisioner.defaultMirrorPolicy,
+        upstreamPolicy: DownloadPolicy = ToolProvisioner.defaultUpstreamPolicy,
         smallRequestWallClock: TimeInterval = 15,
         envelopeWallClock: TimeInterval = 10,
         analytics: (@Sendable (String, [String: Any]) -> Void)? = nil
@@ -284,26 +334,32 @@ actor ToolProvisioner {
 
     // MARK: - 公开 API
 
-    /// 确保 yt-dlp / ffmpeg 都已就绪，返回它们的绝对路径。缺失则下载；yt-dlp 过期则尽力刷新。
+    /// 确保 yt-dlp / ffmpeg / deno 都已就绪，返回它们的绝对路径。缺失则下载；yt-dlp 过期则尽力刷新。
     func ensureTools(progress: (@Sendable (ToolProvisionProgress) -> Void)? = nil) async throws -> ProvisionedTools {
         let startedAt = Date()
         let binDir = try ensureBinDir()
         let ytDlp = binDir.appendingPathComponent("yt-dlp")
         let ffmpeg = binDir.appendingPathComponent("ffmpeg")
+        let deno = binDir.appendingPathComponent("deno")
         let ytInstalled = isInstalled(ytDlp)
         let ffInstalled = isInstalled(ffmpeg)
-        let tools = ProvisionedTools(binDir: binDir, ytDlp: ytDlp, ffmpeg: ffmpeg)
+        // deno 不自动刷新：文件可执行**且** manifest 记录的 tag 达到最低版本才算已装（缺记录=未装）。
+        let denoInstalled = isInstalled(deno) && Self.denoTagSatisfies(readManifest().denoTag)
+        let tools = ProvisionedTools(binDir: binDir, ytDlp: ytDlp, ffmpeg: ffmpeg, deno: deno)
 
         // 快路径：工具齐备且版本新鲜 → 零网络立即返回。
-        if ytInstalled && ffInstalled && !isYtDlpStale() {
+        if ytInstalled && ffInstalled && denoInstalled && !isYtDlpStale() {
             ToolLogger.log("工具齐备，跳过网络")
             progress?(ToolProvisionProgress(phase: .ready, tool: "", fractionCompleted: -1, toolCount: 0))
             return tools
         }
 
-        ToolLogger.logSessionStart(installed: ["yt-dlp": ytInstalled, "ffmpeg": ffInstalled])
+        ToolLogger.logSessionStart(
+            installed: ["yt-dlp": ytInstalled, "ffmpeg": ffInstalled, "deno": denoInstalled]
+        )
         progress?(ToolProvisionProgress(
-            phase: .checking, tool: "", fractionCompleted: -1, isRefresh: ytInstalled && ffInstalled
+            phase: .checking, tool: "", fractionCompleted: -1,
+            isRefresh: ytInstalled && ffInstalled && denoInstalled
         ))
 
         // 镜像清单与上游最新版本并发查询（两者都是有墙钟上限的小请求）。
@@ -324,6 +380,9 @@ actor ToolProvisioner {
         }
         if !ffInstalled {
             actions.append(.installFFmpeg)
+        }
+        if !denoInstalled {
+            actions.append(.installDeno)
         }
 
         let count = actions.count
@@ -353,6 +412,10 @@ actor ToolProvisioner {
             case .installFFmpeg:
                 try await installFFmpeg(
                     dest: ffmpeg, mirror: mirror, index: index, count: count, progress: progress
+                )
+            case .installDeno:
+                try await installDeno(
+                    dest: deno, mirror: mirror, index: index, count: count, progress: progress
                 )
             }
             try Task.checkCancellation()
@@ -390,6 +453,8 @@ actor ToolProvisioner {
         guard let binDir = try? binDirectoryURL() else { return false }
         return isInstalled(binDir.appendingPathComponent("yt-dlp"))
             && isInstalled(binDir.appendingPathComponent("ffmpeg"))
+            && isInstalled(binDir.appendingPathComponent("deno"))
+            && Self.denoTagSatisfies(readManifest().denoTag)
     }
 
     /// 让下次 `ensureTools()` 强制重下 yt-dlp（供 URLDownloadService 在疑似 yt-dlp 过时失败后重试一次）。
@@ -405,6 +470,7 @@ actor ToolProvisioner {
         case installYtDlp(target: String, preferMirror: Bool)
         case refreshYtDlp(target: String, preferMirror: Bool)
         case installFFmpeg
+        case installDeno
     }
 
     /// **永不降级**：只有当「已知的最新版本」严格高于本机已装版本时才刷新。
@@ -477,6 +543,7 @@ actor ToolProvisioner {
         }
         ToolLogger.log(
             "mirror manifest ok: yt-dlp=\(manifest.ytDlp.tag) ffmpeg=\(manifest.ffmpeg.version) "
+            + "deno=\(manifest.deno?.tag ?? "-") "
             + "generatedAt=\(manifest.generatedAt) 签名 OK"
         )
         return manifest
@@ -680,6 +747,77 @@ actor ToolProvisioner {
             throw ToolProvisionError.unpackFailed(tool: name)
         }
         try install(from: extracted, to: dest, tool: name)
+    }
+
+    // MARK: - deno
+
+    /// deno 是 yt-dlp 的 JS 运行时：镜像优先、失败或版本不达标回退上游钉住版本。
+    /// deno 不自动刷新，只在「没装 / 已装版本低于最低要求」时装一次。
+    private func installDeno(
+        dest: URL,
+        mirror: ToolMirrorManifest?,
+        index: Int,
+        count: Int,
+        progress: (@Sendable (ToolProvisionProgress) -> Void)?
+    ) async throws {
+        if let mirror, let entry = mirror.deno {
+            if Self.denoTagSatisfies(entry.tag), let asset = mirror.denoAsset(archPath: Self.ffmpegArchPath) {
+                do {
+                    let tmp = try await downloadVerified(
+                        tool: "deno", source: "mirror",
+                        url: ToolMirrorManifest.assetURL(base: endpoints.mirrorBase, asset: asset.asset),
+                        expectedSHA: asset.sha256, policy: mirrorPolicy,
+                        index: index, count: count, isRefresh: false, progress: progress
+                    )
+                    defer { try? fileManager.removeItem(at: tmp) }
+                    try unpackAndInstall(zip: tmp, name: "deno", dest: dest, index: index, count: count, progress: progress)
+                    try verifyDenoRuns(at: dest)
+                    writeManifest(staticTool: "deno", denoTag: entry.tag)
+                    return
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    ToolLogger.log("deno mirror 失败，回退上游: \(Self.shortDescription(error))")
+                }
+            } else {
+                ToolLogger.log("镜像 deno \(entry.tag) 低于要求 \(Self.denoTag)，改用上游")
+            }
+        }
+        try await installDenoFromUpstream(dest: dest, index: index, count: count, progress: progress)
+    }
+
+    /// 上游：`<denoReleaseBase>/<denoTag>/<asset>`，sidecar 同目录 `<asset>.sha256sum`（格式 `<sha>  <asset>`，
+    /// `fetchExpectedSHA` 已兼容）。先取 sidecar 再下载：取不到即 fail-closed（checksumMismatch），不浪费 40 MB。
+    private func installDenoFromUpstream(
+        dest: URL,
+        index: Int,
+        count: Int,
+        progress: (@Sendable (ToolProvisionProgress) -> Void)?
+    ) async throws {
+        let zipURL = endpoints.denoReleaseBase
+            .appendingPathComponent(Self.denoTag)
+            .appendingPathComponent(Self.denoAssetName)
+        guard let sumURL = URL(string: zipURL.absoluteString + ".sha256sum"),
+              let expected = await fetchExpectedSHA(checksumURL: sumURL, assetName: Self.denoAssetName) else {
+            throw ToolProvisionError.checksumMismatch(tool: "deno")
+        }
+        let tmp = try await downloadVerified(
+            tool: "deno", source: "upstream", url: zipURL, expectedSHA: expected, policy: upstreamPolicy,
+            index: index, count: count, isRefresh: false, progress: progress
+        )
+        defer { try? fileManager.removeItem(at: tmp) }
+        try unpackAndInstall(zip: tmp, name: "deno", dest: dest, index: index, count: count, progress: progress)
+        try verifyDenoRuns(at: dest)
+        writeManifest(staticTool: "deno", denoTag: Self.denoTag)
+    }
+
+    /// 装完必须能跑：`deno --version` 30 s 内退出码 0。跑不起来（架构不符/被拦）就删掉并抛 `notExecutable`——
+    /// yt-dlp 对不可用的运行时只静默警告，不冒烟就定位不到根因。
+    private func verifyDenoRuns(at dest: URL) throws {
+        guard runProcess(dest.path, ["--version"], timeout: 30) == 0 else {
+            try? fileManager.removeItem(at: dest)
+            throw ToolProvisionError.notExecutable(tool: "deno")
+        }
     }
 
     // MARK: - lux（tar.gz 内单个二进制）
@@ -1084,6 +1222,9 @@ actor ToolProvisioner {
         /// 上一次「查询/刷新失败」的时间，用于 24 h 退避。
         var ytDlpRefreshCheckedAt: Date?
         var ffmpegFetchedAt: Date?
+        /// deno 的钉住版本（形如 "v2.9.6"）与安装时间；缺记录=视为未装。
+        var denoTag: String?
+        var denoFetchedAt: Date?
         /// 已不再下载 ffprobe；字段保留只为兼容旧 manifest.json（老机器上的 ffprobe 文件也不删）。
         var ffprobeFetchedAt: Date?
         var luxFetchedAt: Date?
@@ -1110,6 +1251,7 @@ actor ToolProvisioner {
         ytDlpVersionCheckedAt: Date?? = nil,
         ytDlpRefreshCheckedAt: Date?? = nil,
         staticTool: String? = nil,
+        denoTag: String? = nil,
         luxFetchedAt: Date? = nil
     ) {
         guard let url = manifestURL() else { return }
@@ -1119,6 +1261,8 @@ actor ToolProvisioner {
         if case let .some(value) = ytDlpVersionCheckedAt { manifest.ytDlpVersionCheckedAt = value }
         if case let .some(value) = ytDlpRefreshCheckedAt { manifest.ytDlpRefreshCheckedAt = value }
         if staticTool == "ffmpeg" { manifest.ffmpegFetchedAt = Date() }
+        if staticTool == "deno" { manifest.denoFetchedAt = Date() }
+        if let denoTag { manifest.denoTag = denoTag }
         if let luxFetchedAt { manifest.luxFetchedAt = luxFetchedAt }
         manifest.arch = Self.ffmpegArchPath
         if let data = try? JSONEncoder.toolManifest.encode(manifest) {

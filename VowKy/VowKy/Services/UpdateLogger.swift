@@ -126,11 +126,17 @@ enum UpdateLogger {
             truncateFile(at: url, keepBytes: maxFileSize / 2)
         }
 
-        guard let handle = try? FileHandle(forWritingTo: url) else { return }
-        handle.seekToEndOfFile()
-        handle.write(data)
-        try? handle.synchronize()
-        try? handle.close()
+        // 必须用可抛错的新 API：旧版 `seekToEndOfFile()`/`write(_:)` 在磁盘满等 I/O 错误下抛
+        // Objective-C 异常（NSFileHandleOperationException），`try?` 挡不住，会整个 App 崩溃。
+        do {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            try handle.synchronize()
+        } catch {
+            // 日志写失败静默忽略，绝不影响更新流程。
+        }
     }
 
     private static func truncateFile(at url: URL, keepBytes: Int) {

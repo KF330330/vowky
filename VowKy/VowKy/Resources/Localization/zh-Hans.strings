@@ -237,7 +237,7 @@
 "file.drop.orPasteURL" = "或粘贴视频链接";
 
 "file.row.downloading" = "下载中";
-"file.status.provisioningTools" = "正在准备下载工具（仅首次，约 100 MB）…";
+"file.status.provisioningTools" = "正在准备下载工具（仅首次，约 140 MB）…";
 "file.status.refreshingTools" = "正在更新下载工具（yt-dlp 有新版本）…";
 "file.status.tool.downloading" = "正在下载 %@（%@）· %@";
 "file.status.tool.perSecond" = "%@/秒";

@@ -1,10 +1,10 @@
 import CFNetwork
 import Foundation
 
-/// 「链接转文字」外部工具（yt-dlp / ffmpeg / lux）准备链路专用的独立日志，落盘到
+/// 「链接转文字」外部工具（yt-dlp / ffmpeg / deno / lux）准备链路专用的独立日志，落盘到
 /// `~/Library/Application Support/VowKy/tools.log`。
 ///
-/// 设计目的：首次转链接要串行下载约 100 MB 外部工具，用户侧一旦「卡住」，
+/// 设计目的：首次转链接要串行下载约 140 MB 外部工具，用户侧一旦「卡住」，
 /// 只需要这一份日志就能判断卡在哪一步（镜像/上游、哪个工具、多少字节、什么速度、什么错误）。
 /// 与 `UpdateLogger` 同结构、各写各的文件，互不干扰。
 /// 全部为静态、线程安全（文件追加）的纯日志，不改变任何下载行为。
@@ -34,9 +34,10 @@ enum ToolLogger {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
         appendToFile("\n========== VowKy Tools  v\(version) (build \(build)) \(archName())  \(timestamp()) ==========\n")
-        let yt = (installed["yt-dlp"] ?? false) ? "Y" : "N"
-        let ff = (installed["ffmpeg"] ?? false) ? "Y" : "N"
-        log("已装: yt-dlp=\(yt) ffmpeg=\(ff)")
+        let summary = ["yt-dlp", "ffmpeg", "deno"]
+            .map { "\($0)=\((installed[$0] ?? false) ? "Y" : "N")" }
+            .joined(separator: " ")
+        log("已装: \(summary)")
         log("系统代理: \(proxySummary())")
     }
 

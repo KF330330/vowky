@@ -237,7 +237,7 @@
 "file.drop.orPasteURL" = "or paste a video link";
 
 "file.row.downloading" = "Downloading";
-"file.status.provisioningTools" = "Setting up downloader (first time only, ~100 MB)…";
+"file.status.provisioningTools" = "Setting up downloader (first time only, ~140 MB)…";
 "file.status.refreshingTools" = "Updating downloader (new yt-dlp version)…";
 "file.status.tool.downloading" = "Downloading %@ (%@) · %@";
 "file.status.tool.perSecond" = "%@/s";
