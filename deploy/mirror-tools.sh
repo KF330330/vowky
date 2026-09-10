@@ -17,6 +17,7 @@
 #   FFMPEG_BUILD_ID_ARM64=<buildId>    钉 arm64 ffmpeg 构建（默认跟随 martin-riedl latest 重定向）
 #   FFMPEG_BUILD_ID_AMD64=<buildId>    钉 amd64 ffmpeg 构建
 #   DENO_TAG=<tag>                     钉 deno 版本（默认取 GitHub latest）
+#                                      deno 资产优先取 dl.deno.land（官方 CDN），GitHub release 回退
 #   MIRROR_ABORT_BEFORE_MANIFEST=1     在发布签名信封前退出（验收原子性用，exit 3）
 
 set -euo pipefail
@@ -425,15 +426,31 @@ else
     [[ -n "$DTAG" ]] || { log_error "无法获取 deno 最新 tag"; exit 1; }
     log_info "deno 最新 tag: ${DTAG}"
 fi
+
+# deno 资产取源：优先官方 CDN dl.deno.land（Deno 官方 install.sh 用的发行端点，与 GitHub release
+# 是同一批文件——本机实测四个 .sha256sum 两边逐字节一致），失败再回 GitHub release（致命兜底）。
+# 动机：2026-09-10 实测 GitHub 拉 deno zip 只有 ~0.13 MB/s 且会整条连接假死，dl.deno.land ~2.5 MB/s。
+# 校验逻辑一字未改：仍以下载到的 sidecar 为准比对 zip 与解压后二进制的 sha256。
+# 用法: fetch_deno_asset <文件名> <落盘路径>
+fetch_deno_asset() {
+    local name="$1" dest="$2"
+    if fetch_optional "https://dl.deno.land/release/${DTAG}/${name}" "$dest"; then
+        log_info "deno 资产取自 dl.deno.land: ${name}"
+        return 0
+    fi
+    log_warn "dl.deno.land 取不到 ${name}，回退 GitHub release"
+    fetch "https://github.com/denoland/deno/releases/download/${DTAG}/${name}" "$dest"
+    log_info "deno 资产取自 GitHub release: ${name}"
+}
+
 DENO_DIR="${STAGE}/deno/${DTAG}"
 for ARCH in arm64 amd64; do
     case "$ARCH" in arm64) TRIPLE=aarch64 ;; amd64) TRIPLE=x86_64 ;; esac
     ASSET="deno-${TRIPLE}-apple-darwin.zip"
     DEST="${DENO_DIR}/${ARCH}"; mkdir -p "$DEST"
-    BASE="https://github.com/denoland/deno/releases/download/${DTAG}"
-    fetch "${BASE}/${ASSET}"                              "${DEST}/${ASSET}"
-    fetch "${BASE}/${ASSET}.sha256sum"                    "${DEST}/${ASSET}.sha256sum"
-    fetch "${BASE}/deno-${TRIPLE}-apple-darwin.sha256sum" "${DEST}/deno-${TRIPLE}-apple-darwin.sha256sum"
+    fetch_deno_asset "${ASSET}"                              "${DEST}/${ASSET}"
+    fetch_deno_asset "${ASSET}.sha256sum"                    "${DEST}/${ASSET}.sha256sum"
+    fetch_deno_asset "deno-${TRIPLE}-apple-darwin.sha256sum" "${DEST}/deno-${TRIPLE}-apple-darwin.sha256sum"
     EXPECTED="$(awk -v a="$ASSET" '$2 == a {print $1}' "${DEST}/${ASSET}.sha256sum" | head -1)"
     ACTUAL="$(sha256_of "${DEST}/${ASSET}")"
     [[ -n "$EXPECTED" && "$EXPECTED" == "$ACTUAL" ]] || { log_error "${ASSET} 校验不匹配: 期望 ${EXPECTED:-<空>}，实得 ${ACTUAL}"; exit 1; }
