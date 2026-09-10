@@ -28,6 +28,15 @@ enum CookieSource: Equatable, Sendable {
             return .none
         }
     }
+
+    /// 面向用户的显示名：错误文案里要说明「已用哪个浏览器的 Cookie 重试过」。
+    var displayLabel: String {
+        switch self {
+        case .none: return ""
+        case .browser(let b): return b.isEmpty ? "" : b.prefix(1).uppercased() + b.dropFirst()
+        case .cookiesFile: return "cookies.txt"
+        }
+    }
 }
 
 struct DownloadProgress: Sendable {
@@ -89,6 +98,9 @@ enum URLDownloadError: LocalizedError, Equatable {
     case toolSetupFailed(String)
     case invalidURL
     case authenticationRequired
+    /// YouTube 机器人验证（"Sign in to confirm you're not a bot" / "The page needs to be reloaded"）。
+    /// `cookieLabel == nil` = 还没带 cookie（指引用户去设置里选浏览器）；非 nil = 已用该浏览器 cookie 重试仍失败。
+    case botCheck(cookieLabel: String?)
     case rateLimited
     case unsupportedURL
     case videoUnavailable
@@ -104,6 +116,9 @@ enum URLDownloadError: LocalizedError, Equatable {
         case .toolSetupFailed(let reason): return reason
         case .invalidURL:                  return LL("file.url.error.invalidURL")
         case .authenticationRequired:      return LL("file.url.error.authRequired")
+        case .botCheck(let label):
+            guard let label, !label.isEmpty else { return LL("file.url.error.botCheck") }
+            return LL("file.url.error.botCheckWithCookies", label)
         case .rateLimited:                 return LL("file.url.error.rateLimited")
         case .unsupportedURL:              return LL("file.url.error.unsupported")
         case .videoUnavailable:            return LL("file.url.error.unavailable")
@@ -113,6 +128,12 @@ enum URLDownloadError: LocalizedError, Equatable {
         case .playlistNotSupported:        return LL("file.url.error.playlist")
         case .generic(let message):        return LL("file.url.error.generic", message)
         }
+    }
+
+    /// 供 `catch ... where error.isBotCheck` 与 `guard` 复用（`.botCheck` 带关联值，不能直接 `==` 比）。
+    var isBotCheck: Bool {
+        if case .botCheck = self { return true }
+        return false
     }
 }
 
@@ -140,6 +161,12 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
     /// 探针类调用（取标题/列字幕/取元信息）的墙钟上限：这些调用本该几秒完成，
     /// 静默超时挡不住「一直有输出但永不结束」（频道遍历），必须再加硬上限。
     static let titlePassWallClock: TimeInterval = 90
+    /// 带 cookie 的探针：首次读浏览器 cookie 可能弹钥匙串授权，而 `--print` 隐含 quiet、弹窗期间零输出，
+    /// 45 s 静默会把「正等用户点弹窗」的进程掐掉 → 放宽到 120 s 静默（isTitlePass=false）/ 180 s 墙钟。
+    static let cookieProbeWallClock: TimeInterval = 180
+    static func probeLimits(cookiesInUse: Bool) -> (isTitlePass: Bool, wallClock: TimeInterval) {
+        cookiesInUse ? (false, cookieProbeWallClock) : (true, titlePassWallClock)
+    }
 
     /// MediaAudioDecoder 接受的扩展名（保持一致，产物必须落在其中）。
     private static let decodableExtensions: Set<String> = [
@@ -241,6 +268,11 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         }
     }
 
+    /// yt-dlp 的 JS 运行时（YouTube 挑战求解必需）：显式指向 binDir 里的 deno，绝不依赖 PATH。
+    private func runtimeArgs(_ tools: ProvisionedTools) -> [String] {
+        ["--js-runtimes", "deno:\(tools.deno.path)"]
+    }
+
     // MARK: 主流程
 
     func download(
@@ -284,24 +316,55 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
 
         let platform = Self.platform(for: trimmed)
         let extras = extraArgs(for: platform)
-        // Cookie 只发给哔哩哔哩（它的 412 闸需要登录 cookie）。YouTube 带 cookie 会被迫走需要 JS runtime(nsig)
-        // 的格式解析，本机无 deno/node → 连「只取字幕」都报「Requested format is not available」而失败；
-        // DeepLearning/通用的公开内容也不需要 cookie。这样全局 cookie 设成浏览器后，转 YouTube 不再被搞坏。
-        let cookieArguments = platform == .bilibili ? cookieArgs(cookies) : []
+        // Cookie 策略：B 站恒带（412 闸）；YouTube 默认不带，命中机器人验证后升级为带（见 escalateCookiesIfPossible）；
+        // 其余平台不带。
+        let configuredCookieArgs = cookieArgs(cookies)
+        var cookieArguments = platform == .bilibili ? configuredCookieArgs : []
+        var cookiesEscalated = false
+        /// 命中机器人验证时调用：YouTube 且已配置 cookie 且尚未升级 → 切到带 cookie，返回 true（可重试一次）。
+        func escalateCookiesIfPossible() -> Bool {
+            guard platform == .youtube, !cookiesEscalated, !configuredCookieArgs.isEmpty else {
+                return false
+            }
+            cookieArguments = configuredCookieArgs
+            cookiesEscalated = true
+            ToolLogger.log("YouTube 机器人验证 → 带 \(cookies.displayLabel) cookie 重试")
+            return true
+        }
+        /// 只在「最终放弃」时调用：三个阶段的放弃路径（含字幕阶段升级后仍验证、直接 throw 的那条）
+        /// 都经过这里，放弃原因写在这一处，既不漏也不重复。
+        func botCheckError() -> URLDownloadError {
+            if platform == .youtube {
+                ToolLogger.log(cookiesEscalated
+                    ? "YouTube 机器人验证：带 \(cookies.displayLabel) cookie 仍失败"
+                    : "YouTube 机器人验证：未配置 cookie，报错")
+            }
+            return .botCheck(cookieLabel: cookiesEscalated ? cookies.displayLabel : nil)
+        }
 
         // 2) 字幕优先：先尝试直接拉平台字幕（快 + 质量高）。拿到就直接出文字，跳过下载 + ASR。
         var knownTitle: String?
         if subtitlePriority != .never {
             await progress(DownloadProgress(phase: .fetchingSubtitles, fractionCompleted: -1))
-            switch await trySubtitle(
+            var outcome = await trySubtitle(
                 platform: platform, url: trimmed, extras: extras,
                 cookies: cookieArguments, priority: subtitlePriority, tools: tools, workDir: workDir
-            ) {
+            )
+            if case .botCheck = outcome, escalateCookiesIfPossible() {
+                outcome = await trySubtitle(
+                    platform: platform, url: trimmed, extras: extras,
+                    cookies: cookieArguments, priority: subtitlePriority, tools: tools, workDir: workDir
+                )
+            }
+            switch outcome {
             case .transcript(let text, let source, let title):
                 let resolved = (title?.isEmpty == false) ? title! : fallbackTitle(for: trimmed)
                 return .transcript(text: text, source: source, title: resolved)
             case .noSubtitle(let title):
                 knownTitle = title
+            case .botCheck:
+                // 未配置 cookie / 带 cookie 仍验证：不再徒劳跑取标题与下载。
+                throw botCheckError()
             }
             try Task.checkCancellation()
         }
@@ -312,15 +375,42 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         if let knownTitle, !knownTitle.isEmpty {
             title = knownTitle
         } else {
-            title = (try? await resolveTitle(ytDlp: tools.ytDlp, url: trimmed, extras: extras, cookies: cookieArguments))
-                ?? fallbackTitle(for: trimmed)
+            // 普通取标题失败仍回退标题不阻断；机器人验证则升级重试，无法升级/重试仍验证即报错——
+            // 继续下载只会让网络类错误盖掉验证指引，还白等一次。
+            do {
+                title = try await resolveTitle(tools: tools, url: trimmed, extras: extras, cookies: cookieArguments)
+            } catch let error as URLDownloadError where error.isBotCheck {
+                guard escalateCookiesIfPossible() else { throw botCheckError() }
+                do {
+                    title = try await resolveTitle(tools: tools, url: trimmed, extras: extras, cookies: cookieArguments)
+                } catch let retryError as URLDownloadError where retryError.isBotCheck {
+                    throw botCheckError()
+                } catch {
+                    title = fallbackTitle(for: trimmed)
+                }
+            } catch {
+                title = fallbackTitle(for: trimmed)
+            }
         }
         try Task.checkCancellation()
 
-        let media = try await downloadAudio(
-            platform: platform, url: trimmed, title: title,
-            extras: extras, cookies: cookieArguments, tools: tools, workDir: workDir, progress: progress
-        )
+        let media: DownloadedMedia
+        do {
+            media = try await downloadAudio(
+                platform: platform, url: trimmed, title: title,
+                extras: extras, cookies: cookieArguments, tools: tools, workDir: workDir, progress: progress
+            )
+        } catch let error as URLDownloadError where error.isBotCheck {
+            guard escalateCookiesIfPossible() else { throw botCheckError() }
+            do {
+                media = try await downloadAudio(
+                    platform: platform, url: trimmed, title: title,
+                    extras: extras, cookies: cookieArguments, tools: tools, workDir: workDir, progress: progress
+                )
+            } catch let retryError as URLDownloadError where retryError.isBotCheck {
+                throw botCheckError()
+            }
+        }
         return .media(media)
     }
 
@@ -341,6 +431,7 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
             "--ffmpeg-location", tools.binDir.path,
             "-o", outputTemplate
         ]
+        arguments += runtimeArgs(tools)
         arguments += extras
         arguments += cookies
         arguments.append(url)
@@ -458,6 +549,8 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
     private enum SubtitleOutcome {
         case transcript(text: String, source: TranscriptSource, title: String?)
         case noSubtitle(title: String?)   // 没字幕时把已取到的标题带回去，供音频路径命名复用
+        /// 命中 YouTube 机器人验证（只有 YouTube 的探针/抓字幕会返回），交给 `download()` 决定是否带 cookie 重试。
+        case botCheck
     }
 
     /// 尝试直接拉字幕。**永不抛错**：任何失败/无字幕都回 `.noSubtitle`，让主流程平滑退回音频 ASR。
@@ -479,6 +572,8 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
                     platform: platform, url: url, extras: extras, cookies: cookies,
                     priority: priority, tools: tools, workDir: workDir)
             }
+        } catch let error as URLDownloadError where error.isBotCheck {
+            return .botCheck
         } catch {
             return .noSubtitle(title: nil)
         }
@@ -493,15 +588,22 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         let sep = "@@VOWKYF@@"
         var metaArgs = ["--skip-download", "--no-playlist", "--no-warnings",
                         "--print", "%(title)s\(sep)%(language)s\(sep)%(subtitles)j\(sep)%(automatic_captions)j"]
+        metaArgs += runtimeArgs(tools)
         metaArgs += extras
         metaArgs += cookies
         metaArgs.append(url)
 
+        let limits = Self.probeLimits(cookiesInUse: !cookies.isEmpty)
         let meta = try await run(
-            executable: tools.ytDlp, arguments: metaArgs, isTitlePass: true,
-            wallClockLimit: Self.titlePassWallClock, abortIfLine: Self.isPlaylistLine
+            executable: tools.ytDlp, arguments: metaArgs, isTitlePass: limits.isTitlePass,
+            wallClockLimit: limits.wallClock, abortIfLine: Self.isPlaylistLine
         )
-        guard meta.exit == 0 else { return .noSubtitle(title: nil) }   // B站无 cookie 412 等 → 退音频
+        guard meta.exit == 0 else {
+            if platform == .youtube, meta.abort == nil, Self.isBotCheck(stdout: meta.stdout, stderr: meta.stderr) {
+                return .botCheck
+            }
+            return .noSubtitle(title: nil)   // B站无 cookie 412 等 → 退音频
+        }
         guard let dataLine = meta.stdout
             .split(whereSeparator: \.isNewline)
             .map({ $0.trimmingCharacters(in: .whitespaces) })
@@ -589,6 +691,7 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
             "--ffmpeg-location", tools.binDir.path,
             "-o", outTemplate
         ]
+        args += runtimeArgs(tools)
         args += extras
         args += cookies
         args.append(url)
@@ -611,12 +714,14 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         url: String, extras: [String], cookies: [String], tools: ProvisionedTools
     ) async throws -> (manual: Set<String>, auto: Set<String>) {
         var args = ["--list-subs", "--skip-download", "--no-playlist", "--no-warnings"]
+        args += runtimeArgs(tools)
         args += extras
         args += cookies
         args.append(url)
+        let limits = Self.probeLimits(cookiesInUse: !cookies.isEmpty)
         let r = try await run(
-            executable: tools.ytDlp, arguments: args, isTitlePass: true,
-            wallClockLimit: Self.titlePassWallClock, abortIfLine: Self.isPlaylistLine
+            executable: tools.ytDlp, arguments: args, isTitlePass: limits.isTitlePass,
+            wallClockLimit: limits.wallClock, abortIfLine: Self.isPlaylistLine
         )
         guard r.exit == 0 else { return (manual: [], auto: []) }
         return Self.parseListSubs(r.stdout)
@@ -656,13 +761,22 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
             "--ffmpeg-location", tools.binDir.path,
             "-o", outTemplate
         ]
+        args += runtimeArgs(tools)
         args += extras
         args += cookies
         args.append(url)
 
         let r = try await run(executable: tools.ytDlp, arguments: args, abortIfLine: Self.isPlaylistLine)
         try Task.checkCancellation()
-        guard r.exit == 0, let vtt = locateSubtitleFile(in: workDir) else { return nil }
+        // 探针过了、抓字幕这一步才被验证：抛出去让 `download()` 带 cookie 重跑整个字幕流程，
+        // 否则人工字幕会被悄悄丢掉、退到自动字幕或音频。
+        guard r.exit == 0 else {
+            if platform == .youtube, r.abort == nil, Self.isBotCheck(stdout: r.stdout, stderr: r.stderr) {
+                throw URLDownloadError.botCheck(cookieLabel: nil)
+            }
+            return nil
+        }
+        guard let vtt = locateSubtitleFile(in: workDir) else { return nil }
         let raw = (try? String(contentsOf: vtt, encoding: .utf8)) ?? ""
         try? FileManager.default.removeItem(at: vtt)
         // 仅 YouTube/通用的自动字幕是滚动重复格式；人工字幕、B站 AI 字幕都不是。
@@ -676,12 +790,14 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         url: String, extras: [String], cookies: [String], tools: ProvisionedTools, workDir: URL
     ) async throws -> SubtitleOutcome {
         var jArgs = ["-J", "--skip-download", "--no-playlist", "--no-warnings"]
+        jArgs += runtimeArgs(tools)
         jArgs += extras
         jArgs += cookies
         jArgs.append(url)
+        let limits = Self.probeLimits(cookiesInUse: !cookies.isEmpty)
         let j = try await run(
-            executable: tools.ytDlp, arguments: jArgs, isTitlePass: true,
-            wallClockLimit: Self.titlePassWallClock, abortIfLine: Self.isPlaylistLine
+            executable: tools.ytDlp, arguments: jArgs, isTitlePass: limits.isTitlePass,
+            wallClockLimit: limits.wallClock, abortIfLine: Self.isPlaylistLine
         )
         guard j.exit == 0 else { return .noSubtitle(title: nil) }
 
@@ -804,15 +920,17 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
 
     // MARK: Pass A
 
-    private func resolveTitle(ytDlp: URL, url: String, extras: [String], cookies: [String]) async throws -> String {
+    private func resolveTitle(tools: ProvisionedTools, url: String, extras: [String], cookies: [String]) async throws -> String {
         var arguments = ["--skip-download", "--no-playlist", "--no-warnings", "--print", "%(title)s"]
+        arguments += runtimeArgs(tools)
         arguments += extras
         arguments += cookies
         arguments.append(url)
 
+        let limits = Self.probeLimits(cookiesInUse: !cookies.isEmpty)
         let result = try await run(
-            executable: ytDlp, arguments: arguments, isTitlePass: true,
-            wallClockLimit: Self.titlePassWallClock, abortIfLine: Self.isPlaylistLine
+            executable: tools.ytDlp, arguments: arguments, isTitlePass: limits.isTitlePass,
+            wallClockLimit: limits.wallClock, abortIfLine: Self.isPlaylistLine
         )
         if result.exit != 0 {
             throw Self.mapError(stdout: result.stdout, stderr: result.stderr)
@@ -875,12 +993,25 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
 
     // MARK: 错误映射
 
+    /// YouTube 机器人验证的两种表现：匿名请求「Sign in to confirm you\u{2019}re not a bot」；
+    /// 网页客户端挑战失败「The page needs to be reloaded」（09-10 实测：带 cookie 但无 JS 运行时时出现）。
+    /// YouTube 真实文案用的是弯撇号 U+2019（不是 ASCII \'），`lowercased()` 不会归一化，
+    /// 必须先把弯撇号折成 ASCII 再比，否则匹配不上、带 cookie 的用户也不会触发升级重试。
+    static func isBotCheck(stdout: String, stderr: String) -> Bool {
+        let lower = (stderr + "\n" + stdout)
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "\u{2018}", with: "'")
+            .lowercased()
+        return lower.contains("sign in to confirm you're not a bot") || lower.contains("the page needs to be reloaded")
+    }
+
     static func mapError(stdout: String, stderr: String) -> URLDownloadError {
         let text = (stderr + "\n" + stdout)
         let lower = text.lowercased()
 
-        if lower.contains("sign in to confirm you're not a bot")
-            || lower.contains("sign in to confirm your age")
+        // 机器人验证要先于 authRequired 判定：它可以靠 cookie 升级重试解开，与年龄/私有/会员完全不同。
+        if isBotCheck(stdout: stdout, stderr: stderr) { return .botCheck(cookieLabel: nil) }
+        if lower.contains("sign in to confirm your age")
             || lower.contains("confirm your age")
             || lower.contains("private video")
             || lower.contains("members-only")
@@ -951,13 +1082,14 @@ final class URLDownloadService: URLMediaDownloading, @unchecked Sendable {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
-        // environment 继承父进程，保住 $HOME 供 --cookies-from-browser 读取浏览器 profile。
+        // environment 继承父进程（保住 $HOME 供 --cookies-from-browser 读取浏览器 profile），
+        // 并关掉 deno 的联网版本检查（yt-dlp 把环境原样传给 deno）。
+        var env = ProcessInfo.processInfo.environment
+        env["DENO_NO_UPDATE_CHECK"] = "1"
         if let additionalPath {
-            var env = ProcessInfo.processInfo.environment
-            let existing = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-            env["PATH"] = additionalPath + ":" + existing
-            process.environment = env
+            env["PATH"] = additionalPath + ":" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
         }
+        process.environment = env
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()

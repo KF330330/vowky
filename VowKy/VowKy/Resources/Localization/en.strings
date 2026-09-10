@@ -257,6 +257,8 @@
 
 "file.url.error.invalidURL" = "That doesn't look like a valid video link.";
 "file.url.error.authRequired" = "This video requires sign-in. Choose a browser to use its cookies in Settings → URL Download, then retry.";
+"file.url.error.botCheck" = "YouTube asked for a sign-in check (\"Sign in to confirm you're not a bot\"). In Settings → URL Download, \"Use cookies from\", choose a browser that is signed in to YouTube, then retry.";
+"file.url.error.botCheckWithCookies" = "Retried with %@ cookies, but YouTube still asks for a sign-in check. Make sure that browser is signed in to YouTube and that you clicked \"Always Allow\" on the Keychain prompt, or pick another browser in Settings → URL Download and retry.";
 "file.url.error.rateLimited" = "The site blocked the request (it needs login cookies). Choose a browser in Settings → URL Download, then retry.";
 "file.url.error.unsupported" = "This link isn't supported.";
 "file.url.error.unavailable" = "This video is unavailable (private, removed, or region-locked).";
@@ -280,7 +282,7 @@
 "settings.urlDownload.cookie.safari" = "Safari";
 "settings.urlDownload.cookie.chrome" = "Chrome";
 "settings.urlDownload.cookie.firefox" = "Firefox";
-"settings.urlDownload.cookieHint" = "Some sites (e.g. Bilibili) need browser cookies to download. Safari requires Full Disk Access; Chrome may prompt for Keychain access.";
+"settings.urlDownload.cookieHint" = "Bilibili needs browser cookies; for YouTube they are used automatically to retry once after a sign-in check. Safari requires Full Disk Access; Chrome prompts for Keychain access the first time — click \"Always Allow\".";
 "settings.urlDownload.subtitlePriority" = "Subtitle priority";
 "settings.urlDownload.subtitlePriority.all" = "Prefer all subtitles (incl. auto)";
 "settings.urlDownload.subtitlePriority.manualOnly" = "Manual subtitles only";

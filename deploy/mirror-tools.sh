@@ -1,17 +1,22 @@
 #!/bin/bash
-# deploy/mirror-tools.sh — 同步 yt-dlp / ffmpeg 到 vowky.com 工具镜像（App 优先镜像、失败回上游）
+# deploy/mirror-tools.sh — 同步 yt-dlp / ffmpeg / deno 到 vowky.com 工具镜像（App 优先镜像、失败回上游）
 #
 # 目录：${WEB_ROOT}/downloads/tools/
 #   manifest.signed.json                       ← 唯一清单入口（签名信封，原子替换）
-#   README.md  LICENSES/GPL-3.0.txt            ← 入口文档（每次覆盖）
+#   README.md  LICENSES/{GPL-3.0.txt,V8-LICENSE.txt}   ← 入口文档（每次覆盖）
 #   yt-dlp/<tag>/{yt-dlp_macos,SHA2-256SUMS,yt-dlp-<tag>.tar.gz,LICENSE,build.yml,COMPONENTS.txt}   ← 不可变
 #   ffmpeg/<buildId>/ffmpeg-<version>.tar.xz                                                        ← 不可变
 #   ffmpeg/<buildId>/<arch>/{ffmpeg.zip,ffmpeg.zip.sha256,versions.txt,detail.html}                 ← 不可变
+#   deno/<tag>/<arch>/deno-<triple>-apple-darwin.zip                                                ← 不可变
+#   deno/<tag>/<arch>/deno-<triple>-apple-darwin.zip.sha256sum                                      ← 不可变
+#   deno/<tag>/<arch>/deno-<triple>-apple-darwin.sha256sum                                          ← 不可变
+#   deno/<tag>/{LICENSE.md,Cargo.lock}                                                              ← 不可变
 #
 # 环境变量：
 #   YTDLP_TAG=<tag>                    钉 yt-dlp 版本（默认取 GitHub latest）
 #   FFMPEG_BUILD_ID_ARM64=<buildId>    钉 arm64 ffmpeg 构建（默认跟随 martin-riedl latest 重定向）
 #   FFMPEG_BUILD_ID_AMD64=<buildId>    钉 amd64 ffmpeg 构建
+#   DENO_TAG=<tag>                     钉 deno 版本（默认取 GitHub latest）
 #   MIRROR_ABORT_BEFORE_MANIFEST=1     在发布签名信封前退出（验收原子性用，exit 3）
 
 set -euo pipefail
@@ -132,7 +137,7 @@ size_of()   { wc -c < "$1" | tr -d ' '; }
 # ============================================================
 # 1. 准备暂存目录 + 定位 sign_update
 # ============================================================
-log_info "[1/11] 准备暂存目录与签名工具"
+log_info "[1/12] 准备暂存目录与签名工具"
 
 STAGE="${BUILD_DIR}/tools-mirror"
 rm -rf "$STAGE"
@@ -159,7 +164,7 @@ log_ok "暂存目录: ${STAGE}"
 # ============================================================
 # 2. yt-dlp：二进制 + 校验 + 源码 + 许可证 + 构建配置 + 组件对应表
 # ============================================================
-log_info "[2/11] 抓取 yt-dlp"
+log_info "[2/12] 抓取 yt-dlp"
 
 if [[ -n "${YTDLP_TAG:-}" ]]; then
     TAG="$YTDLP_TAG"
@@ -324,7 +329,7 @@ log_ok "COMPONENTS.txt 已生成（${COMPONENT_ROWS} 条组件对应关系）"
 # ============================================================
 # 3. ffmpeg：两个架构的二进制 + 校验 + 组件版本清单 + 详情页快照 + 源码
 # ============================================================
-log_info "[3/11] 抓取 ffmpeg (arm64 / amd64)"
+log_info "[3/12] 抓取 ffmpeg (arm64 / amd64)"
 
 FFMPEG_SRC_CACHE=""
 for ARCH in arm64 amd64; do
@@ -408,9 +413,64 @@ fi
 FFMPEG_VERSION="$FFVERSION_arm64"
 
 # ============================================================
-# 4. 入口文档：GPL 全文 + README
+# 4. deno：yt-dlp 的 JS 运行时（YouTube 挑战求解必需）——两架构 zip + 双重校验 + 许可材料
 # ============================================================
-log_info "[4/11] 生成入口文档（README.md / LICENSES）"
+log_info "[4/12] 抓取 deno (arm64 / amd64)"
+
+if [[ -n "${DENO_TAG:-}" ]]; then
+    DTAG="$DENO_TAG"; log_info "使用钉住的 deno tag: ${DTAG}"
+else
+    DTAG="$(fetch_stdout 'https://api.github.com/repos/denoland/deno/releases/latest' \
+            | python3 -c 'import sys,json;print(json.load(sys.stdin)["tag_name"])' || true)"
+    [[ -n "$DTAG" ]] || { log_error "无法获取 deno 最新 tag"; exit 1; }
+    log_info "deno 最新 tag: ${DTAG}"
+fi
+DENO_DIR="${STAGE}/deno/${DTAG}"
+for ARCH in arm64 amd64; do
+    case "$ARCH" in arm64) TRIPLE=aarch64 ;; amd64) TRIPLE=x86_64 ;; esac
+    ASSET="deno-${TRIPLE}-apple-darwin.zip"
+    DEST="${DENO_DIR}/${ARCH}"; mkdir -p "$DEST"
+    BASE="https://github.com/denoland/deno/releases/download/${DTAG}"
+    fetch "${BASE}/${ASSET}"                              "${DEST}/${ASSET}"
+    fetch "${BASE}/${ASSET}.sha256sum"                    "${DEST}/${ASSET}.sha256sum"
+    fetch "${BASE}/deno-${TRIPLE}-apple-darwin.sha256sum" "${DEST}/deno-${TRIPLE}-apple-darwin.sha256sum"
+    EXPECTED="$(awk -v a="$ASSET" '$2 == a {print $1}' "${DEST}/${ASSET}.sha256sum" | head -1)"
+    ACTUAL="$(sha256_of "${DEST}/${ASSET}")"
+    [[ -n "$EXPECTED" && "$EXPECTED" == "$ACTUAL" ]] || { log_error "${ASSET} 校验不匹配: 期望 ${EXPECTED:-<空>}，实得 ${ACTUAL}"; exit 1; }
+    # zip 内必须是根目录单个 deno，且解压后二进制哈希与上游 sidecar 一致
+    UNPACK="$(mktemp -d)"; /usr/bin/ditto -x -k "${DEST}/${ASSET}" "$UNPACK"
+    [[ -f "${UNPACK}/deno" ]] || { log_error "${ASSET} 内没有根目录 deno"; exit 1; }
+    BIN_EXPECTED="$(awk '{print $1}' "${DEST}/deno-${TRIPLE}-apple-darwin.sha256sum" | head -1)"
+    BIN_ACTUAL="$(sha256_of "${UNPACK}/deno")"
+    [[ "$BIN_EXPECTED" == "$BIN_ACTUAL" ]] || { log_error "解压后 deno 哈希不匹配"; exit 1; }
+    rm -rf "$UNPACK"
+    eval "DENO_SHA_${ARCH}='${ACTUAL}'"; eval "DENO_SIZE_${ARCH}='$(size_of "${DEST}/${ASSET}")'"
+    log_ok "deno ${ARCH} 校验通过"
+done
+
+# --- 许可材料：deno 自身 MIT + 组件精确版本表（Cargo.lock，对应 yt-dlp 的 COMPONENTS.txt）+ V8 许可全文（BSD-3 要求二进制分发附带）
+if ! fetch_optional "https://raw.githubusercontent.com/denoland/deno/${DTAG}/LICENSE.md" "${DENO_DIR}/LICENSE.md"; then
+    cp "${SCRIPT_DIR}/mirror-assets/deno-LICENSE.md" "${DENO_DIR}/LICENSE.md"
+    log_warn "deno LICENSE.md 取自本地副本"
+fi
+grep -qF "MIT License" "${DENO_DIR}/LICENSE.md" && grep -qF "Deno authors" "${DENO_DIR}/LICENSE.md" \
+    || { log_error "deno LICENSE.md 内容不是预期的 MIT 文本"; exit 1; }
+fetch "https://raw.githubusercontent.com/denoland/deno/${DTAG}/Cargo.lock" "${DENO_DIR}/Cargo.lock"
+grep -qF 'name = "v8"' "${DENO_DIR}/Cargo.lock" || { log_error "Cargo.lock 里没有 v8 crate，不是预期的 deno 工作区锁文件"; exit 1; }
+V8_CRATE_VERSION="$(awk '/^name = "v8"$/{getline; sub(/^version = "/, ""); sub(/"$/, ""); print; exit}' "${DENO_DIR}/Cargo.lock")"
+mkdir -p "${STAGE}/LICENSES"
+if ! fetch_optional "https://raw.githubusercontent.com/v8/v8/main/LICENSE" "${STAGE}/LICENSES/V8-LICENSE.txt"; then
+    cp "${SCRIPT_DIR}/mirror-assets/V8-LICENSE.txt" "${STAGE}/LICENSES/V8-LICENSE.txt"
+    log_warn "V8 LICENSE 取自本地副本"
+fi
+grep -qF "Redistributions in binary form" "${STAGE}/LICENSES/V8-LICENSE.txt" \
+    || { log_error "V8 LICENSE 内容不是预期的 BSD 文本"; exit 1; }
+log_ok "deno 许可材料已就位（LICENSE.md / Cargo.lock / LICENSES/V8-LICENSE.txt，V8 crate ${V8_CRATE_VERSION}）"
+
+# ============================================================
+# 5. 入口文档：GPL 全文 + README
+# ============================================================
+log_info "[5/12] 生成入口文档（README.md / LICENSES）"
 
 # GPL-3.0 全文是**静态内容**，不该每次发布都依赖 gnu.org 在线：
 # 2026-09-06 实测 gnu.org 在本机链路连接超时（curl 28），重试全失败后把整条发布拖挂。
@@ -456,6 +516,9 @@ MIRROR_ARM64_ID="$BUILD_ID_arm64" MIRROR_ARM64_VER="$FFVERSION_arm64" \
 MIRROR_ARM64_SHA="$FFSHA_arm64" MIRROR_ARM64_SIZE="$FFSIZE_arm64" MIRROR_ARM64_TIME="$BUILDTIME_arm64" \
 MIRROR_AMD64_ID="$BUILD_ID_amd64" MIRROR_AMD64_VER="$FFVERSION_amd64" \
 MIRROR_AMD64_SHA="$FFSHA_amd64" MIRROR_AMD64_SIZE="$FFSIZE_amd64" MIRROR_AMD64_TIME="$BUILDTIME_amd64" \
+MIRROR_DENO_TAG="$DTAG" MIRROR_DENO_V8_CRATE="$V8_CRATE_VERSION" \
+MIRROR_DENO_ARM64_SHA="$DENO_SHA_arm64" MIRROR_DENO_ARM64_SIZE="$DENO_SIZE_arm64" \
+MIRROR_DENO_AMD64_SHA="$DENO_SHA_amd64" MIRROR_DENO_AMD64_SIZE="$DENO_SIZE_amd64" \
 MIRROR_URL_BASE="$TOOLS_URL_BASE" \
 python3 - "${STAGE}/README.md" <<'PY'
 import datetime
@@ -465,15 +528,16 @@ import sys
 out_path = sys.argv[1]
 E = os.environ
 tag = E["MIRROR_TAG"]
+dtag = E["MIRROR_DENO_TAG"]
 generated = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 L = []
 add = L.append
 
-add("# VowKy 工具镜像（yt-dlp / ffmpeg）")
+add("# VowKy 工具镜像（yt-dlp / ffmpeg / deno）")
 add("")
 add("本目录是 [VowKy](https://vowky.com) 「链接转文字」功能所需第三方命令行工具的镜像。")
-add("VowKy 首次转写链接时需要下载 yt-dlp 与 ffmpeg；上游站点在部分网络下过慢或不可达，")
+add("VowKy 首次转写链接时需要下载 yt-dlp、ffmpeg 与 deno（yt-dlp 的 JavaScript 运行时，YouTube 解析必需）；上游站点在部分网络下过慢或不可达，")
 add("因此把上游发行物原样镜像到本站，App 优先从这里取、失败再回退上游。")
 add("")
 add("**镜像的二进制与上游发行物逐字节相同，未做任何修改、重打包或重编译。**")
@@ -486,6 +550,7 @@ add("```")
 add("manifest.signed.json                     唯一清单入口（Ed25519 签名信封）")
 add("README.md                                本文件")
 add("LICENSES/GPL-3.0.txt                     GNU GPL v3 全文")
+add("LICENSES/V8-LICENSE.txt                  V8 (BSD-3-Clause) 许可全文")
 add("yt-dlp/<tag>/yt-dlp_macos                yt-dlp 官方 macOS 发行物（原始二进制）")
 add("yt-dlp/<tag>/SHA2-256SUMS                yt-dlp 官方校验文件")
 add("yt-dlp/<tag>/yt-dlp-<tag>.tar.gz         yt-dlp 对应源码")
@@ -497,6 +562,11 @@ add("ffmpeg/<buildId>/<arch>/ffmpeg.zip       ffmpeg 静态构建（原始发行
 add("ffmpeg/<buildId>/<arch>/ffmpeg.zip.sha256  上游校验文件")
 add("ffmpeg/<buildId>/<arch>/versions.txt     该构建各静态链接组件的精确版本")
 add("ffmpeg/<buildId>/<arch>/detail.html      上游构建详情页快照")
+add("deno/<tag>/<arch>/deno-<triple>-apple-darwin.zip            deno 官方发行物（原始 zip）")
+add("deno/<tag>/<arch>/deno-<triple>-apple-darwin.zip.sha256sum  上游 zip 校验文件")
+add("deno/<tag>/<arch>/deno-<triple>-apple-darwin.sha256sum      上游「解压后二进制」校验文件")
+add("deno/<tag>/LICENSE.md                    deno 许可证（MIT）")
+add("deno/<tag>/Cargo.lock                    deno 该版本静态链接组件的精确名称与版本")
 add("```")
 add("")
 add("版本目录一经发布即不可变：同一 `<tag>` / `<buildId>` 下的文件永不覆盖，只会新增新版本目录。")
@@ -537,6 +607,24 @@ add("  （按 `versions.txt` 里的项目名与版本号到各自上游取对应
 add("- 构建脚本：<https://git.martin-riedl.de/ffmpeg/build-script>")
 add("- 构建详情页快照：`ffmpeg/<buildId>/<arch>/detail.html`；`buildId` 前缀即构建时间的 Unix 时间戳")
 add("")
+add("## deno")
+add("")
+add("- 版本（tag）：`%s`" % dtag)
+add("- arm64：`deno/%s/arm64/deno-aarch64-apple-darwin.zip`（SHA-256 `%s`，%s 字节）"
+    % (dtag, E["MIRROR_DENO_ARM64_SHA"], E["MIRROR_DENO_ARM64_SIZE"]))
+add("- amd64：`deno/%s/amd64/deno-x86_64-apple-darwin.zip`（SHA-256 `%s`，%s 字节）"
+    % (dtag, E["MIRROR_DENO_AMD64_SHA"], E["MIRROR_DENO_AMD64_SIZE"]))
+add("- 上游：<https://github.com/denoland/deno/releases/tag/%s>" % dtag)
+add("")
+add("deno 自身按 **MIT** 分发（许可全文 `deno/%s/LICENSE.md`）。" % dtag)
+add("上游发行物 zip 只含二进制、不附带依赖声明（deno 议题 [#13515](https://github.com/denoland/deno/issues/13515)），本镜像补齐：")
+add("")
+add("- 二进制静态链接的 V8（rusty_v8 crate `%s`，BSD-3-Clause）许可全文：`LICENSES/V8-LICENSE.txt`"
+    % E["MIRROR_DENO_V8_CRATE"])
+add("- 其余 Rust crate 的精确名称与版本：`deno/%s/Cargo.lock`；各 crate 的许可以 crates.io 元数据为准" % dtag)
+add("  （绝大多数为 MIT / Apache-2.0，均只要求保留版权声明）")
+add("- 对应源码：<https://github.com/denoland/deno/tree/%s>" % dtag)
+add("")
 add("## 清单与验证方式")
 add("")
 add("`manifest.signed.json` 是一个 Ed25519 签名信封：")
@@ -558,9 +646,14 @@ add('  "generatedAt": "<UTC ISO8601>",')
 add('  "ytDlp":  { "tag": "...", "asset": "yt-dlp/<tag>/yt-dlp_macos", "sha256": "...", "size": 0 },')
 add('  "ffmpeg": { "version": "...",')
 add('              "arm64": { "buildId": "...", "asset": "ffmpeg/<buildId>/arm64/ffmpeg.zip", "sha256": "...", "size": 0 },')
-add('              "amd64": { "buildId": "...", "asset": "ffmpeg/<buildId>/amd64/ffmpeg.zip", "sha256": "...", "size": 0 } }')
+add('              "amd64": { "buildId": "...", "asset": "ffmpeg/<buildId>/amd64/ffmpeg.zip", "sha256": "...", "size": 0 } },')
+add('  "deno":   { "tag": "...",')
+add('              "arm64": { "asset": "deno/<tag>/arm64/deno-aarch64-apple-darwin.zip", "sha256": "...", "size": 0 },')
+add('              "amd64": { "asset": "deno/<tag>/amd64/deno-x86_64-apple-darwin.zip",  "sha256": "...", "size": 0 } }')
 add("}")
 add("```")
+add("")
+add("其中 `deno` 是**可选键**（2026-09 加入）：清单里没有它表示本镜像暂无 deno，App 会回退到上游 GitHub 下载。")
 add("")
 add("签名对象是解 base64 后的**清单原始字节**，用与 VowKy 自动更新相同的那把 Ed25519 密钥签发；")
 add("VowKy 用内置公钥（`SUPublicEDKey`）验签。任何人都可以自行核对：")
@@ -587,14 +680,17 @@ PY
 log_ok "README.md / LICENSES/GPL-3.0.txt 已生成"
 
 # ============================================================
-# 5. 生成清单、签名、封装信封、本地自验
+# 6. 生成清单、签名、封装信封、本地自验
 # ============================================================
-log_info "[5/11] 生成签名清单"
+log_info "[6/12] 生成签名清单"
 
 MIRROR_TAG="$TAG" MIRROR_YTDLP_SHA="$YTDLP_SHA" MIRROR_YTDLP_SIZE="$YTDLP_SIZE" \
 MIRROR_FFMPEG_VERSION="$FFMPEG_VERSION" \
 MIRROR_ARM64_ID="$BUILD_ID_arm64" MIRROR_ARM64_SHA="$FFSHA_arm64" MIRROR_ARM64_SIZE="$FFSIZE_arm64" \
 MIRROR_AMD64_ID="$BUILD_ID_amd64" MIRROR_AMD64_SHA="$FFSHA_amd64" MIRROR_AMD64_SIZE="$FFSIZE_amd64" \
+MIRROR_DENO_TAG="$DTAG" \
+MIRROR_DENO_ARM64_SHA="$DENO_SHA_arm64" MIRROR_DENO_ARM64_SIZE="$DENO_SIZE_arm64" \
+MIRROR_DENO_AMD64_SHA="$DENO_SHA_amd64" MIRROR_DENO_AMD64_SIZE="$DENO_SIZE_amd64" \
 python3 - "${STAGE}/manifest.json" <<'PY'
 import datetime
 import json
@@ -624,6 +720,20 @@ manifest = {
             "asset": "ffmpeg/%s/amd64/ffmpeg.zip" % E["MIRROR_AMD64_ID"],
             "sha256": E["MIRROR_AMD64_SHA"],
             "size": int(E["MIRROR_AMD64_SIZE"]),
+        },
+    },
+    # deno 是 schema 1 的**可选**顶层键（2026-09 加入）：老 App 用非可选字段解码、忽略此键，不受影响。
+    "deno": {
+        "tag": E["MIRROR_DENO_TAG"],
+        "arm64": {
+            "asset": "deno/%s/arm64/deno-aarch64-apple-darwin.zip" % E["MIRROR_DENO_TAG"],
+            "sha256": E["MIRROR_DENO_ARM64_SHA"],
+            "size": int(E["MIRROR_DENO_ARM64_SIZE"]),
+        },
+        "amd64": {
+            "asset": "deno/%s/amd64/deno-x86_64-apple-darwin.zip" % E["MIRROR_DENO_TAG"],
+            "sha256": E["MIRROR_DENO_AMD64_SHA"],
+            "size": int(E["MIRROR_DENO_AMD64_SIZE"]),
         },
     },
 }
@@ -670,23 +780,24 @@ fi
 log_ok "manifest.signed.json 本地自验通过"
 
 # ============================================================
-# 6. 上传不可变目录（--ignore-existing，永不覆盖已发布版本）
+# 7. 上传不可变目录（--ignore-existing，永不覆盖已发布版本）
 # ============================================================
-log_info "[6/11] 上传不可变资产目录"
+log_info "[7/12] 上传不可变资产目录"
 
 ssh "$SERVER" "mkdir -p ${TOOLS_REMOTE}"
 rsync_retry -avz --ignore-existing "${STAGE}/yt-dlp/" "${SERVER}:${TOOLS_REMOTE}/yt-dlp/"
 rsync_retry -avz --ignore-existing "${STAGE}/ffmpeg/" "${SERVER}:${TOOLS_REMOTE}/ffmpeg/"
+rsync_retry -avz --ignore-existing "${STAGE}/deno/"   "${SERVER}:${TOOLS_REMOTE}/deno/"
 log_ok "不可变资产已上传"
 
 # ============================================================
-# 7. 线上核验：每个不可变文件的 content-length 必须与本地一致
+# 8. 线上核验：每个不可变文件的 content-length 必须与本地一致
 # ============================================================
-log_info "[7/11] 线上核验不可变资产"
+log_info "[8/12] 线上核验不可变资产"
 
 VERIFY_FAILED=0
 VERIFY_COUNT=0
-for REL in $(cd "$STAGE" && find yt-dlp ffmpeg -type f | sort); do
+for REL in $(cd "$STAGE" && find yt-dlp ffmpeg deno -type f | sort); do
     LOCAL_SIZE="$(size_of "${STAGE}/${REL}")"
     REMOTE_SIZE="$(curl -fsSIL --retry 3 --retry-delay 2 --retry-all-errors \
                         --connect-timeout 10 --max-time 60 -A "$UA" \
@@ -708,32 +819,32 @@ fi
 log_ok "${VERIFY_COUNT} 个不可变文件线上核验通过"
 
 # ============================================================
-# 8. 上传入口文档（覆盖更新）
+# 9. 上传入口文档（覆盖更新）
 # ============================================================
-log_info "[8/11] 上传入口文档（README.md / LICENSES）"
+log_info "[9/12] 上传入口文档（README.md / LICENSES）"
 rsync_retry -avz "${STAGE}/README.md" "${STAGE}/LICENSES" "${SERVER}:${TOOLS_REMOTE}/"
 log_ok "入口文档已更新"
 
 # ============================================================
-# 9. 验收用中止点
+# 10. 验收用中止点
 # ============================================================
 if [[ "${MIRROR_ABORT_BEFORE_MANIFEST:-}" == "1" ]]; then
-    log_warn "[9/11] 按测试要求在发布信封前中止"
+    log_warn "[10/12] 按测试要求在发布信封前中止"
     exit 3
 fi
 
 # ============================================================
-# 10. 原子发布签名信封（.tmp + mv，单文件一次替换）
+# 11. 原子发布签名信封（.tmp + mv，单文件一次替换）
 # ============================================================
-log_info "[10/11] 原子发布 manifest.signed.json"
+log_info "[11/12] 原子发布 manifest.signed.json"
 rsync_retry -avz "${STAGE}/manifest.signed.json" "${SERVER}:${TOOLS_REMOTE}/manifest.signed.json.tmp"
 ssh "$SERVER" "mv -f ${TOOLS_REMOTE}/manifest.signed.json.tmp ${TOOLS_REMOTE}/manifest.signed.json"
 log_ok "签名信封已原子替换"
 
 # ============================================================
-# 11. 线上自检
+# 12. 线上自检
 # ============================================================
-log_info "[11/11] 线上自检"
+log_info "[12/12] 线上自检"
 
 ONLINE_MANIFEST="$("${SCRIPT_DIR}/mirror-verify.sh" --url "${TOOLS_URL_BASE}/manifest.signed.json")"
 if [[ -z "$ONLINE_MANIFEST" ]]; then
@@ -741,7 +852,7 @@ if [[ -z "$ONLINE_MANIFEST" ]]; then
     exit 1
 fi
 
-if ! printf '%s' "$ONLINE_MANIFEST" | MIRROR_TAG="$TAG" MIRROR_ARM64_ID="$BUILD_ID_arm64" MIRROR_AMD64_ID="$BUILD_ID_amd64" python3 -c '
+if ! printf '%s' "$ONLINE_MANIFEST" | MIRROR_TAG="$TAG" MIRROR_ARM64_ID="$BUILD_ID_arm64" MIRROR_AMD64_ID="$BUILD_ID_amd64" MIRROR_DENO_TAG="$DTAG" python3 -c '
 import json, os, sys
 m = json.load(sys.stdin)
 E = os.environ
@@ -752,6 +863,8 @@ if m["ffmpeg"]["arm64"]["buildId"] != E["MIRROR_ARM64_ID"]:
     problems.append("ffmpeg.arm64.buildId=%s 期望 %s" % (m["ffmpeg"]["arm64"]["buildId"], E["MIRROR_ARM64_ID"]))
 if m["ffmpeg"]["amd64"]["buildId"] != E["MIRROR_AMD64_ID"]:
     problems.append("ffmpeg.amd64.buildId=%s 期望 %s" % (m["ffmpeg"]["amd64"]["buildId"], E["MIRROR_AMD64_ID"]))
+if m.get("deno", {}).get("tag") != E["MIRROR_DENO_TAG"]:
+    problems.append("deno.tag=%s 期望 %s" % (m.get("deno", {}).get("tag"), E["MIRROR_DENO_TAG"]))
 if problems:
     sys.stderr.write("; ".join(problems) + "\n")
     raise SystemExit(1)
@@ -760,4 +873,4 @@ if problems:
     exit 1
 fi
 
-log_ok "镜像已更新: yt-dlp ${TAG}, ffmpeg ${BUILD_ID_arm64}/${BUILD_ID_amd64}"
+log_ok "镜像已更新: yt-dlp ${TAG}, ffmpeg ${BUILD_ID_arm64}/${BUILD_ID_amd64}, deno ${DTAG}"

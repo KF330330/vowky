@@ -30,7 +30,7 @@ preflight: ## 部署前环境预检
 verify: ## 验证部署结果
 	./deploy/verify.sh
 
-mirror-tools: ## 同步 yt-dlp/ffmpeg（含 GPL 合规材料）到 vowky.com 工具镜像并发布签名清单
+mirror-tools: ## 同步 yt-dlp/ffmpeg/deno（含许可材料）到 vowky.com 工具镜像并发布签名清单
 	./deploy/mirror-tools.sh
 
 # 开发构建工具链：Xcode-26.app 存在则钉住（SpeechAnalyzer 需 macOS 26 SDK），

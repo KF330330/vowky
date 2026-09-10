@@ -112,12 +112,12 @@ else
     check_warn "BinaryDelta 未找到 (${BINARY_DELTA_BIN})，本次发版将不生成 delta 增量包（老用户走全量更新）"
 fi
 
-# 附加. 工具镜像（链接转写用的 yt-dlp / ffmpeg）——警告级，不阻断发版
+# 附加. 工具镜像（链接转写用的 yt-dlp / ffmpeg / deno）——警告级，不阻断发版
 # App 优先从 vowky.com 镜像取工具、失败才回退上游；镜像缺失或过旧只影响首次下载速度。
 check_tools_mirror() {
     local manifest_json generated_at age_days
     echo ""
-    echo "[附加] 检查工具镜像 (yt-dlp / ffmpeg)..."
+    echo "[附加] 检查工具镜像 (yt-dlp / ffmpeg / deno)..."
 
     if ! manifest_json="$("${SCRIPT_DIR}/mirror-verify.sh" --url "https://${DOMAIN}/downloads/tools/manifest.signed.json" 2>/dev/null)"; then
         check_warn "工具镜像过旧/不完整（签名清单拉取或验签失败），建议 make mirror-tools"

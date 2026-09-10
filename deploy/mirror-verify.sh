@@ -145,7 +145,7 @@ if ! "$SIGN_UPDATE" --verify "$MANIFEST" "$SIGNATURE" >/dev/null 2>"${TMPDIR_VER
     exit 1
 fi
 
-# 验签通过后再做一次结构自检（schema 必须为 1），并把清单原样打印出来。
+# 验签通过后再做一次结构自检（schema 必须为 1；deno 若存在则必须结构完整），并把清单原样打印出来。
 if ! python3 - "$MANIFEST" <<'PY'
 import json
 import sys
@@ -156,9 +156,27 @@ with open(sys.argv[1], "rb") as fh:
 if manifest.get("schema") != 1:
     sys.stderr.write("清单 schema 不是 1: %r\n" % (manifest.get("schema"),))
     raise SystemExit(1)
+
+# deno 是 schema 1 的可选顶层键（2026-09 加入）：缺失即镜像暂无 deno，合法；
+# 一旦存在就必须结构完整，免得半截清单被 App 当成可用镜像。
+deno = manifest.get("deno")
+if deno is not None:
+    if not isinstance(deno, dict):
+        sys.stderr.write("清单 deno 不是 JSON 对象: %r\n" % (deno,))
+        raise SystemExit(1)
+    deno_tag = deno.get("tag")
+    if not isinstance(deno_tag, str) or not deno_tag:
+        sys.stderr.write("清单 deno.tag 不是非空字符串: %r\n" % (deno_tag,))
+        raise SystemExit(1)
+    for arch in ("arm64", "amd64"):
+        entry = deno.get(arch)
+        asset = entry.get("asset") if isinstance(entry, dict) else None
+        if not isinstance(asset, str) or not asset:
+            sys.stderr.write("清单 deno.%s.asset 缺失或不是非空字符串\n" % arch)
+            raise SystemExit(1)
 PY
 then
-    echo "✗ 清单结构无效（验签已通过，但 schema 不符）" >&2
+    echo "✗ 清单结构无效（验签已通过，但 schema / deno 结构自检未过）" >&2
     exit 1
 fi
 

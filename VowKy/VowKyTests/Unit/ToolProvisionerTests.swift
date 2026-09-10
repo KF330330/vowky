@@ -183,6 +183,7 @@ final class ToolProvisionerTests: XCTestCase {
     private var publicKeyData: Data!
     private var ytDlpBody: Data!
     private var ffmpegZip: Data!
+    private var denoZip: Data!
 
     // MARK: 生命周期
 
@@ -197,7 +198,13 @@ final class ToolProvisionerTests: XCTestCase {
         privateKey = Curve25519.Signing.PrivateKey()
         publicKeyData = privateKey.publicKey.rawRepresentation
         ytDlpBody = Data((0..<1_200_000).map { _ in UInt8.random(in: 0...255) })
-        ffmpegZip = try makeFFmpegZip()
+        ffmpegZip = try makeZip(
+            name: "ffmpeg", payload: Data((0..<300_000).map { UInt8($0 % 251) }), executable: false
+        )
+        // deno 装完要过 `deno --version` 冒烟，所以假 deno 必须是可执行的脚本。
+        denoZip = try makeZip(
+            name: "deno", payload: Data("#!/bin/sh\necho 'deno 2.9.6'\n".utf8), executable: true
+        )
         ToolStubURLProtocol.reset()
     }
 
@@ -212,13 +219,18 @@ final class ToolProvisionerTests: XCTestCase {
 
     // MARK: 夹具
 
-    /// 用 `ditto -c -k` 打一个内含单个名为 `ffmpeg` 的文件的 zip（与 martin-riedl 的产物结构一致）。
-    private func makeFFmpegZip() throws -> Data {
-        let src = tempRoot.appendingPathComponent("zipsrc", isDirectory: true)
+    /// 用 `ditto -c -k` 打一个「根目录只有一个指定名字文件」的 zip
+    /// （与 martin-riedl 的 ffmpeg / deno 官方发行物结构一致）。`ditto -c -k` 保留权限位。
+    private func makeZip(name: String, payload: Data, executable: Bool) throws -> Data {
+        let stamp = UUID().uuidString
+        let src = tempRoot.appendingPathComponent("zipsrc-\(name)-\(stamp)", isDirectory: true)
         try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
-        let payload = Data((0..<300_000).map { UInt8($0 % 251) })
-        try payload.write(to: src.appendingPathComponent("ffmpeg"))
-        let zipURL = tempRoot.appendingPathComponent("ffmpeg.zip")
+        let file = src.appendingPathComponent(name)
+        try payload.write(to: file)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: executable ? 0o755 : 0o644], ofItemAtPath: file.path
+        )
+        let zipURL = tempRoot.appendingPathComponent("\(name)-\(stamp).zip")
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         proc.arguments = ["-c", "-k", src.path, zipURL.path]
@@ -248,12 +260,25 @@ final class ToolProvisionerTests: XCTestCase {
     private var upstreamFFRedirectURL: String { "https://mr.test/redirect/latest/macos/\(Self.archPath)/release/ffmpeg.zip" }
     private var upstreamFFFinalURL: String { "https://mr.test/download/macos/\(Self.archPath)/\(Self.buildId)/ffmpeg.zip" }
 
+    #if arch(arm64)
+    private static let denoTriple = "aarch64"
+    #else
+    private static let denoTriple = "x86_64"
+    #endif
+    private static let denoAssetName = "deno-\(ToolProvisionerTests.denoTriple)-apple-darwin.zip"
+    private func mirrorDenoURL(_ tag: String) -> String {
+        mirrorBase + "deno/\(tag)/\(Self.archPath)/\(Self.denoAssetName)"
+    }
+    private var upstreamDenoURL: String { "https://gh-deno.test/download/v2.9.6/\(Self.denoAssetName)" }
+    private var upstreamDenoSumURL: String { upstreamDenoURL + ".sha256sum" }
+
     private func makeEndpoints(publicKey: Data?) -> ToolEndpoints {
         ToolEndpoints(
             mirrorBase: URL(string: mirrorBase)!,
             ytDlpLatestAPI: URL(string: latestAPIURL)!,
             ytDlpReleaseBase: URL(string: "https://gh.test/releases/download/")!,
             ffmpegRedirectBase: URL(string: "https://mr.test/redirect/latest/macos/")!,
+            denoReleaseBase: URL(string: "https://gh-deno.test/download/")!,
             manifestPublicKey: publicKey
         )
     }
@@ -294,7 +319,10 @@ final class ToolProvisionerTests: XCTestCase {
         ytSHA: String? = nil,
         ffSHA: String? = nil,
         ytAsset: String? = nil,
-        buildId: String = ToolProvisionerTests.buildId
+        buildId: String = ToolProvisionerTests.buildId,
+        denoTag: String? = "v2.9.6",
+        denoSHA: String? = nil,
+        denoArm64Asset: String? = nil
     ) -> Data {
         let ytHash = ytSHA ?? sha256Hex(ytDlpBody)
         let ffHash = ffSHA ?? sha256Hex(ffmpegZip)
@@ -306,7 +334,7 @@ final class ToolProvisionerTests: XCTestCase {
                 "size": self.ffmpegZip.count,
             ]
         }
-        let dict: [String: Any] = [
+        var dict: [String: Any] = [
             "schema": 1,
             "generatedAt": "2026-09-05T00:00:00Z",
             "ytDlp": [
@@ -321,6 +349,23 @@ final class ToolProvisionerTests: XCTestCase {
                 "amd64": ffAsset("amd64"),
             ],
         ]
+        // `deno` 是可选键：nil → 完全不写（模拟旧信封）。
+        if let denoTag {
+            let denoHash = denoSHA ?? sha256Hex(denoZip)
+            dict["deno"] = [
+                "tag": denoTag,
+                "arm64": [
+                    "asset": denoArm64Asset ?? "deno/\(denoTag)/arm64/deno-aarch64-apple-darwin.zip",
+                    "sha256": denoHash,
+                    "size": denoZip.count,
+                ],
+                "amd64": [
+                    "asset": "deno/\(denoTag)/amd64/deno-x86_64-apple-darwin.zip",
+                    "sha256": denoHash,
+                    "size": denoZip.count,
+                ],
+            ]
+        }
         return try! JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
     }
 
@@ -339,20 +384,27 @@ final class ToolProvisionerTests: XCTestCase {
         return try! JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
     }
 
-    /// 注册镜像三件套（信封 + yt-dlp 资产 + ffmpeg 资产）。
+    /// 注册镜像四件套（信封 + yt-dlp 资产 + ffmpeg 资产 + deno 资产）。`denoTag: nil` = 镜像没有 deno（旧信封）。
     private func stubMirror(
         ytTag: String,
         ytSHA: String? = nil,
         ffSHA: String? = nil,
         envelopeSchema: Int = 1,
         corruptManifest: Bool = false,
-        buildId: String = ToolProvisionerTests.buildId
+        buildId: String = ToolProvisionerTests.buildId,
+        denoTag: String? = "v2.9.6",
+        denoSHA: String? = nil
     ) {
-        let manifest = manifestBytes(ytTag: ytTag, ytSHA: ytSHA, ffSHA: ffSHA, buildId: buildId)
+        let manifest = manifestBytes(
+            ytTag: ytTag, ytSHA: ytSHA, ffSHA: ffSHA, buildId: buildId, denoTag: denoTag, denoSHA: denoSHA
+        )
         let envelope = envelopeBytes(manifest: manifest, schema: envelopeSchema, corruptManifest: corruptManifest)
         ToolStubURLProtocol.set(envelopeURL, .ok(status: 200, body: envelope, finalURL: nil))
         ToolStubURLProtocol.set(mirrorYtURL(ytTag), .ok(status: 200, body: ytDlpBody, finalURL: nil))
         ToolStubURLProtocol.set(mirrorFFURL(buildId), .ok(status: 200, body: ffmpegZip, finalURL: nil))
+        if let denoTag {
+            ToolStubURLProtocol.set(mirrorDenoURL(denoTag), .ok(status: 200, body: denoZip, finalURL: nil))
+        }
     }
 
     private func stubLatestAPI(tag: String) {
@@ -385,6 +437,19 @@ final class ToolProvisionerTests: XCTestCase {
         )
     }
 
+    /// 上游 deno：`<zip>.sha256sum` sidecar（格式 `<sha>  <asset>`）+ zip 本体。
+    private func stubUpstreamDeno(zipStatus: Int = 200, sumStatus: Int = 200) {
+        let sums = "\(sha256Hex(denoZip))  \(Self.denoAssetName)\n"
+        ToolStubURLProtocol.set(
+            upstreamDenoSumURL,
+            .ok(status: sumStatus, body: sumStatus == 200 ? Data(sums.utf8) : Data(), finalURL: nil)
+        )
+        ToolStubURLProtocol.set(
+            upstreamDenoURL,
+            .ok(status: zipStatus, body: zipStatus == 200 ? denoZip : Data(), finalURL: nil)
+        )
+    }
+
     // MARK: 本地夹具
 
     private func installFakeTool(_ name: String, bytes: Data = Data("fake\n".utf8)) throws {
@@ -393,14 +458,28 @@ final class ToolProvisionerTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 
+    /// 注意：整体覆盖 manifest.json（不是合并写）。要与 deno 共存时用 `denoTag:` 一次写入，
+    /// 或先写本函数、再调 `installFakeDeno()`（后者是合并写）。
     private func writeLocalManifest(
-        tag: String? = nil, fetchedAt: Date? = nil, versionCheckedAt: Date? = nil, refreshCheckedAt: Date? = nil
+        tag: String? = nil, fetchedAt: Date? = nil, versionCheckedAt: Date? = nil, refreshCheckedAt: Date? = nil,
+        denoTag: String? = nil
     ) throws {
         var dict: [String: Any] = [:]
         if let tag { dict["ytDlpTag"] = tag }
         if let fetchedAt { dict["ytDlpFetchedAt"] = fetchedAt.timeIntervalSince1970 }
         if let versionCheckedAt { dict["ytDlpVersionCheckedAt"] = versionCheckedAt.timeIntervalSince1970 }
         if let refreshCheckedAt { dict["ytDlpRefreshCheckedAt"] = refreshCheckedAt.timeIntervalSince1970 }
+        if let denoTag { dict["denoTag"] = denoTag }
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        try data.write(to: binDir.appendingPathComponent("manifest.json"))
+    }
+
+    /// 预装一个「已就绪的 deno」：可执行文件 + manifest 里的 tag（合并写，不动已有的 yt-dlp 字段）。
+    private func installFakeDeno(tag: String = "v2.9.6") throws {
+        try installFakeTool("deno", bytes: Data("#!/bin/sh\nexit 0\n".utf8))
+        var dict = readLocalManifest()
+        dict["denoTag"] = tag
+        dict["denoFetchedAt"] = Date().timeIntervalSince1970
         let data = try JSONSerialization.data(withJSONObject: dict)
         try data.write(to: binDir.appendingPathComponent("manifest.json"))
     }
@@ -435,14 +514,18 @@ final class ToolProvisionerTests: XCTestCase {
 
         XCTAssertTrue(isExecutable("yt-dlp"))
         XCTAssertTrue(isExecutable("ffmpeg"))
+        XCTAssertTrue(isExecutable("deno"))
         XCTAssertEqual(tools.ytDlp.lastPathComponent, "yt-dlp")
+        XCTAssertEqual(tools.deno.lastPathComponent, "deno")
 
         let log = ToolStubURLProtocol.requestLog
         XCTAssertFalse(log.contains { $0.contains("gh.test") }, "不应请求上游 GitHub: \(log)")
         XCTAssertFalse(log.contains { $0.contains("mr.test") }, "不应请求上游 martin-riedl: \(log)")
+        XCTAssertFalse(log.contains { $0.contains("gh-deno.test") }, "不应请求上游 deno: \(log)")
         XCTAssertEqual(log.filter { $0.contains("api.test") }.count, 1)
         XCTAssertTrue(log.contains(mirrorYtURL(tag)))
         XCTAssertTrue(log.contains(mirrorFFURL(Self.buildId)))
+        XCTAssertTrue(log.contains(mirrorDenoURL("v2.9.6")))
 
         let downloading = recorder.downloading
         XCTAssertTrue(downloading.contains { $0.totalBytes > 0 && $0.fractionCompleted > 0 },
@@ -451,11 +534,12 @@ final class ToolProvisionerTests: XCTestCase {
         XCTAssertEqual(last.bytesReceived, last.totalBytes)
         XCTAssertTrue(downloading.allSatisfy { !$0.isRefresh })
         let pairs = Set(downloading.map { "\($0.toolIndex)/\($0.toolCount)" })
-        XCTAssertTrue(pairs.contains("1/2"), "缺 1/2 样本: \(pairs)")
-        XCTAssertTrue(pairs.contains("2/2"), "缺 2/2 样本: \(pairs)")
+        XCTAssertTrue(pairs.contains("1/3"), "缺 1/3 样本: \(pairs)")
+        XCTAssertTrue(pairs.contains("2/3"), "缺 2/3 样本: \(pairs)")
+        XCTAssertTrue(pairs.contains("3/3"), "缺 3/3 样本: \(pairs)")
         let ready = try XCTUnwrap(recorder.all.last)
         XCTAssertEqual(ready.phase, .ready)
-        XCTAssertEqual(ready.toolCount, 2)
+        XCTAssertEqual(ready.toolCount, 3)
 
         let checkedAt = try XCTUnwrap(readLocalManifest()["ytDlpVersionCheckedAt"] as? Double)
         XCTAssertLessThan(abs(Date().timeIntervalSince1970 - checkedAt), 60)
@@ -468,6 +552,7 @@ final class ToolProvisionerTests: XCTestCase {
         try installFakeTool("yt-dlp")
         try installFakeTool("ffmpeg")
         try writeLocalManifest(tag: "2026.08.19", fetchedAt: Date(), versionCheckedAt: Date())
+        try installFakeDeno()
 
         let recorder = ToolProgressRecorder()
         _ = try await makeProvisioner().ensureTools { recorder.record($0) }
@@ -482,6 +567,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_mirrorEnvelopeUnavailable_fallsBackUpstream() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         ToolStubURLProtocol.set(envelopeURL, .ok(status: 500, body: Data(), finalURL: nil))
         stubLatestAPI(tag: tag)
         stubUpstreamYtDlp(tag: tag)
@@ -503,6 +589,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_mirrorSignatureInvalid_ignoresMirror() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         stubMirror(ytTag: tag, corruptManifest: true)
         stubLatestAPI(tag: tag)
         stubUpstreamYtDlp(tag: tag)
@@ -522,6 +609,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_mirrorChecksumMismatch_fallsBackUpstream() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         let wrong = String(repeating: "a", count: 64)
         stubMirror(ytTag: tag, ytSHA: wrong, ffSHA: wrong)
         stubLatestAPI(tag: tag)
@@ -543,6 +631,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_upstreamChecksumMissing_failsClosed() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         ToolStubURLProtocol.set(envelopeURL, .ok(status: 500, body: Data(), finalURL: nil))
         stubLatestAPI(tag: tag)
         stubUpstreamYtDlp(tag: tag, sumsStatus: 404)
@@ -561,6 +650,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_envelopeTrickle_boundedByWallClock() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         ToolStubURLProtocol.set(envelopeURL, .slow(chunk: 64, every: 0.1, total: 100_000))
         stubLatestAPI(tag: tag)
         stubUpstreamYtDlp(tag: tag)
@@ -579,6 +669,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_checksumFileTrickle_failsClosedBounded() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         ToolStubURLProtocol.set(envelopeURL, .ok(status: 500, body: Data(), finalURL: nil))
         stubLatestAPI(tag: tag)
         ToolStubURLProtocol.set(upstreamYtURL(tag), .ok(status: 200, body: ytDlpBody, finalURL: nil))
@@ -598,6 +689,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_stall_failsWithinRequestTimeout_thenUpstream() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         stubMirror(ytTag: tag)
         // 停流用例把宽限拉长，确保命中的是「超时」而不是「低速」。
         ToolStubURLProtocol.set(mirrorYtURL(tag), .stall(headersThenBytes: 1024))
@@ -620,6 +712,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_trickle_failsTooSlow_thenUpstream() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         stubMirror(ytTag: tag)
         ToolStubURLProtocol.set(mirrorYtURL(tag), .slow(chunk: 1024, every: 0.1, total: 5_000_000))
         stubLatestAPI(tag: tag)
@@ -639,6 +732,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_maxDuration_enforced() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         stubMirror(ytTag: tag)
         // 速度足够（约 2 MB/s，不触发低速），只可能被墙钟截断。
         ToolStubURLProtocol.set(mirrorYtURL(tag), .slow(chunk: 200_000, every: 0.1, total: 200_000_000))
@@ -656,6 +750,7 @@ final class ToolProvisionerTests: XCTestCase {
 
     func test_cancellation_throwsCancellationError() async throws {
         let tag = "2026.08.19"
+        try installFakeDeno()
         stubMirror(ytTag: tag)
         ToolStubURLProtocol.set(mirrorYtURL(tag), .slow(chunk: 100_000, every: 0.05, total: 50_000_000))
         stubLatestAPI(tag: tag)
@@ -692,12 +787,13 @@ final class ToolProvisionerTests: XCTestCase {
         _ = try await makeProvisioner().ensureTools(progress: nil)
 
         let names = try FileManager.default.contentsOfDirectory(atPath: binDir.path).sorted()
-        XCTAssertEqual(names, ["ffmpeg", "manifest.json", "yt-dlp"])
+        XCTAssertEqual(names, ["deno", "ffmpeg", "manifest.json", "yt-dlp"])
     }
 
     // MARK: - 14. 首装：上游更新 → 装上游
 
     func test_firstInstall_upstreamNewerThanMirror_installsUpstream() async throws {
+        try installFakeDeno()
         stubMirror(ytTag: "2026.08.19")
         stubLatestAPI(tag: "2026.09.01")
         stubUpstreamYtDlp(tag: "2026.09.01")
@@ -716,6 +812,7 @@ final class ToolProvisionerTests: XCTestCase {
     // MARK: - 15. 首装：上游下不下来 → 退镜像旧版
 
     func test_firstInstall_upstreamNewer_downloadFails_fallsBackToMirrorTag() async throws {
+        try installFakeDeno()
         stubMirror(ytTag: "2026.08.19")
         stubLatestAPI(tag: "2026.09.01")
         stubUpstreamYtDlp(tag: "2026.09.01", binaryStatus: 500)
@@ -733,6 +830,7 @@ final class ToolProvisionerTests: XCTestCase {
     // MARK: - 16. 首装：上游未知 → 装镜像
 
     func test_firstInstall_upstreamUnknown_installsMirror() async throws {
+        try installFakeDeno()
         stubMirror(ytTag: "2026.08.19")
         ToolStubURLProtocol.set(latestAPIURL, .ok(status: 500, body: Data(), finalURL: nil))
 
@@ -754,6 +852,7 @@ final class ToolProvisionerTests: XCTestCase {
             fetchedAt: Date().addingTimeInterval(-30 * 24 * 3600),
             versionCheckedAt: Date().addingTimeInterval(-30 * 24 * 3600)
         )
+        try installFakeDeno()
         stubMirror(ytTag: "2026.08.19")
         ToolStubURLProtocol.set(latestAPIURL, .ok(status: 500, body: Data(), finalURL: nil))
 
@@ -776,6 +875,7 @@ final class ToolProvisionerTests: XCTestCase {
         try installFakeTool("ffmpeg")
         let checkedAt = Date().addingTimeInterval(-30 * 24 * 3600)
         try writeLocalManifest(tag: "2026.09.01", fetchedAt: checkedAt, versionCheckedAt: checkedAt)
+        try installFakeDeno()
         stubMirror(ytTag: "2026.08.19")
         ToolStubURLProtocol.set(latestAPIURL, .ok(status: 500, body: Data(), finalURL: nil))
 
@@ -800,6 +900,7 @@ final class ToolProvisionerTests: XCTestCase {
         try installFakeTool("ffmpeg")
         let checkedAt = Date().addingTimeInterval(-30 * 24 * 3600)
         try writeLocalManifest(tag: "2026.08.01", fetchedAt: checkedAt, versionCheckedAt: checkedAt)
+        try installFakeDeno()
         ToolStubURLProtocol.set(envelopeURL, .ok(status: 500, body: Data(), finalURL: nil))
         ToolStubURLProtocol.set(latestAPIURL, .ok(status: 500, body: Data(), finalURL: nil))
 
@@ -831,6 +932,8 @@ final class ToolProvisionerTests: XCTestCase {
         XCTAssertEqual(good.ytDlp.asset, "yt-dlp/2026.08.19/yt-dlp_macos")
         XCTAssertEqual(good.ffmpeg.version, Self.ffmpegVersion)
         XCTAssertEqual(good.ffmpegAsset(archPath: "arm64").buildId, Self.buildId)
+        XCTAssertEqual(good.deno?.tag, "v2.9.6")
+        XCTAssertEqual(good.denoAsset(archPath: "arm64")?.asset, "deno/v2.9.6/arm64/deno-aarch64-apple-darwin.zip")
         XCTAssertEqual(good.ytDlp.size, Int64(ytDlpBody.count))
 
         // 信封 schema ≠ 1
@@ -865,5 +968,232 @@ final class ToolProvisionerTests: XCTestCase {
         XCTAssertEqual(ToolProvisioner.compareYtDlpTags("2026.08.19", "2026.9.1"), .orderedAscending)
         XCTAssertEqual(ToolProvisioner.compareYtDlpTags("2026.09.01", "2026.08.19"), .orderedDescending)
         XCTAssertEqual(ToolProvisioner.compareYtDlpTags("2026.08.19", "2026.08.19"), .orderedSame)
+    }
+
+    // MARK: - 21. deno 首装走镜像 → 写 tag
+
+    func test_firstInstall_denoFromMirror_writesTag() async throws {
+        let tag = "2026.08.19"
+        stubMirror(ytTag: tag)
+        stubLatestAPI(tag: tag)
+
+        let recorder = ToolProgressRecorder()
+        let tools = try await makeProvisioner().ensureTools { recorder.record($0) }
+
+        XCTAssertTrue(isExecutable("deno"))
+        XCTAssertEqual(tools.deno, binDir.appendingPathComponent("deno"))
+        let manifest = readLocalManifest()
+        XCTAssertEqual(manifest["denoTag"] as? String, "v2.9.6")
+        let fetchedAt = try XCTUnwrap(manifest["denoFetchedAt"] as? Double)
+        XCTAssertLessThan(abs(Date().timeIntervalSince1970 - fetchedAt), 60)
+
+        let denoSamples = recorder.downloading.filter { $0.tool == "deno" }
+        XCTAssertFalse(denoSamples.isEmpty, "缺 deno 的下载进度样本")
+        XCTAssertTrue(denoSamples.allSatisfy { $0.toolIndex == 3 && $0.toolCount == 3 },
+                      "deno 应是第 3 个动作: \(denoSamples.map { "\($0.toolIndex)/\($0.toolCount)" })")
+
+        let log = ToolStubURLProtocol.requestLog
+        XCTAssertTrue(log.contains(mirrorDenoURL("v2.9.6")))
+        XCTAssertFalse(log.contains { $0.contains("gh-deno.test") }, "镜像可用时不应请求上游 deno: \(log)")
+    }
+
+    // MARK: - 22. 旧清单（无 deno 键）仍可解 → deno 走上游
+
+    func test_manifestWithoutDeno_stillDecodes_denoFromUpstream() async throws {
+        let tag = "2026.08.19"
+        stubMirror(ytTag: tag, denoTag: nil)
+        stubLatestAPI(tag: tag)
+        stubUpstreamDeno()
+
+        _ = try await makeProvisioner().ensureTools(progress: nil)
+
+        let log = ToolStubURLProtocol.requestLog
+        XCTAssertTrue(log.contains(mirrorYtURL(tag)), "yt-dlp 仍应来自镜像: \(log)")
+        XCTAssertTrue(log.contains(mirrorFFURL(Self.buildId)), "ffmpeg 仍应来自镜像: \(log)")
+        XCTAssertTrue(log.contains(upstreamDenoSumURL))
+        XCTAssertTrue(log.contains(upstreamDenoURL))
+        XCTAssertTrue(isExecutable("deno"))
+        XCTAssertEqual(readLocalManifest()["denoTag"] as? String, "v2.9.6")
+        XCTAssertTrue(toolsLog().contains("deno=-"), toolsLog())
+    }
+
+    // MARK: - 23. 上游 sidecar 缺失 → fail-closed（不下 zip）
+
+    func test_denoUpstream_sha256sumMissing_failsClosed() async throws {
+        let tag = "2026.08.19"
+        stubMirror(ytTag: tag, denoTag: nil)
+        stubLatestAPI(tag: tag)
+        stubUpstreamDeno(sumStatus: 404)
+
+        do {
+            _ = try await makeProvisioner().ensureTools(progress: nil)
+            XCTFail("取不到 deno 校验文件必须中止安装")
+        } catch let error as ToolProvisionError {
+            XCTAssertEqual(error, .checksumMismatch(tool: "deno"))
+        }
+
+        let log = ToolStubURLProtocol.requestLog
+        XCTAssertTrue(log.contains(upstreamDenoSumURL))
+        XCTAssertFalse(log.contains(upstreamDenoURL), "取不到 sidecar 就不该下载 zip: \(log)")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: binDir.appendingPathComponent("deno").path))
+    }
+
+    // MARK: - 24. 镜像 deno 哈希不匹配 → 回退上游
+
+    func test_denoMirrorChecksumMismatch_fallsBackUpstream() async throws {
+        let tag = "2026.08.19"
+        stubMirror(ytTag: tag, denoSHA: String(repeating: "0", count: 64))
+        stubLatestAPI(tag: tag)
+        stubUpstreamDeno()
+
+        _ = try await makeProvisioner().ensureTools(progress: nil)
+
+        XCTAssertTrue(isExecutable("deno"))
+        let log = ToolStubURLProtocol.requestLog
+        XCTAssertTrue(log.contains(mirrorDenoURL("v2.9.6")))
+        XCTAssertTrue(log.contains(upstreamDenoURL))
+        XCTAssertTrue(toolsLog().contains("deno mirror 失败，回退上游"), toolsLog())
+        XCTAssertEqual(readLocalManifest()["denoTag"] as? String, "v2.9.6")
+    }
+
+    // MARK: - 25. 快路径必须要求 deno
+
+    func test_fastPath_requiresDeno() async throws {
+        let tag = "2026.08.19"
+        try installFakeTool("yt-dlp")
+        try installFakeTool("ffmpeg")
+        try writeLocalManifest(tag: tag, fetchedAt: Date(), versionCheckedAt: Date())
+        stubMirror(ytTag: tag)
+        stubLatestAPI(tag: tag)
+
+        let recorder = ToolProgressRecorder()
+        _ = try await makeProvisioner().ensureTools { recorder.record($0) }
+
+        let downloading = recorder.downloading
+        XCTAssertFalse(downloading.isEmpty)
+        XCTAssertTrue(downloading.allSatisfy { $0.tool == "deno" && $0.toolIndex == 1 && $0.toolCount == 1 },
+                      "只应发生 deno 一个动作: \(downloading.map { "\($0.tool) \($0.toolIndex)/\($0.toolCount)" })")
+        let ready = try XCTUnwrap(recorder.all.last)
+        XCTAssertEqual(ready.toolCount, 1)
+
+        let log = ToolStubURLProtocol.requestLog
+        XCTAssertFalse(log.contains(mirrorYtURL(tag)), "yt-dlp 已装且新鲜，不应重下: \(log)")
+        XCTAssertFalse(log.contains(mirrorFFURL(Self.buildId)), "ffmpeg 已装，不应重下: \(log)")
+        XCTAssertTrue(isExecutable("deno"))
+    }
+
+    // MARK: - 26. 已装 deno 低于最低版本 → 重装
+
+    func test_denoTagBelowMinimum_reinstalls() async throws {
+        let tag = "2026.08.19"
+        try installFakeTool("yt-dlp")
+        try installFakeTool("ffmpeg")
+        try writeLocalManifest(tag: tag, fetchedAt: Date(), versionCheckedAt: Date())
+        try installFakeDeno(tag: "v2.3.0")
+        stubMirror(ytTag: tag)
+        stubLatestAPI(tag: tag)
+
+        let recorder = ToolProgressRecorder()
+        _ = try await makeProvisioner().ensureTools { recorder.record($0) }
+
+        XCTAssertTrue(recorder.downloading.allSatisfy { $0.tool == "deno" })
+        XCTAssertTrue(ToolStubURLProtocol.requestLog.contains(mirrorDenoURL("v2.9.6")))
+        XCTAssertEqual(readLocalManifest()["denoTag"] as? String, "v2.9.6")
+    }
+
+    // MARK: - 27. 镜像 deno 版本低于要求 → 直接上游钉住版本
+
+    func test_mirrorDenoTagBelowMinimum_usesUpstream() async throws {
+        let tag = "2026.08.19"
+        stubMirror(ytTag: tag, denoTag: "v2.2.0")
+        stubLatestAPI(tag: tag)
+        stubUpstreamDeno()
+
+        _ = try await makeProvisioner().ensureTools(progress: nil)
+
+        let log = ToolStubURLProtocol.requestLog
+        XCTAssertTrue(log.contains(upstreamDenoURL))
+        XCTAssertFalse(log.contains(mirrorDenoURL("v2.2.0")), "版本不达标的镜像资产不该被下载: \(log)")
+        XCTAssertTrue(toolsLog().contains("低于要求"), toolsLog())
+        XCTAssertEqual(readLocalManifest()["denoTag"] as? String, "v2.9.6")
+    }
+
+    // MARK: - 28. 冒烟失败 → notExecutable 且删文件
+
+    func test_denoSmokeTestFails_throwsNotExecutable() async throws {
+        let tag = "2026.08.19"
+        // 镜像与上游都发一个「跑不起来」的 deno：镜像失败会回退上游，两边都失败才看得到最终错误。
+        let badZip = try makeZip(name: "deno", payload: Data("#!/bin/sh\nexit 3\n".utf8), executable: true)
+        stubMirror(ytTag: tag, denoSHA: sha256Hex(badZip))
+        stubLatestAPI(tag: tag)
+        ToolStubURLProtocol.set(mirrorDenoURL("v2.9.6"), .ok(status: 200, body: badZip, finalURL: nil))
+        ToolStubURLProtocol.set(
+            upstreamDenoSumURL,
+            .ok(status: 200, body: Data("\(sha256Hex(badZip))  \(Self.denoAssetName)\n".utf8), finalURL: nil)
+        )
+        ToolStubURLProtocol.set(upstreamDenoURL, .ok(status: 200, body: badZip, finalURL: nil))
+
+        do {
+            _ = try await makeProvisioner().ensureTools(progress: nil)
+            XCTFail("deno 冒烟失败必须报错")
+        } catch let error as ToolProvisionError {
+            XCTAssertEqual(error, .notExecutable(tool: "deno"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: binDir.appendingPathComponent("deno").path),
+                       "冒烟失败的 deno 必须被删掉")
+        XCTAssertNil(readLocalManifest()["denoTag"] as? String)
+    }
+
+    // MARK: - 29. 信封校验覆盖 deno 资产
+
+    func test_envelopeDecode_rejectsUnsafeDenoAsset() throws {
+        // deno 资产路径穿越
+        let unsafe = manifestBytes(ytTag: "2026.08.19", denoArm64Asset: "../deno.zip")
+        XCTAssertNil(ToolMirrorManifest.decodeSignedEnvelope(
+            envelopeBytes(manifest: unsafe), publicKey: publicKeyData
+        ))
+
+        // deno sha256 非 hex
+        let badSHA = manifestBytes(ytTag: "2026.08.19", denoSHA: String(repeating: "z", count: 64))
+        XCTAssertNil(ToolMirrorManifest.decodeSignedEnvelope(
+            envelopeBytes(manifest: badSHA), publicKey: publicKeyData
+        ))
+
+        // deno tag 为空
+        let emptyTag = manifestBytes(ytTag: "2026.08.19", denoTag: "")
+        XCTAssertNil(ToolMirrorManifest.decodeSignedEnvelope(
+            envelopeBytes(manifest: emptyTag), publicKey: publicKeyData
+        ))
+
+        // 完全没有 deno 键 → 仍可解（旧信封）
+        let withoutDeno = manifestBytes(ytTag: "2026.08.19", denoTag: nil)
+        let decoded = try XCTUnwrap(ToolMirrorManifest.decodeSignedEnvelope(
+            envelopeBytes(manifest: withoutDeno), publicKey: publicKeyData
+        ))
+        XCTAssertNil(decoded.deno)
+        XCTAssertNil(decoded.denoAsset(archPath: "arm64"))
+    }
+
+    // MARK: - 30. 默认下载策略
+
+    func test_defaultPolicies() {
+        XCTAssertEqual(
+            ToolProvisioner.defaultUpstreamPolicy,
+            DownloadPolicy(minBytesPerSecond: 50 * 1024, throughputWindow: 60, graceSeconds: 20, maxDuration: 900)
+        )
+        XCTAssertEqual(ToolProvisioner.defaultMirrorPolicy, DownloadPolicy(maxDuration: 240))
+    }
+
+    // MARK: - deno tag 比较
+
+    func test_denoTagSatisfies() {
+        XCTAssertTrue(ToolProvisioner.denoTagSatisfies("v2.9.6"))
+        XCTAssertTrue(ToolProvisioner.denoTagSatisfies("2.9.6"))
+        XCTAssertTrue(ToolProvisioner.denoTagSatisfies("v2.10.0"))
+        XCTAssertTrue(ToolProvisioner.denoTagSatisfies("v3.0.0"))
+        XCTAssertFalse(ToolProvisioner.denoTagSatisfies("v2.9.5"))
+        XCTAssertFalse(ToolProvisioner.denoTagSatisfies("v2.3.0"))
+        XCTAssertFalse(ToolProvisioner.denoTagSatisfies(nil))
+        XCTAssertFalse(ToolProvisioner.denoTagSatisfies(""))
     }
 }

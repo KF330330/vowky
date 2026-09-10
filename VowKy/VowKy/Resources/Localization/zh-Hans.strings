@@ -257,6 +257,8 @@
 
 "file.url.error.invalidURL" = "这不是有效的视频链接。";
 "file.url.error.authRequired" = "该视频需要登录。请在「设置 → 链接下载」里选择一个浏览器以使用其 Cookie，然后重试。";
+"file.url.error.botCheck" = "YouTube 要求登录验证（\"Sign in to confirm you're not a bot\"）。请在「设置 → 链接下载 → 使用以下浏览器的 Cookie」里选择一个已登录 YouTube 的浏览器，然后重试。";
+"file.url.error.botCheckWithCookies" = "已用 %@ 的 Cookie 重试，YouTube 仍要求登录验证。请确认该浏览器已登录 YouTube，且首次读取 Cookie 时在钥匙串弹窗里点了「始终允许」；也可在「设置 → 链接下载」换一个浏览器后重试。";
 "file.url.error.rateLimited" = "站点拦截了请求（需要登录 Cookie）。请在「设置 → 链接下载」里选择一个浏览器，然后重试。";
 "file.url.error.unsupported" = "暂不支持该链接。";
 "file.url.error.unavailable" = "该视频无法访问（私有、已删除或地区限制）。";
@@ -280,7 +282,7 @@
 "settings.urlDownload.cookie.safari" = "Safari";
 "settings.urlDownload.cookie.chrome" = "Chrome";
 "settings.urlDownload.cookie.firefox" = "Firefox";
-"settings.urlDownload.cookieHint" = "部分站点（如哔哩哔哩）需要浏览器 Cookie 才能下载。Safari 需要「完全磁盘访问权限」；Chrome 可能弹出钥匙串授权。";
+"settings.urlDownload.cookieHint" = "哔哩哔哩下载需要浏览器 Cookie；YouTube 遇到「登录验证」时会自动用它重试一次。Safari 需要「完全磁盘访问权限」；Chrome 首次会弹出钥匙串授权，请点「始终允许」。";
 "settings.urlDownload.subtitlePriority" = "字幕优先级";
 "settings.urlDownload.subtitlePriority.all" = "优先所有字幕（含自动）";
 "settings.urlDownload.subtitlePriority.manualOnly" = "仅人工字幕";
