@@ -612,3 +612,4 @@
 "recording.fileName.placeholder" = "文件名（留空用默认时间戳名）";
 "recording.fileName.help" = "录音中可随时修改；完成时 .md 与 .wav 按此名保存";
 "recording.note.renameFailed" = "文件改名失败，已按默认名保存";
+"recording.saveAs.label" = "保存为";

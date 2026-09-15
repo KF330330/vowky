@@ -612,3 +612,4 @@
 "recording.fileName.placeholder" = "File name (leave blank for the default)";
 "recording.fileName.help" = "Editable while recording; the .md and .wav are saved under this name when finished";
 "recording.note.renameFailed" = "Rename failed; saved under the default name";
+"recording.saveAs.label" = "Save as";

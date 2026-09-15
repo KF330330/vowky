@@ -404,8 +404,6 @@ struct RecordingTranscriptionView: View {
                 }
             }
 
-            fileNameRow
-
             RecordingWaveformView(
                 bands: viewModel.waveformBands,
                 isActive: viewModel.state == .recording,
@@ -443,48 +441,103 @@ struct RecordingTranscriptionView: View {
         .transcriptionCardStyle()
     }
 
-    /// 录音进行中：可编辑的文件名输入框（完成时按此名落盘）；其余状态：只读显示最终文件名。
-    private var fileNameRow: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(TranscriptionTheme.accentDark)
+    /// 转写卡底部「保存为」栏（用户 2026-09-15 选定的布局 4）：
+    /// 目录标签 + 文件名（录音进行中可编辑，完成时按此名落盘；其余状态只读显示最终名）+ 格式徽章。
+    private var saveAsRow: some View {
+        HStack(spacing: 8) {
+            Text(loc.string("recording.saveAs.label"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(TranscriptionTheme.textSecondary)
+                .fixedSize()
+
+            // 目录固定为 文稿/VowKy Recordings，标签很短：fixedSize 保证它不被文件名输入框挤成零宽
+            Text(outputDirectoryLabel)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(TranscriptionTheme.accentDarkest)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(TranscriptionTheme.accentBright.opacity(0.32))
+                )
 
             if viewModel.canEditFileName {
                 TextField(fileNamePlaceholder, text: $viewModel.fileNameDraft)
                     .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
-                    .font(.system(size: 12))
+                    .controlSize(.large)
+                    .font(.system(size: 14))
+                    .frame(maxWidth: .infinity)
                     .focused($isFileNameFocused)
                     .onSubmit { isFileNameFocused = false }
                     // Esc 只失焦，不能顺着响应链去触发「取消录音」（那会删掉音频）
                     .onExitCommand { isFileNameFocused = false }
                     .help(loc.string("recording.fileName.help"))
             } else {
-                Text(finalFileNameText)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(TranscriptionTheme.textSecondary)
+                // 有真实产物时显示最终名；空闲/取消/无产物失败态只显示灰色占位，别伪装成一个名字
+                Text(finalFileName ?? loc.string("recording.fileName.placeholder"))
+                    .font(.system(size: 14, weight: finalFileName == nil ? .regular : .medium))
+                    .foregroundColor(finalFileName == nil ? TranscriptionTheme.textMuted : TranscriptionTheme.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Spacer()
+            formatChip(".md")
+            formatChip(".wav")
         }
-        .frame(height: 24)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(TranscriptionTheme.secondaryBackground)
+        )
+    }
+
+    private func formatChip(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .foregroundColor(TranscriptionTheme.accentDarkest)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(TranscriptionTheme.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(TranscriptionTheme.border, lineWidth: 1)
+            )
+    }
+
+    /// 目录标签：父目录的 Finder 显示名（中文系统下「文稿」）+ 目录名，如「文稿/VowKy Recordings/」。
+    private var outputDirectoryLabel: String {
+        let directory: URL
+        if let output = viewModel.output {
+            directory = output.textURL.deletingLastPathComponent()
+        } else if let recovered = viewModel.recoveredAudioURL {
+            directory = recovered.deletingLastPathComponent()
+        } else {
+            directory = RecordingTranscriptionOutputStore.defaultOutputDirectory()
+        }
+        let parent = FileManager.default.displayName(atPath: directory.deletingLastPathComponent().path)
+        return "\(parent)/\(directory.lastPathComponent)/"
     }
 
     private var fileNamePlaceholder: String {
         viewModel.preparedBaseName ?? loc.string("recording.fileName.placeholder")
     }
 
-    private var finalFileNameText: String {
+    /// 已落盘的最终基名（完成态取 .md，失败保留音频时取 .wav）；没有产物为 nil。
+    private var finalFileName: String? {
         if let textURL = viewModel.output?.textURL {
             return textURL.deletingPathExtension().lastPathComponent
         }
         if let audioURL = viewModel.recoveredAudioURL {
             return audioURL.deletingPathExtension().lastPathComponent
         }
-        return loc.string("recording.fileName.placeholder")
+        return nil
     }
 
     private var headerSubtitle: String {
@@ -614,18 +667,7 @@ struct RecordingTranscriptionView: View {
             .frame(minHeight: 128, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 10))
 
-            HStack(spacing: 7) {
-                Image(systemName: "folder")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(TranscriptionTheme.accentDark)
-                Text(outputPathText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(TranscriptionTheme.textMuted)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-            }
-            .frame(height: 18)
+            saveAsRow
         }
         .padding(12)
         .frame(maxHeight: .infinity)
@@ -822,16 +864,6 @@ struct RecordingTranscriptionView: View {
         case .idle:
             return loc.string("recording.empty.idle")
         }
-    }
-
-    private var outputPathText: String {
-        if let output = viewModel.output {
-            return output.textURL.deletingLastPathComponent().path
-        }
-        if let recovered = viewModel.recoveredAudioURL {
-            return recovered.deletingLastPathComponent().path
-        }
-        return loc.string("recording.outputPath.default")
     }
 
     private var statusDotColor: Color {
