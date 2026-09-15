@@ -58,6 +58,18 @@ final class RecordingTranscriptionViewModel: ObservableObject {
     /// internal 供单测断言同源不变量。
     private(set) var lastFinalSegments: [TranslationCoordinator.FinalSegment] = []
 
+    // MARK: 文件名
+
+    /// 用户在录音中输入的文件名草稿（不含扩展名）。start() 清空；complete() 时一次性生效。
+    /// 会话进行中 VM 绝不回写此值（拼音输入法组字不能被外部赋值打断）。
+    @Published var fileNameDraft = ""
+    /// 本次会话 prepare 出来的默认基名（时间戳），供输入框占位；无活动会话为 nil。
+    @Published private(set) var preparedBaseName: String?
+    /// 改名失败注记（完成后显示；下次 start 清空）。
+    @Published private(set) var fileNameNote: String?
+    /// 录音进行中（loadingModel/recording/paused/finishing）才可编辑；完成/取消/失败/空闲只读。
+    var canEditFileName: Bool { isActivelyRecording }
+
     // MARK: 音频来源
 
     /// 录音来源选择（麦克风 / 系统声音 / 两者混合）。macOS<14.4 恒为麦克风。
@@ -415,6 +427,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         diarizationPhaseText = nil
         diarizationNote = nil
         engineNote = nil
+        // 文件名草稿只在真正开录时清空：被拒的 start（beginRecordingTranscription 返回原因）已提前 return
+        fileNameDraft = ""
+        fileNameNote = nil
+        preparedBaseName = nil
         lastDiarizationSpeakerCount = 0
         lastFinalSegments = []
         // 终稿引擎快照：按 start 瞬间的设置裁决本次录音（与文件转录任务启动快照口径一致）
@@ -471,6 +487,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         resetFinalizationState()
         deletePreparedOutput(preparedOutput)
         activePreparedOutput = nil
+        preparedBaseName = nil
 
         appState.endRecordingTranscription()
         state = .cancelled
@@ -910,6 +927,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             }
             sampleContinuation = continuation
             activePreparedOutput = preparedOutput
+            preparedBaseName = preparedOutput.audioURL.deletingPathExtension().lastPathComponent
 
             audioRecorder.onSamplesCaptured = { [weak self] samples in
                 continuation.yield(samples)
@@ -1005,13 +1023,38 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         finalizationProgress = progress
     }
 
+    /// 把草稿名应用到已 prepare 的输出：草稿清洗后为空 → 原样；
+    /// 改名失败 → 记注记、原样返回（绝不因改名丢录音）。
+    private func applyFileNameDraft(
+        to prepared: PreparedRecordingTranscriptionOutput
+    ) -> PreparedRecordingTranscriptionOutput {
+        guard let desired = RecordingTranscriptionOutputStore.sanitizedBaseName(fileNameDraft) else {
+            return prepared
+        }
+        do {
+            return try outputStore.renameOutput(prepared, toBaseName: desired)
+        } catch {
+            NSLog("[VowKy][Recording] 文件改名失败，沿用默认名: \(error.localizedDescription)")
+            fileNameNote = L("recording.note.renameFailed")
+            return prepared
+        }
+    }
+
     private func complete(
         result: RecordingTranscriptionResult,
         diarized: DiarizedTranscript? = nil,
         analyzerText: String? = nil,
         operationID: UUID
     ) {
-        guard isActive(operationID), let preparedOutput = activePreparedOutput else { return }
+        guard isActive(operationID), var preparedOutput = activePreparedOutput else { return }
+
+        // 此刻 writer 已 finalize（句柄关闭、.inprogress 侧车已删）、.md 尚未写：
+        // 唯一能安全搬 .wav 的窗口。之后全部下游（.md / 历史库 / 字幕实录 / 双语）都用新 URL。
+        let renamed = applyFileNameDraft(to: preparedOutput)
+        let customNameApplied = renamed != preparedOutput
+        preparedOutput = renamed
+        // scheduleBilingualTranscriptSave 从 activePreparedOutput 取 textURL，必须同步改过去
+        activePreparedOutput = preparedOutput
 
         stopTimer()
         resetFinalizationState()
@@ -1072,6 +1115,10 @@ final class RecordingTranscriptionViewModel: ObservableObject {
             }
             if engineNote != nil {
                 doneData["sa_fallback"] = 1
+            }
+            if customNameApplied {
+                // 只记 0/1，绝不上报文件名
+                doneData["named"] = 1
             }
             AnalyticsService.shared.track("rec_transcribe_done", data: doneData)
 
@@ -1151,6 +1198,7 @@ final class RecordingTranscriptionViewModel: ObservableObject {
         workerTask = nil
         activeOperationID = nil
         activePreparedOutput = nil
+        preparedBaseName = nil
         audioLevel = 0
         subtitleController.hide()
         subtitleCancellable = nil

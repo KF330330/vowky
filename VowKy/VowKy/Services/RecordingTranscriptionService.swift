@@ -74,6 +74,73 @@ struct RecordingTranscriptionOutputStore {
         try text.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    /// 把已 prepare 的输出改到目标基名（自动 -2/-3 去重）。
+    /// desired 与当前基名相同（不区分大小写）→ 原样返回；`.wav` 不存在 → 抛错（调用方兜底沿用原名）。
+    /// 只搬 `.wav`（此时句柄已关、侧车已删），`.md` 尚未写，按新基名派生即可。
+    func renameOutput(
+        _ prepared: PreparedRecordingTranscriptionOutput,
+        toBaseName desired: String
+    ) throws -> PreparedRecordingTranscriptionOutput {
+        let current = prepared.audioURL.deletingPathExtension().lastPathComponent
+        if desired.caseInsensitiveCompare(current) == .orderedSame {
+            return prepared
+        }
+        guard fileManager.fileExists(atPath: prepared.audioURL.path) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let base = uniqueCandidate(baseName: desired)
+        let newAudio = outputDirectory.appendingPathComponent("\(base).wav")
+        let newText = outputDirectory.appendingPathComponent("\(base).md")
+        try fileManager.moveItem(at: prepared.audioURL, to: newAudio)
+
+        return PreparedRecordingTranscriptionOutput(
+            textURL: newText,
+            audioURL: newAudio,
+            startedAt: prepared.startedAt
+        )
+    }
+
+    /// 用户输入 → 合法基名；空 / 纯空白 / 清洗后为空 → nil（＝沿用默认时间戳名）。
+    static func sanitizedBaseName(_ raw: String) -> String? {
+        // 1. 路径分隔符与控制字符换成 `-`（与 TranscriptionOutputNamer.sanitizedFileName 同思路）
+        let invalid = CharacterSet(charactersIn: "/:")
+            .union(.controlCharacters)
+            .union(.newlines)
+        var name = raw.components(separatedBy: invalid).joined(separator: "-")
+
+        // 2. 去首尾空白与首尾 `-`（首尾的制表符/换行在上一步已变成 `-`，等同空白要一并去掉）
+        name = name.trimmingCharacters(in: Self.baseNameWhitespaceTrim)
+
+        // 3. 末尾多余的扩展名去掉一个，避免出现 `会议.md.md`
+        for ext in [".md", ".wav", ".txt"] {
+            if let range = name.range(of: ext, options: [.caseInsensitive, .backwards, .anchored]) {
+                name.removeSubrange(range)
+                break
+            }
+        }
+
+        // 4. 去首尾的 `.`（避免隐藏文件/空扩展名），再去一次首尾空白
+        name = name.trimmingCharacters(in: Self.baseNameEdgeTrim)
+
+        // 5. 长度双闸：先按字符数截断，再按 UTF-8 字节数收到 200 以内
+        //    （NAME_MAX 255 字节，预留 ` (字幕实录).md` 与 `-N` 后缀）
+        if name.count > 60 {
+            name = String(name.prefix(60))
+        }
+        while name.utf8.count > 200 {
+            name.removeLast()
+        }
+        name = name.trimmingCharacters(in: Self.baseNameEdgeTrim)
+
+        return name.isEmpty ? nil : name
+    }
+
+    private static let baseNameWhitespaceTrim = CharacterSet.whitespacesAndNewlines
+        .union(CharacterSet(charactersIn: "-"))
+    private static let baseNameEdgeTrim = CharacterSet.whitespacesAndNewlines
+        .union(CharacterSet(charactersIn: ".-"))
+
     static func defaultOutputDirectory() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VowKy Recordings", isDirectory: true)
@@ -84,17 +151,32 @@ struct RecordingTranscriptionOutputStore {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
 
-        let baseName = "VowKy Recording \(formatter.string(from: date))"
+        return uniqueCandidate(baseName: "VowKy Recording \(formatter.string(from: date))")
+    }
+
+    /// 基名去重：主文件与全部派生侧车当成一组查冲突，任一路径已存在就换下一个后缀。
+    /// （否则用户把新录音命名成「他人基名 + 侧车后缀」时，字幕实录/双语会覆盖旧文稿。）
+    private func uniqueCandidate(baseName: String) -> String {
         var candidate = baseName
         var suffix = 2
-        // 同时检测 .md（新格式）和 .txt（老格式，向后兼容用户已有的转写文件）
-        while fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).md").path)
-            || fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).txt").path)
-            || fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("\(candidate).wav").path) {
+        while hasNameConflict(baseName: candidate) {
             candidate = "\(baseName)-\(suffix)"
             suffix += 1
         }
         return candidate
+    }
+
+    private func hasNameConflict(baseName: String) -> Bool {
+        let textURL = outputDirectory.appendingPathComponent("\(baseName).md")
+        // 同时检测 .md（新格式）和 .txt（老格式，向后兼容用户已有的转写文件）
+        let candidates = [
+            textURL,
+            outputDirectory.appendingPathComponent("\(baseName).txt"),
+            outputDirectory.appendingPathComponent("\(baseName).wav"),
+            SubtitleDisplayRecorder.outputURL(for: textURL),
+            BilingualTranscriptComposer.outputURL(for: textURL)
+        ]
+        return candidates.contains { fileManager.fileExists(atPath: $0.path) }
     }
 }
 
