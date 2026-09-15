@@ -59,6 +59,7 @@ struct RecordingTranscriptionOutputStore {
         self.fileManager = fileManager
     }
 
+    @MainActor
     func prepareOutput(startedAt: Date = Date()) throws -> PreparedRecordingTranscriptionOutput {
         try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
@@ -77,6 +78,7 @@ struct RecordingTranscriptionOutputStore {
     /// 把已 prepare 的输出改到目标基名（自动 -2/-3 去重）。
     /// desired 与当前基名相同（不区分大小写）→ 原样返回；`.wav` 不存在 → 抛错（调用方兜底沿用原名）。
     /// 只搬 `.wav`（此时句柄已关、侧车已删），`.md` 尚未写，按新基名派生即可。
+    @MainActor
     func renameOutput(
         _ prepared: PreparedRecordingTranscriptionOutput,
         toBaseName desired: String
@@ -146,6 +148,7 @@ struct RecordingTranscriptionOutputStore {
             .appendingPathComponent("VowKy Recordings", isDirectory: true)
     }
 
+    @MainActor
     private func uniqueBaseName(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -156,6 +159,9 @@ struct RecordingTranscriptionOutputStore {
 
     /// 基名去重：主文件与全部派生侧车当成一组查冲突，任一路径已存在就换下一个后缀。
     /// （否则用户把新录音命名成「他人基名 + 侧车后缀」时，字幕实录/双语会覆盖旧文稿。）
+    /// 带 @MainActor 是因为侧车路径由 SubtitleDisplayRecorder（@MainActor）派生；
+    /// 现有调用方（录音 VM、单测）本就全在主线程，行为不变。
+    @MainActor
     private func uniqueCandidate(baseName: String) -> String {
         var candidate = baseName
         var suffix = 2
@@ -166,6 +172,7 @@ struct RecordingTranscriptionOutputStore {
         return candidate
     }
 
+    @MainActor
     private func hasNameConflict(baseName: String) -> Bool {
         let textURL = outputDirectory.appendingPathComponent("\(baseName).md")
         // 同时检测 .md（新格式）和 .txt（老格式，向后兼容用户已有的转写文件）

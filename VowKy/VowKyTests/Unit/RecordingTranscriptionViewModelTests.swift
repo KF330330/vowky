@@ -838,6 +838,236 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.systemAudioSilenceWarning, "取消后迟到的上报同样要被挡住")
     }
 
+    // MARK: - 录音中改文件名
+
+    func testFileNameDraftRenamesOutputsAndHistoryTitle() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "终稿"
+        // 单测宿主会开真实 HistoryStore：元数据只收进内存数组，绝不写库
+        var metadata: [TranscriptionMetadata] = []
+        let viewModel = makeViewModel(metadataRecorder: { _, meta in metadata.append(meta) })
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.fileNameDraft = "周会"
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let output = try XCTUnwrap(viewModel.output)
+        let contents = Set(try FileManager.default.contentsOfDirectory(atPath: tempDir.path))
+        XCTAssertEqual(contents, ["周会.md", "周会.wav"], "时间戳文件与 .inprogress 侧车都不该残留：\(contents)")
+        XCTAssertEqual(output.textURL.lastPathComponent, "周会.md")
+        XCTAssertEqual(output.audioURL.lastPathComponent, "周会.wav")
+
+        let meta = try XCTUnwrap(metadata.first)
+        XCTAssertEqual(meta.title, "周会")
+        XCTAssertEqual(meta.audioPath, output.audioURL.path)
+        XCTAssertEqual(meta.markdownPath, output.textURL.path)
+
+        let samples = try XCTUnwrap(WAVSampleFileWriter.readFloat32Samples(from: output.audioURL))
+        XCTAssertEqual(samples, [Float(0.1), Float(0.2), Float(0.3)])
+        XCTAssertNil(viewModel.fileNameNote)
+    }
+
+    func testBlankFileNameDraftKeepsDefaultTimestampName() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.fileNameDraft = "   "
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let output = try XCTUnwrap(viewModel.output)
+        XCTAssertTrue(
+            output.textURL.deletingPathExtension().lastPathComponent.hasPrefix("VowKy Recording "),
+            output.textURL.lastPathComponent
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.audioURL.path))
+    }
+
+    func testFileNameDraftIsSanitizedBeforeRename() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.fileNameDraft = " a/b:c.md "
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let output = try XCTUnwrap(viewModel.output)
+        XCTAssertEqual(output.textURL.lastPathComponent, "a-b-c.md")
+        XCTAssertEqual(output.audioURL.lastPathComponent, "a-b-c.wav")
+    }
+
+    func testFileNameDraftCollisionGetsSuffix() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        try "old".write(to: tempDir.appendingPathComponent("周会.md"), atomically: true, encoding: .utf8)
+        viewModel.fileNameDraft = "周会"
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let output = try XCTUnwrap(viewModel.output)
+        XCTAssertEqual(output.textURL.lastPathComponent, "周会-2.md")
+        XCTAssertEqual(output.audioURL.lastPathComponent, "周会-2.wav")
+        XCTAssertEqual(try String(contentsOf: tempDir.appendingPathComponent("周会.md")), "old")
+    }
+
+    func testFileNameDraftResetsOnRestart() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.fileNameDraft = "周会"
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        viewModel.start()
+        XCTAssertEqual(viewModel.fileNameDraft, "")
+        XCTAssertNil(viewModel.fileNameNote)
+        try await waitUntil("second recording starts") { viewModel.state == .recording }
+        let base = try XCTUnwrap(viewModel.preparedBaseName)
+        XCTAssertTrue(base.hasPrefix("VowKy Recording "), base)
+
+        viewModel.cancel()
+    }
+
+    func testCancelWithFileNameDraftLeavesNoFiles() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1]]
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.fileNameDraft = "周会"
+        viewModel.cancel()
+
+        XCTAssertEqual(viewModel.state, .cancelled)
+        XCTAssertNil(viewModel.preparedBaseName)
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: tempDir.path)) ?? []
+        XCTAssertTrue(contents.isEmpty, "取消不改名、只删时间戳文件：\(contents)")
+    }
+
+    func testSubtitleLogFollowsRenamedBase() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "最终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        // 注入必须在进入 recording 之后——start() 会 reset 记录器
+        viewModel.subtitleDisplayRecorder.record(
+            TranscriptParagraph(id: "p-0", text: "第一句字幕。", isPartial: true, translation: .pending),
+            isNewSentence: true, at: 2.0
+        )
+        viewModel.fileNameDraft = "字幕会"
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        let output = try XCTUnwrap(viewModel.output)
+        XCTAssertEqual(output.textURL.lastPathComponent, "字幕会.md")
+        let logURL = SubtitleDisplayRecorder.outputURL(for: output.textURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: logURL.path), "实录文件应跟着新基名走")
+        let contents = try FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertFalse(
+            contents.contains { $0.hasPrefix("VowKy Recording ") },
+            "改名后不该有时间戳名残留：\(contents)"
+        )
+    }
+
+    /// 改名失败（wav 完好、仅 move 抛错）时：沿用默认名保存，录音一字节不丢。
+    func testRenameFailureKeepsOriginalAudioAndDefaultName() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "终稿"
+        var metadata: [TranscriptionMetadata] = []
+        let viewModel = makeViewModel(
+            metadataRecorder: { _, meta in metadata.append(meta) },
+            outputStore: RecordingTranscriptionOutputStore(
+                outputDirectory: tempDir,
+                fileManager: MoveFailingFileManager()
+            )
+        )
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        viewModel.fileNameDraft = "周会"
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        XCTAssertNotNil(viewModel.fileNameNote)
+        let output = try XCTUnwrap(viewModel.output)
+        let audioBase = output.audioURL.deletingPathExtension().lastPathComponent
+        let textBase = output.textURL.deletingPathExtension().lastPathComponent
+        XCTAssertTrue(audioBase.hasPrefix("VowKy Recording "), audioBase)
+        XCTAssertTrue(textBase.hasPrefix("VowKy Recording "), textBase)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.audioURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.textURL.path))
+
+        let samples = try XCTUnwrap(WAVSampleFileWriter.readFloat32Samples(from: output.audioURL))
+        XCTAssertEqual(samples, [Float(0.1), Float(0.2), Float(0.3)], "改名失败绝不能丢录音")
+        XCTAssertEqual(try String(contentsOf: output.textURL), "终稿")
+
+        let meta = try XCTUnwrap(metadata.first)
+        XCTAssertEqual(meta.title, textBase)
+        XCTAssertEqual(meta.audioPath, output.audioURL.path)
+        XCTAssertEqual(meta.markdownPath, output.textURL.path)
+
+        let contents = try FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+        XCTAssertFalse(contents.contains { $0.hasPrefix("周会") }, "改名失败后不该留下半个新名字：\(contents)")
+    }
+
+    /// 异常场景（音频已缺失）：只证明完成路径不崩、有提示，不作为「保存成功」的依据。
+    func testRenameSkippedWhenAudioMissingStillCompletes() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "终稿"
+        let viewModel = makeViewModel()
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        let wavName = try XCTUnwrap(
+            try FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+                .first { $0.hasSuffix(".wav") }
+        )
+        try FileManager.default.removeItem(at: tempDir.appendingPathComponent(wavName))
+        viewModel.fileNameDraft = "周会"
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+
+        XCTAssertNotNil(viewModel.fileNameNote)
+        let output = try XCTUnwrap(viewModel.output)
+        XCTAssertTrue(
+            output.textURL.deletingPathExtension().lastPathComponent.hasPrefix("VowKy Recording "),
+            output.textURL.lastPathComponent
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output.textURL.path))
+    }
+
+    func testCanEditFileNameOnlyWhileActive() async throws {
+        mockRecorder.samplesToEmitOnStart = [[0.1, 0.2, 0.3]]
+        mockFinalRecognizer.recognizeResult = "终稿"
+        let viewModel = makeViewModel()
+
+        XCTAssertFalse(viewModel.canEditFileName)
+
+        viewModel.start()
+        try await waitUntil("recording starts") { viewModel.state == .recording }
+        XCTAssertTrue(viewModel.canEditFileName)
+
+        viewModel.stop()
+        try await waitUntil("recording transcription completes") { viewModel.state == .completed }
+        XCTAssertFalse(viewModel.canEditFileName)
+    }
+
     private func makeViewModel(
         resultRecorder: ((String) -> Void)? = nil,
         metadataRecorder: ((String, TranscriptionMetadata) -> Void)? = nil,
@@ -845,14 +1075,15 @@ final class RecordingTranscriptionViewModelTests: XCTestCase {
         diarizationEnabled: Bool = false,
         recorderFactory: ((RecordingAudioSource) -> AudioRecorderProtocol)? = nil,
         analyzerFinalPassFactory: (() -> FileTranscribing?)? = nil,
-        analyzerAutoFinalPassProvider: (() -> AnalyzerAutoFinalPassContext?)? = nil
+        analyzerAutoFinalPassProvider: (() -> AnalyzerAutoFinalPassContext?)? = nil,
+        outputStore: RecordingTranscriptionOutputStore? = nil
     ) -> RecordingTranscriptionViewModel {
         RecordingTranscriptionViewModel(
             appState: appState,
             audioRecorder: mockRecorder,
             recorderFactory: recorderFactory,
             finalRecognizer: mockFinalRecognizer,
-            outputStore: RecordingTranscriptionOutputStore(outputDirectory: tempDir),
+            outputStore: outputStore ?? RecordingTranscriptionOutputStore(outputDirectory: tempDir),
             resultRecorder: resultRecorder,
             metadataRecorder: metadataRecorder,
             diarizer: diarizer,
@@ -907,5 +1138,13 @@ private final class MockAnalyzerFinalPassTranscribing: FileTranscribing {
         case .failure:
             throw FileTranscriptionError.noRecognizedText
         }
+    }
+}
+
+/// 只让 `moveItem` 失败：wav 完好、仅改名这一步出错，
+/// 用来验证「改名失败 → 沿用默认名、绝不丢录音」这条承诺走的是生产同一条 catch 路径。
+private final class MoveFailingFileManager: FileManager {
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        throw CocoaError(.fileWriteNoPermission)
     }
 }

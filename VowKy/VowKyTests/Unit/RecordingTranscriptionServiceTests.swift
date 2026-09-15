@@ -22,6 +22,119 @@ final class RecordingTranscriptionServiceTests: XCTestCase {
         XCTAssertTrue(second.audioURL.lastPathComponent.hasSuffix("-2.wav"))
     }
 
+    // MARK: - 录音中改文件名
+
+    func testSanitizedBaseNameNormalizesSeparatorsExtensionAndDots() throws {
+        typealias Store = RecordingTranscriptionOutputStore
+
+        XCTAssertEqual(Store.sanitizedBaseName(" a/b:c.MD "), "a-b-c")
+        XCTAssertEqual(Store.sanitizedBaseName("..hidden."), "hidden")
+        XCTAssertEqual(Store.sanitizedBaseName("\t会议\n"), "会议")
+
+        XCTAssertNil(Store.sanitizedBaseName("   "))
+        XCTAssertNil(Store.sanitizedBaseName(""))
+        XCTAssertNil(Store.sanitizedBaseName(".md"))
+
+        let longASCII = try XCTUnwrap(Store.sanitizedBaseName(String(repeating: "x", count: 100)))
+        XCTAssertEqual(longASCII.count, 60)
+
+        // NAME_MAX 255 字节：中日韩字符 3 字节/个，字符数闸之外还要有字节闸
+        let longCJK = try XCTUnwrap(Store.sanitizedBaseName(String(repeating: "汉", count: 70)))
+        XCTAssertLessThanOrEqual(longCJK.utf8.count, 200)
+    }
+
+    func testRenameOutputMovesAudioAndDerivesTextURL() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vowky_recording_rename_\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = RecordingTranscriptionOutputStore(outputDirectory: directory)
+        let prepared = try store.prepareOutput(startedAt: Date(timeIntervalSince1970: 1_800_000_000))
+        FileManager.default.createFile(atPath: prepared.audioURL.path, contents: Data([1, 2, 3, 4]))
+
+        let renamed = try store.renameOutput(prepared, toBaseName: "会议")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: renamed.audioURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: prepared.audioURL.path))
+        XCTAssertEqual(renamed.audioURL.lastPathComponent, "会议.wav")
+        XCTAssertEqual(renamed.textURL.lastPathComponent, "会议.md")
+        XCTAssertEqual(renamed.startedAt, prepared.startedAt)
+        XCTAssertEqual(try Data(contentsOf: renamed.audioURL), Data([1, 2, 3, 4]))
+    }
+
+    func testRenameOutputAvoidsCollisionWithExistingFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vowky_recording_rename_\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = RecordingTranscriptionOutputStore(outputDirectory: directory)
+        let prepared = try store.prepareOutput(startedAt: Date(timeIntervalSince1970: 1_800_000_000))
+        FileManager.default.createFile(atPath: prepared.audioURL.path, contents: Data())
+        try "old".write(to: directory.appendingPathComponent("会议.md"), atomically: true, encoding: .utf8)
+
+        let renamed = try store.renameOutput(prepared, toBaseName: "会议")
+
+        XCTAssertEqual(renamed.audioURL.lastPathComponent, "会议-2.wav")
+        XCTAssertEqual(renamed.textURL.lastPathComponent, "会议-2.md")
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("会议.md")), "old")
+    }
+
+    /// 他人录音的派生侧车（字幕实录 / 双语）也算冲突：否则新录音的侧车会覆盖旧文稿。
+    func testRenameOutputAvoidsCollisionWithSidecarOfOtherRecording() throws {
+        func assertAvoidsCollision(
+            with sidecarURL: (URL) -> URL,
+            file: StaticString = #filePath,
+            line: UInt = #line
+        ) throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("vowky_recording_sidecar_\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+
+            let store = RecordingTranscriptionOutputStore(outputDirectory: directory)
+            let prepared = try store.prepareOutput(startedAt: Date(timeIntervalSince1970: 1_800_000_000))
+            FileManager.default.createFile(atPath: prepared.audioURL.path, contents: Data())
+
+            let existing = sidecarURL(directory.appendingPathComponent("会议.md"))
+            try "old".write(to: existing, atomically: true, encoding: .utf8)
+
+            let renamed = try store.renameOutput(prepared, toBaseName: "会议")
+
+            XCTAssertEqual(renamed.audioURL.lastPathComponent, "会议-2.wav", file: file, line: line)
+            XCTAssertEqual(renamed.textURL.lastPathComponent, "会议-2.md", file: file, line: line)
+            XCTAssertEqual(try String(contentsOf: existing), "old", file: file, line: line)
+        }
+
+        try assertAvoidsCollision(with: SubtitleDisplayRecorder.outputURL(for:))
+        try assertAvoidsCollision(with: BilingualTranscriptComposer.outputURL(for:))
+    }
+
+    func testRenameOutputToCurrentBaseIsNoOp() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vowky_recording_rename_\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = RecordingTranscriptionOutputStore(outputDirectory: directory)
+        let prepared = try store.prepareOutput(startedAt: Date(timeIntervalSince1970: 1_800_000_000))
+        FileManager.default.createFile(atPath: prepared.audioURL.path, contents: Data())
+        let currentBase = prepared.audioURL.deletingPathExtension().lastPathComponent
+
+        XCTAssertEqual(try store.renameOutput(prepared, toBaseName: currentBase), prepared)
+        XCTAssertEqual(try store.renameOutput(prepared, toBaseName: currentBase.uppercased()), prepared)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: prepared.audioURL.path))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).count, 1)
+    }
+
+    func testRenameOutputThrowsWhenAudioMissing() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("vowky_recording_rename_\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = RecordingTranscriptionOutputStore(outputDirectory: directory)
+        let prepared = try store.prepareOutput(startedAt: Date(timeIntervalSince1970: 1_800_000_000))
+
+        XCTAssertThrowsError(try store.renameOutput(prepared, toBaseName: "会议"))
+    }
+
     func testEngineReturnsSenseVoiceFinalTextAndWritesWAV() async throws {
         let audioURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("vowky_engine_\(UUID().uuidString).wav")

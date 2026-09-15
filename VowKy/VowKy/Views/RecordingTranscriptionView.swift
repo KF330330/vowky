@@ -89,6 +89,8 @@ struct RecordingTranscriptionView: View {
     @EnvironmentObject private var loc: LocalizationManager
     @ObservedObject var viewModel: RecordingTranscriptionViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 文件名输入框是否聚焦：聚焦时把 Esc 从「取消录音」上摘掉，只用来失焦。
+    @FocusState private var isFileNameFocused: Bool
 
     var body: some View {
         ZStack {
@@ -402,6 +404,8 @@ struct RecordingTranscriptionView: View {
                 }
             }
 
+            fileNameRow
+
             RecordingWaveformView(
                 bands: viewModel.waveformBands,
                 isActive: viewModel.state == .recording,
@@ -437,6 +441,50 @@ struct RecordingTranscriptionView: View {
         .padding(14)
         .frame(minHeight: 104)
         .transcriptionCardStyle()
+    }
+
+    /// 录音进行中：可编辑的文件名输入框（完成时按此名落盘）；其余状态：只读显示最终文件名。
+    private var fileNameRow: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(TranscriptionTheme.accentDark)
+
+            if viewModel.canEditFileName {
+                TextField(fileNamePlaceholder, text: $viewModel.fileNameDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .font(.system(size: 12))
+                    .focused($isFileNameFocused)
+                    .onSubmit { isFileNameFocused = false }
+                    // Esc 只失焦，不能顺着响应链去触发「取消录音」（那会删掉音频）
+                    .onExitCommand { isFileNameFocused = false }
+                    .help(loc.string("recording.fileName.help"))
+            } else {
+                Text(finalFileNameText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(TranscriptionTheme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+        }
+        .frame(height: 24)
+    }
+
+    private var fileNamePlaceholder: String {
+        viewModel.preparedBaseName ?? loc.string("recording.fileName.placeholder")
+    }
+
+    private var finalFileNameText: String {
+        if let textURL = viewModel.output?.textURL {
+            return textURL.deletingPathExtension().lastPathComponent
+        }
+        if let audioURL = viewModel.recoveredAudioURL {
+            return audioURL.deletingPathExtension().lastPathComponent
+        }
+        return loc.string("recording.fileName.placeholder")
     }
 
     private var headerSubtitle: String {
@@ -489,6 +537,13 @@ struct RecordingTranscriptionView: View {
                 }
 
                 if let note = viewModel.engineNote {
+                    Text(note)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(TranscriptionTheme.warning)
+                        .lineLimit(1)
+                }
+
+                if let note = viewModel.fileNameNote {
                     Text(note)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(TranscriptionTheme.warning)
@@ -587,7 +642,8 @@ struct RecordingTranscriptionView: View {
                     Label(loc.string("recording.button.cancel"), systemImage: "xmark")
                 }
                 .buttonStyle(TranscriptionGhostButtonStyle())
-                .keyboardShortcut(.cancelAction)
+                // 输入框聚焦时摘掉 Esc：否则在文件名里按 Esc 会取消录音并删除音频
+                .keyboardShortcut(isFileNameFocused ? nil : .cancelAction)
             } else {
                 Button {
                     viewModel.start()

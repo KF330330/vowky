@@ -607,3 +607,8 @@
 "settings.speechMode.standard" = "Standard speed";
 "settings.speechMode.fast" = "Fast";
 "settings.speechMode.hint" = "Standard speed: local engine with higher accuracy. Fast: much faster transcription with slightly lower accuracy. Transcriptions with speaker separation always use the local engine regardless of this setting.";
+
+/* ===== Recording file name (2026-09-15) ===== */
+"recording.fileName.placeholder" = "File name (leave blank for the default)";
+"recording.fileName.help" = "Editable while recording; the .md and .wav are saved under this name when finished";
+"recording.note.renameFailed" = "Rename failed; saved under the default name";

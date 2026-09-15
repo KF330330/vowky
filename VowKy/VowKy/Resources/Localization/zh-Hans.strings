@@ -607,3 +607,8 @@
 "settings.speechMode.standard" = "标准速度模式";
 "settings.speechMode.fast" = "快速模式";
 "settings.speechMode.hint" = "标准速度模式：本地引擎，准确率更高。快速模式：转换速度极快，准确率相对差一点点。开启说话人分离的转写始终使用本地引擎，不受此设置影响。";
+
+/* ===== Recording file name (2026-09-15) ===== */
+"recording.fileName.placeholder" = "文件名（留空用默认时间戳名）";
+"recording.fileName.help" = "录音中可随时修改；完成时 .md 与 .wav 按此名保存";
+"recording.note.renameFailed" = "文件改名失败，已按默认名保存";
